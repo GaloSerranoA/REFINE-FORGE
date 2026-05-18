@@ -1,11 +1,27 @@
 # refineforge
 
 Autor: Galo Serrano Abad
-
+NANTAR AI ROOBOTICS
 
 A Lean 4 proof engineering + refinement-bundle framework for trust-critical Rust.
 
 > **Doctrine:** LLM may propose. Lean must verify. Human operator must approve.
+
+## Documentation map
+
+Read in this order — each doc is short and points at the next.
+
+| Doc | What it covers |
+|---|---|
+| [README.md](README.md) (this file) | What refineforge is, how to install, the CLI surface |
+| [STRUCTURE.md](STRUCTURE.md) | Every file in the repo, what owns it, how the pieces connect |
+| [CHANGELOG.md](CHANGELOG.md) | Version history, what shipped in each release |
+| [docs/methodology.md](docs/methodology.md) | The honest framing: what refineforge claims, what it does NOT claim |
+| [docs/no-sorry-policy.md](docs/no-sorry-policy.md) | What the policy gate catches and what it does not |
+| [docs/refinement-template.md](docs/refinement-template.md) | Empty template for writing your own refinement-argument doc |
+| [docs/refinement/EXAMPLE-002.md](docs/refinement/EXAMPLE-002.md) | A filled-in refinement doc you can read as the answer key |
+| [docs/llm-repair-design.md](docs/llm-repair-design.md) | Architecture of the LLM repair loop + how to swap in a real strategy |
+| [docs/HELYX-CASE-STUDY.md](docs/HELYX-CASE-STUDY.md) | Pointer to the external worked example (helyx-proofforge) |
 
 ## What this is
 
