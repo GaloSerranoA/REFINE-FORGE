@@ -3,27 +3,104 @@ name: ci
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
 
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+  # Match the toolchain pinned in lean/lean-toolchain so cache keys
+  # invalidate when we upgrade Lean.
+  LEAN_TOOLCHAIN: leanprover/lean4:v4.29.1
+
 jobs:
+  # ─── Build + verify on every supported OS ──────────────────────────
   build-and-verify:
-    runs-on: ubuntu-latest
+    name: build-${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install elan (Lean toolchain manager)
+      # ─── Caches ──────────────────────────────────────────────────────
+      # elan + the toolchain binaries (~300 MB; biggest single-time cost)
+      - name: Cache elan + Lean toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            ${{ runner.os == 'Windows' && format('{0}\.elan', runner.workspace) || '' }}
+          key: elan-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}
+          restore-keys: |
+            elan-${{ runner.os }}-
+
+      # Lake build artifacts (~50 MB) — keyed on lean/ contents so a
+      # Lean source change invalidates correctly.
+      - name: Cache lake build
+        uses: actions/cache@v4
+        with:
+          path: lean/.lake
+          key: lake-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ hashFiles('lean/**/*.lean', 'lean/lakefile.toml', 'lean/lake-manifest.json') }}
+          restore-keys: |
+            lake-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-
+
+      # Cargo registry + git deps (~500 MB once warm)
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      # Cargo build output — only useful if Cargo.lock is stable
+      - name: Cache cargo target
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: cargo-target-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('crates/**/*.rs') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-
+
+      # ─── Toolchain install ───────────────────────────────────────────
+      - name: Install elan (POSIX)
+        if: runner.os != 'Windows'
         run: |
-          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o elan-init.sh
-          sh elan-init.sh -y --default-toolchain none
+          if ! command -v elan >/dev/null 2>&1; then
+            curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+            sh /tmp/elan-init.sh -y --default-toolchain "$LEAN_TOOLCHAIN"
+            rm /tmp/elan-init.sh
+          fi
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
-      - name: Show Lean version (resolves from lean-toolchain)
+      - name: Install elan (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command elan -ErrorAction SilentlyContinue)) {
+            Invoke-WebRequest -Uri "https://github.com/leanprover/elan/releases/latest/download/elan-x86_64-pc-windows-msvc.zip" -OutFile elan.zip
+            Expand-Archive elan.zip -DestinationPath "$env:USERPROFILE\.elan-installer"
+            & "$env:USERPROFILE\.elan-installer\elan-init.exe" -y --default-toolchain $env:LEAN_TOOLCHAIN
+            Remove-Item elan.zip; Remove-Item "$env:USERPROFILE\.elan-installer" -Recurse
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value "$env:USERPROFILE\.elan\bin"
+
+      - name: Show toolchain versions
         working-directory: lean
         run: |
           lean --version
           lake --version
+          cargo --version
+          rustc --version
 
+      # ─── Build ───────────────────────────────────────────────────────
       - name: Build Lean library
         working-directory: lean
         run: lake build
@@ -34,20 +111,104 @@ jobs:
       - name: Run unit tests
         run: cargo test --release
 
+      # ─── Verify every claim ─────────────────────────────────────────
       - name: Verify all claims
-        run: ./target/release/refine lean check-all
+        run: |
+          cargo run --release --bin refine -- lean check-all
 
       - name: Scan rust_source for all claims
-        run: ./target/release/refine scan check-all || echo "(scan failures are non-fatal at framework level; tighten in your fork)"
+        run: |
+          cargo run --release --bin refine -- scan check-all || echo "(scan failures non-fatal at framework level)"
 
       - name: Export example bundle
-        run: ./target/release/refine bundle export EXAMPLE-001
+        run: |
+          cargo run --release --bin refine -- bundle export EXAMPLE-001
 
-      - name: Re-verify example bundle
-        run: ./target/release/refine bundle verify artifacts/EXAMPLE-001
+      - name: Re-verify example bundle (hashes only)
+        run: |
+          cargo run --release --bin refine -- bundle verify artifacts/EXAMPLE-001
 
-      - name: Upload bundle artifacts
+      - name: Export refined-tutorial bundle
+        run: |
+          cargo run --release --bin refine -- bundle export EXAMPLE-002
+
+      - name: Re-verify refined-tutorial bundle (hashes only)
+        run: |
+          cargo run --release --bin refine -- bundle verify artifacts/EXAMPLE-002
+
+      # ─── Upload unsigned bundles (signing happens in a separate job
+      #     that only runs on the canonical builder) ───────────────────
+      - name: Upload unsigned bundle artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: refineforge-bundles
+          name: refineforge-bundles-${{ matrix.os }}
           path: artifacts/
+          retention-days: 14
+
+  # ─── Sigstore signing (canonical builder only) ──────────────────────
+  # Runs only on push to main or tags. Pull requests don't sign because
+  # cosign's keyless flow uses the workflow's OIDC identity, and PR
+  # identities are not the canonical signer.
+  sign-bundles:
+    name: sign-bundles
+    needs: build-and-verify
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    # cosign keyless signing requires id-token write permission to get
+    # the OIDC token that Fulcio uses to issue the short-lived cert.
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download bundle artifacts (canonical builder)
+        uses: actions/download-artifact@v4
+        with:
+          name: refineforge-bundles-ubuntu-latest
+          path: artifacts/
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.4.1'
+
+      - name: Sign each bundle's manifest (keyless, Fulcio + Rekor)
+        run: |
+          set -euo pipefail
+          for bundle_dir in artifacts/*/; do
+            manifest="$bundle_dir/manifest.json"
+            if [ ! -f "$manifest" ]; then continue; fi
+            echo "Signing $manifest"
+            cosign sign-blob --yes \
+              --bundle "$bundle_dir/manifest.json.sigbundle" \
+              --output-signature "$bundle_dir/manifest.json.sig" \
+              --output-certificate "$bundle_dir/manifest.json.cert" \
+              "$manifest"
+          done
+
+      - name: Verify signatures locally (sanity check)
+        env:
+          # Identity the cert should claim — refs the workflow path on
+          # this repo. Adjust if forked.
+          EXPECTED_IDENTITY_REGEX: "https://github.com/[^/]+/refineforge/.github/workflows/ci.yml@refs/(heads|tags)/.*"
+          EXPECTED_OIDC_ISSUER: "https://token.actions.githubusercontent.com"
+        run: |
+          set -euo pipefail
+          for bundle_dir in artifacts/*/; do
+            manifest="$bundle_dir/manifest.json"
+            if [ ! -f "$manifest" ]; then continue; fi
+            echo "Verifying signature for $manifest"
+            cosign verify-blob \
+              --bundle "$bundle_dir/manifest.json.sigbundle" \
+              --certificate-identity-regexp "$EXPECTED_IDENTITY_REGEX" \
+              --certificate-oidc-issuer "$EXPECTED_OIDC_ISSUER" \
+              "$manifest"
+          done
+
+      - name: Upload signed bundle artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: refineforge-bundles-signed
+          path: artifacts/
+          retention-days: 90

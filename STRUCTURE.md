@@ -15,12 +15,13 @@ refineforge/
 ├── ARCHITECTURE.md             # three-section structure (Lean / ML / DevOps)
 ├── ROLES.md                    # short version of ARCHITECTURE — who owns what
 ├── CHANGELOG.md                # version history
+├── SECURITY.md                 # vuln reporting + how to verify a signed bundle
 ├── STRUCTURE.md                # this file
 ├── Cargo.toml                  # Rust workspace manifest
 ├── .gitignore
 ├── .github/
 │   ├── CODEOWNERS              # path → section mapping (advisory until remote)
-│   └── workflows/ci.yml        # CI: lake build + cargo build + verify claims
+│   └── workflows/ci.yml        # Section 3: multi-arch CI + Sigstore signing
 ├── claims/                     # claim registry (one YAML per claim)
 ├── lean/                       # Lake project: formal models + theorems
 ├── crates/                     # Rust workspace members
@@ -35,6 +36,7 @@ refineforge/
 ├── templates/                  # scaffolding for `refine new`
 ├── artifacts/                  # exported verification bundles
 ├── containers/                 # Section 3: Dockerfile.verifier and friends
+├── release/                    # Section 3: release.sh / release.ps1 + signed-tag artifacts
 └── docs/                       # methodology, policies, refinement docs
 ```
 

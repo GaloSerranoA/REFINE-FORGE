@@ -116,8 +116,26 @@ enum BundleCmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
-    /// Verify a bundle's hashes
-    Verify { bundle: PathBuf },
+    /// Verify a bundle's hashes (and optionally its Sigstore signature)
+    Verify {
+        bundle: PathBuf,
+        /// Also verify the Sigstore signature alongside hashes.
+        /// Requires `cosign` on PATH and `manifest.json.sigbundle`
+        /// in the bundle directory. See docs/security.md §3.
+        #[arg(long)]
+        verify_signature: bool,
+        /// Override the regex the signer's cert identity must match.
+        /// Default: refineforge's canonical CI workflow identity.
+        /// Also overridable via REFINEFORGE_EXPECTED_IDENTITY_REGEX.
+        #[arg(long)]
+        identity_regex: Option<String>,
+        /// Override the OIDC issuer that issued the signer's cert.
+        /// Default: GitHub Actions
+        /// (https://token.actions.githubusercontent.com).
+        /// Also overridable via REFINEFORGE_EXPECTED_OIDC_ISSUER.
+        #[arg(long)]
+        oidc_issuer: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -141,7 +159,19 @@ fn main() -> Result<()> {
         },
         Cmd::Bundle { cmd } => match cmd {
             BundleCmd::Export { claim_id, out } => bundle::export(&cli.root, &claim_id, out),
-            BundleCmd::Verify { bundle } => bundle::verify(&bundle),
+            BundleCmd::Verify {
+                bundle,
+                verify_signature,
+                identity_regex,
+                oidc_issuer,
+            } => bundle::verify_with_options(
+                &bundle,
+                &bundle::VerifyOptions {
+                    verify_signature,
+                    identity_regex,
+                    oidc_issuer,
+                },
+            ),
         },
         Cmd::Scan { cmd } => match cmd {
             ScanCmd::Check { claim_id } => scan::scan_one(&cli.root, &claim_id),

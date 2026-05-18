@@ -70,44 +70,52 @@ reproducibility-critical work, the DevOps section's
 [reproducible-build.md](reproducible-build.md) pins every input by
 content hash via Nix (planned).
 
-## 3. Signing chain (planned)
+## 3. Signing chain (✅ shipped)
 
-Currently bundles are SHA-256-self-attesting (the manifest hashes
-itself). A reviewer can detect tampering of bundle *contents*, but
-cannot verify *who* produced the bundle.
-
-**Phase 1 (Section 3 phase 2):** Sigstore signing in CI.
+Bundles are SHA-256-self-attesting (the manifest hashes itself).
+Pushed to `main` or tagged `v*`, they are ALSO Sigstore-signed in CI.
 
 ```
 git commit ──▶ CI runs ──▶ refine bundle export ──▶ cosign sign-blob ──▶ Rekor log entry
                                                        │
                                                        ▼
+                                                  bundle/manifest.json.sigbundle
                                                   bundle/manifest.json.sig
                                                   bundle/manifest.json.cert
 ```
 
-`refine bundle verify` gains a new flag:
+`refine bundle verify` has the flag:
 
 ```
 refine bundle verify <dir> --verify-signature
 ```
 
-Which checks:
+Which (via `cosign verify-blob` under the hood) checks:
 - The `cosign` signature over `manifest.json` is valid
 - The signing cert chain roots in Sigstore's Fulcio CA
 - The Rekor transparency log contains an entry binding the
-  signature to the git commit SHA recorded in `manifest.json`
+  signature to the git commit / workflow identity
 - The signer identity (subject + issuer in the cert) matches an
-  expected pattern (e.g., GitHub Actions runner with this repo's
-  workflow identity)
+  expected pattern. Default pattern: refineforge's canonical CI
+  workflow identity. Overridable via `--identity-regex` /
+  `--oidc-issuer` flags or `REFINEFORGE_EXPECTED_*` env vars.
 
 This turns "we built this bundle" into "we built this bundle, here
 is the cryptographic proof, and a public transparency log records it."
 
-**Phase 2 (later):** Optional hardware-backed signing for releases
-tagged `v*` (YubiKey or TPM-backed key). The CI signature stays as
-a per-commit attestation; release signatures are an additional
-layer for tagged versions.
+**Implementation choice:** the verifier delegates to the upstream
+`cosign` binary rather than reimplementing signature / Fulcio / Rekor
+verification in Rust. Same security guarantees (cosign does the real
+cryptography), much less code, well-tested upstream. The seam is
+the `REFINEFORGE_COSIGN_BIN` env var which lets tests substitute a
+stub. A pure-Rust verification path using the `sigstore` crate is
+documented as a future option but not implemented; it would let
+refineforge ship a single binary without the cosign dependency.
+
+**Future — hardware-backed release signing:** Optional YubiKey or TPM-
+backed signature for releases tagged `v*`. The CI keyless signature
+stays as the per-commit attestation; release-tag signatures would
+be an additional layer for tagged versions. Not yet implemented.
 
 ## 4. Bundle verification policy
 

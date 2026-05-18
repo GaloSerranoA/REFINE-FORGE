@@ -29,3 +29,6 @@ refineforge-repair-api  = { path = "../refineforge-repair-api" }
 # strategy registry. No circular dep — strategies depends on the
 # api crate, not on this one.
 refineforge-strategies  = { path = "../refineforge-strategies" }
+
+[dev-dependencies]
+tempfile                = "3"

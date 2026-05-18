@@ -18,6 +18,7 @@ Read in this order — each doc is short and points at the next.
 | [ROLES.md](ROLES.md) | Short version of who owns what; map a task to a role |
 | [STRUCTURE.md](STRUCTURE.md) | Every file in the repo, what owns it, how the pieces connect |
 | [CHANGELOG.md](CHANGELOG.md) | Version history, what shipped in each release |
+| [SECURITY.md](SECURITY.md) | How to report a vulnerability + how to verify a release signature |
 | [docs/methodology.md](docs/methodology.md) | The honest framing: what refineforge claims, what it does NOT claim |
 | [docs/no-sorry-policy.md](docs/no-sorry-policy.md) | What the policy gate catches and what it does not |
 | [docs/refinement-template.md](docs/refinement-template.md) | Empty template for writing your own refinement-argument doc |
@@ -153,6 +154,7 @@ cargo build --release
 | `refine scan check-all`                | Same, for every claim                                                   |
 | `refine bundle export <id>`            | Bundle the sources + manifest + report                                  |
 | `refine bundle verify <bundle-dir>`    | Re-hash every file in a bundle and confirm the manifest matches         |
+| `refine bundle verify <bundle-dir> --verify-signature` | Hashes + Sigstore signature (via cosign). See [SECURITY.md](SECURITY.md) |
 | `refine repair <id>` (SKELETON)        | Bounded LLM repair loop against Lean's LSP server. Default strategy is `mock` (declines every proposal) — swap in an LLM strategy per [`docs/llm-repair-design.md`](docs/llm-repair-design.md) |
 | `refine templates`                     | List scaffolding templates                                              |
 | `refine new --template <t> --module <M> <ID>` | Scaffold a new claim from a template                             |
@@ -195,9 +197,10 @@ Where each thing currently lives:
 | `refineforge-strategies` workspace member  | ✅ `AnthropicStrategy` + `ReqwestTransport` (real HTTP, retry-with-backoff, error mapping; 18 unit tests) |
 | `refineforge-eval` (`refine-eval` binary)  | ✅ corpus-driven evaluation harness with JSON output; ships a 3-entry tutorial corpus under [`eval/corpus/`](eval/corpus) |
 | Verifier Docker image                      | ✅ `containers/Dockerfile.verifier` — multi-stage build, elan + Lean v4.29.1 preinstalled |
-| Multi-arch CI matrix                       | not yet             |
-| Sigstore signing in CI + `--verify-signature` | not yet             |
-| Nix flake for hermetic builds              | not yet             |
+| Multi-arch CI matrix                       | ✅ Ubuntu + macOS + Windows with elan / lake / cargo caches |
+| Sigstore signing in CI + `--verify-signature` | ✅ keyless cosign sign-blob on main + tags; verifier-side `refine bundle verify --verify-signature` (cosign subprocess) |
+| Release scripting (`release/release.{sh,ps1}`) | ✅ semver check, CHANGELOG check, version bump, test run, tag + optional cosign tag-commit sig |
+| Nix flake for hermetic builds              | not yet (Lean toolchain via Nix is multi-day work) |
 | Mathlib mutation pipeline (corpus at N≥1000) | not yet             |
 | Fine-tuned proof-repair model              | not yet (6+ month research commitment) |
 | Syn-based scan (parse, not regex)          | not yet             |

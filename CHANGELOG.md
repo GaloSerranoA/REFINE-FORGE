@@ -10,6 +10,158 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Section 3 deep: production-grade CI + Sigstore + release scripting
+
+This is the "go deep on Section 3" pass. Multi-arch CI matrix,
+keyless Sigstore signing in CI, real `--verify-signature`
+implementation in `refine bundle verify`, and reusable release
+scripts. Deferred: Nix flake (Lean integration is genuinely 1-3
+days of focused work).
+
+- **Multi-arch CI matrix** —
+  `.github/workflows/ci.yml`. `build-and-verify` job runs in a
+  strategy matrix across `ubuntu-latest`, `macos-latest`, and
+  `windows-latest` with `fail-fast: false`. Each runner gets:
+  - `actions/cache@v4` for elan + the pinned Lean toolchain
+    (key includes `LEAN_TOOLCHAIN` env so cache invalidates on
+    Lean version bumps).
+  - `actions/cache@v4` for the `lean/.lake/` build artifacts
+    (key includes `hashFiles('lean/**/*.lean', 'lean/lakefile.toml',
+    'lean/lake-manifest.json')`).
+  - `actions/cache@v4` for cargo registry + git deps.
+  - `actions/cache@v4` for the `target/` build dir keyed on
+    `Cargo.lock` + Rust source.
+  - POSIX/Windows-aware elan installation (curl + sh on
+    POSIX; Invoke-WebRequest + the official Windows installer
+    on Windows).
+  - Build Lean, build CLI, run unit tests, verify all claims,
+    export + re-verify both example bundles, upload bundle
+    artifacts (retention 14 days) per-OS.
+
+- **Sigstore keyless signing in CI** — `sign-bundles` job runs
+  AFTER `build-and-verify` succeeds, only on push to `main` or
+  tags `v*` (NOT on pull requests, because PR OIDC identities
+  are not the canonical signer). The job:
+  - Has `permissions: id-token: write` to get the OIDC token
+    Fulcio needs for keyless cert issuance.
+  - Installs cosign v2.4.1 via `sigstore/cosign-installer@v3`.
+  - Downloads the canonical (Ubuntu) builder's bundle artifacts.
+  - For each `artifacts/<CLAIM-ID>/manifest.json`, runs
+    `cosign sign-blob --yes --bundle manifest.json.sigbundle
+    --output-signature manifest.json.sig --output-certificate
+    manifest.json.cert manifest.json`. Sigstore handles Fulcio
+    cert issuance + Rekor transparency-log entry.
+  - Runs `cosign verify-blob` locally as a sanity check before
+    uploading.
+  - Uploads `refineforge-bundles-signed` (retention 90 days).
+
+- **`refine bundle verify --verify-signature` flag** —
+  `crates/refineforge-cli/src/bundle.rs`. Real Sigstore verification:
+  - New `VerifyOptions { verify_signature, identity_regex,
+    oidc_issuer }` struct + `verify_with_options(path, opts)`
+    entry point. The original `verify(path)` is preserved as a
+    thin wrapper for backward compatibility.
+  - Delegates the cryptographic work to `cosign verify-blob` as
+    a subprocess (same security guarantees as cosign upstream;
+    no reimplementation of Fulcio cert chain validation, Rekor
+    inclusion proof, or signature math). Pure-Rust verification
+    via the `sigstore` crate is documented as a future option
+    in [SECURITY.md](SECURITY.md).
+  - Sensible defaults: identity regex matches refineforge's
+    canonical CI workflow; OIDC issuer is GitHub Actions. Both
+    overridable via CLI flags (`--identity-regex`, `--oidc-issuer`)
+    OR env vars (`REFINEFORGE_EXPECTED_IDENTITY_REGEX`,
+    `REFINEFORGE_EXPECTED_OIDC_ISSUER`).
+  - Honest error messages: missing `manifest.json.sigbundle`
+    points at the CI workflow; missing cosign binary tells you
+    to install it from sigstore/cosign and offers a `REFINEFORGE_COSIGN_BIN`
+    env-var escape hatch.
+  - `cosign` binary location overridable via `REFINEFORGE_COSIGN_BIN`
+    (used by unit tests + air-gapped deployments).
+  - 5 unit tests using stub cosign shell scripts: missing sigbundle,
+    missing cosign binary, success path returns SignatureStatus,
+    verify failure surfaces cosign's stderr, identity-regex
+    override is honored.
+
+- **Release scripts** — `release/release.sh` (POSIX) and
+  `release/release.ps1` (PowerShell). 12 numbered steps:
+  semver-validate, clean-tree check, on-main check, tag-uniqueness
+  (local + remote), CHANGELOG `[Unreleased]` → `[<version>] — <date>`
+  migration, Cargo.toml `[workspace.package].version` bump, cargo
+  check + nextest, `refine lean check-all`, version-bump commit,
+  annotated tag creation, optional `cosign sign-blob` over the
+  tag commit SHA (best-effort; skipped if cosign not on PATH),
+  push-instructions printout. Both scripts support `--dry-run`
+  (`-DryRun`); neither pushes automatically.
+
+- **SECURITY.md at repo root** — entry-point doc with:
+  vulnerability-reporting policy (90-day disclosure window,
+  CHANGELOG credit), `refine bundle verify --verify-signature`
+  usage walkthrough, threat-model summary (what refineforge
+  defends against and what it does NOT), current signing-chain
+  status table, and honest disclosure that the verification code
+  was unit-tested against stub cosign binaries but NOT against a
+  real Fulcio cert in this session (requires a real CI run from a
+  pushed remote).
+
+- **docs/security.md §3 promoted from "planned" to "shipped"** —
+  signing chain, signature-flag wiring, and the cosign-subprocess
+  implementation choice are now documented as the current state,
+  with the pure-Rust `sigstore` crate path documented as a future
+  enhancement.
+
+- **README documentation map + framework build plan + subcommand
+  reference** updated for SECURITY.md, multi-arch CI, sigstore,
+  release scripting.
+
+- **STRUCTURE.md** updated: top-level tree shows `SECURITY.md` and
+  `release/`; `.github/workflows/ci.yml` row notes the multi-arch
+  + signing role.
+
+### Tests
+
+- `cargo nextest run --workspace`: **55/55 pass** (was 50/50; +5
+  signature verification tests).
+- Smoke-tested `refine bundle verify artifacts/EXAMPLE-002
+  --verify-signature` on an unsigned bundle locally: correctly
+  fails with the helpful "no signature found — expected
+  manifest.json.sigbundle (signed bundles are produced by the
+  CI signing job...)" error.
+- Smoke-tested `refine bundle verify artifacts/EXAMPLE-002`
+  (no `--verify-signature`) on the same unsigned bundle: still
+  succeeds (backward compatible).
+
+### Honest disclosures
+
+- **The CI workflow file has NOT been exercised by a real GitHub
+  Actions run this session.** This repo has no remote configured
+  yet. The YAML follows the documented schema for `actions/cache@v4`,
+  `sigstore/cosign-installer@v3`, `actions/upload-artifact@v4`,
+  and `actions/download-artifact@v4`; first push to a real remote
+  will surface any drift.
+- **The Sigstore signing flow has NOT been end-to-end tested
+  against the real Fulcio CA + Rekor log.** The signing happens
+  only in CI (because keyless OIDC signing requires the GitHub
+  Actions OIDC token); we can't simulate that locally. The
+  verifier-side code path was unit-tested against stub cosign
+  binaries that simulate the success / failure / missing-binary
+  cases; the actual cryptographic verification is cosign's job
+  and is tested by the cosign upstream.
+- **`--verify-signature` requires `cosign` on the verifier's PATH.**
+  This is a deliberate v1 choice. A future pure-Rust verifier
+  using the `sigstore` crate (no cosign dep) is documented in
+  SECURITY.md as an enhancement.
+- **Nix flake is NOT in this commit.** Lean toolchain via Nix
+  (`lean4-nix`) is non-trivial; honest estimate is 1-3 days of
+  focused work. `docs/reproducible-build.md` documents the
+  approach; Section 3 phase 2 will deliver it.
+- **The release scripts have NOT been exercised on this repo.**
+  They run dry through `--dry-run` mode; the live mode requires
+  a CHANGELOG with an `[Unreleased]` section (which we have) and
+  a clean working tree (which we have between commits). The
+  `--dry-run` mode is the recommended first invocation for any
+  human operator.
+
 ### First real eval run + bug fixes discovered by it
 
 Real `--strategy anthropic` baseline against the 3-entry tutorial
