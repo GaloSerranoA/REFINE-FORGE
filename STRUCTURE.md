@@ -97,14 +97,18 @@ dependency graph (kept acyclic):
 
 ```
             refineforge-repair-api  ◄── the stable cross-section trait + types
-                ▲                ▲
-                │                │
-   refineforge-cli ───────► refineforge-strategies
-       │                              ▲
-       └──────────────────────────────┘
-       (the binary's strategy registry imports concrete strategies)
-
-   example-counter  (standalone; refines lean/Refineforge/Counter.lean)
+                ▲                ▲                 ▲
+                │                │                 │
+   refineforge-cli ─────► refineforge-strategies   refineforge-eval
+       │                          ▲                     │
+       └──────────────────────────┘                     │
+       (binary's strategy registry)                     │ runs repair against
+                                                        │ corpus, captures outcomes
+   refineforge-derive  (proc-macro; consumed by example-counter)
+                          │
+                          ▼
+   example-counter  (refines lean/Refineforge/Counter.lean;
+                     #[derive(LeanModel)] from refineforge-derive)
 ```
 
 Members:
@@ -185,11 +189,11 @@ crates/refineforge-cli/
     ├── bundle.rs           # `refine bundle export/verify` — SHA-256 manifest + report.json + VERIFY.txt; cross-platform paths
     ├── scaffold.rs         # `refine new` + `refine templates` — template substitution + auto-import; reads lakefile defaultTargets
     ├── scan.rs             # `refine scan check[-all]` — regex name-presence check for rust_source entities
-    └── repair/             # `refine repair` — LLM repair loop SKELETON
-        ├── mod.rs          # public API, RepairConfig, RepairReport, driver loop
+    └── repair/             # `refine repair` — LLM repair driver
+        ├── mod.rs          # public API, RepairConfig, RepairReport, driver loop (with post-loop final diagnostic check)
         ├── lsp.rs          # LeanLspClient: spawn lake env lean --server, JSON-RPC framing, reader thread
-        ├── diagnostic.rs   # Diagnostic / Severity / Range types + LSP-types conversions
-        └── strategy.rs     # RepairStrategy trait + MockStrategy + Patch::apply
+        ├── diagnostic.rs   # re-exports from refineforge-repair-api
+        └── strategy.rs     # re-exports from refineforge-repair-api (Patch::apply lives there with line-length-clamping fix)
 ```
 
 | Module | Lines | Tests |
@@ -235,6 +239,8 @@ Each template is a directory with two files:
 |---|---|
 | `append_chain/` | append-only linked sequence with hash check (3 theorems: `empty_valid`, `append_preserves_validity`, `tipHash_after_append`) |
 | `capability/` | set-membership authorization (3 theorems: `subsumes_preserves_authorization`, `subsumes_refl`, `subsumes_trans`) |
+| `capability_with_revocation/` | capability + monotone `revoke` (3 theorems: `revoked_authorizes_nothing`, `fresh_capability_authorizes_held_right`, `revoke_is_idempotent`) |
+| `linear_types/` | single-use token with `consumed : Bool` flag (3 theorems: `fresh_token_is_valid`, `consume_invalidates`, `consume_sets_consumed`) |
 | `state_machine/` | allowed-transitions predicate over an enumerated state space |
 
 `refine new --template <name> --module <ModulePath> <CLAIM-ID>`
@@ -272,8 +278,8 @@ the bundle exporter once had is documented in `CHANGELOG.md`).
 | `refinement/EXAMPLE-002.md` | claim authors | Answer-key showing a filled-in refinement argument with a real idealisation |
 | `llm-repair-design.md` | ML engineer (Section 2) | Architecture of the repair loop + four-step swap-in recipe for a real LLM strategy |
 | `repair-evaluation.md` | ML engineer (Section 2) | Benchmark methodology, mutation taxonomy, training/eval separation rules |
-| `security.md` | DevOps (Section 3) | Threat model, supply chain, signing chain (planned), vuln reporting |
-| `reproducible-build.md` | DevOps (Section 3) | Bit-identical-rebuild methodology, Nix flake plan, verification protocol |
+| `security.md` | DevOps (Section 3) | Threat model, supply chain, **shipped** signing chain, vuln reporting |
+| `reproducible-build.md` | DevOps (Section 3) | Bit-identical-rebuild methodology, Nix flake (**authored — first-build pending**), verification protocol |
 | `HELYX-CASE-STUDY.md` | adopters | Pointer to the external worked example (`helyx-proofforge`) |
 
 ## How the pieces connect

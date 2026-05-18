@@ -25,8 +25,8 @@ Read in this order — each doc is short and points at the next.
 | [docs/refinement/EXAMPLE-002.md](docs/refinement/EXAMPLE-002.md) | A filled-in refinement doc you can read as the answer key |
 | [docs/llm-repair-design.md](docs/llm-repair-design.md) | Architecture of the LLM repair loop + how to swap in a real strategy |
 | [docs/repair-evaluation.md](docs/repair-evaluation.md) | How we'll measure whether `refine repair` is any good — corpus design, mutation taxonomy, statistical reporting |
-| [docs/security.md](docs/security.md) | Threat model, supply chain, signing chain (planned), vuln reporting |
-| [docs/reproducible-build.md](docs/reproducible-build.md) | Bit-identical-rebuild methodology — Nix flake approach (planned), verification protocol |
+| [docs/security.md](docs/security.md) | Threat model, supply chain, signing chain (shipped), vuln reporting |
+| [docs/reproducible-build.md](docs/reproducible-build.md) | Bit-identical-rebuild methodology — Nix flake (authored), verification protocol |
 | [docs/HELYX-CASE-STUDY.md](docs/HELYX-CASE-STUDY.md) | Pointer to the external worked example (helyx-proofforge) |
 
 ## What this is
@@ -81,34 +81,55 @@ audit chain + capability subsumption) and walks through the
 
 ```
 refineforge/
-├── lean/                      # Lake project — your formal models
+├── README.md / ARCHITECTURE.md / ROLES.md / STRUCTURE.md
+├── CHANGELOG.md / SECURITY.md
+├── Cargo.toml                  # Rust workspace manifest
+├── flake.nix                   # Nix flake (lean4-nix + crane + rust-overlay)
+├── .github/
+│   ├── CODEOWNERS              # path → section ownership
+│   └── workflows/ci.yml        # multi-arch CI + Sigstore signing
+├── lean/                       # Lake project — your formal models
 │   ├── lakefile.toml
-│   ├── lean-toolchain         # pinned: leanprover/lean4:v4.29.1
-│   ├── Refineforge.lean       # library root (rename to your project)
+│   ├── lean-toolchain          # pinned: leanprover/lean4:v4.29.1
+│   ├── Refineforge.lean        # library root
 │   └── Refineforge/
-│       ├── Example.lean       # EXAMPLE-001: Lean-only hello world
-│       └── Counter.lean       # EXAMPLE-002: refined tutorial (Lean side)
-├── claims/                    # claim registry (YAML, one file per claim)
-│   ├── example.yaml           # EXAMPLE-001 wired to the hello-world
-│   └── example-counter.yaml   # EXAMPLE-002 wired to Lean + Rust crate
-├── crates/
-│   ├── refineforge-cli/       # Rust CLI: `refine`
-│   └── example-counter/       # EXAMPLE-002 Rust side (refines Counter.lean)
-├── templates/                 # scaffolding for new claims
-│   ├── append_chain/          # append-only linked chain with hash check
-│   ├── capability/            # capability-based authorization
+│       ├── Example.lean        # EXAMPLE-001: Lean-only hello world
+│       └── Counter.lean        # EXAMPLE-002: refined tutorial (Lean side)
+├── claims/                     # claim registry (YAML, one per claim)
+│   ├── example.yaml            # EXAMPLE-001
+│   └── example-counter.yaml    # EXAMPLE-002
+├── crates/                     # Rust workspace (6 members)
+│   ├── refineforge-repair-api/ # stable trait + types (Section 1)
+│   ├── refineforge-cli/        # `refine` binary + driver (Section 1)
+│   ├── refineforge-derive/     # #[derive(LeanModel)] proc-macro (Section 1)
+│   ├── refineforge-strategies/ # AnthropicStrategy + ReqwestTransport (Section 2)
+│   ├── refineforge-eval/       # `refine-eval` benchmark harness (Section 2)
+│   └── example-counter/        # EXAMPLE-002 Rust side
+├── templates/                  # scaffolding for `refine new`
+│   ├── append_chain/           # append-only linked chain with hash check
+│   ├── capability/             # capability-based authorization
 │   ├── capability_with_revocation/ # capability + monotone revocation
-│   ├── linear_types/          # single-use token (consume-once)
-│   └── state_machine/         # state-machine transitions
-├── artifacts/                 # exported verification bundles
-├── docs/
-│   ├── methodology.md         # how refineforge thinks about trust
-│   ├── no-sorry-policy.md     # what the policy gate enforces
-│   ├── refinement-template.md # generic template for refinement-argument docs
-│   ├── refinement/
-│   │   └── EXAMPLE-002.md     # filled-in refinement doc for the tutorial
-│   └── HELYX-CASE-STUDY.md    # link to the original worked example
-└── .github/workflows/ci.yml   # builds Lean + Rust on every push
+│   ├── linear_types/           # single-use token (consume-once)
+│   └── state_machine/          # state-machine transitions
+├── eval/
+│   ├── corpus/                 # broken-proof corpus for refine-eval
+│   └── runs/                   # refine-eval JSON outputs (gitignored)
+├── artifacts/                  # exported verification bundles
+├── containers/
+│   └── Dockerfile.verifier     # elan + Lean preinstalled for reviewers
+├── release/
+│   ├── release.sh              # POSIX release script
+│   └── release.ps1             # PowerShell release script
+└── docs/
+    ├── methodology.md          # how refineforge thinks about trust
+    ├── no-sorry-policy.md      # what the policy gate enforces
+    ├── refinement-template.md  # empty refinement-doc skeleton
+    ├── refinement/EXAMPLE-002.md  # filled-in answer key
+    ├── llm-repair-design.md    # repair-loop architecture
+    ├── repair-evaluation.md    # benchmark methodology
+    ├── security.md             # threat model + signing chain
+    ├── reproducible-build.md   # Nix flake + bit-identical methodology
+    └── HELYX-CASE-STUDY.md     # link to external worked example
 ```
 
 ## Quick start
@@ -157,7 +178,8 @@ cargo build --release
 | `refine bundle export <id>`            | Bundle the sources + manifest + report                                  |
 | `refine bundle verify <bundle-dir>`    | Re-hash every file in a bundle and confirm the manifest matches         |
 | `refine bundle verify <bundle-dir> --verify-signature` | Hashes + Sigstore signature (via cosign). See [SECURITY.md](SECURITY.md) |
-| `refine repair <id>` (SKELETON)        | Bounded LLM repair loop against Lean's LSP server. Default strategy is `mock` (declines every proposal) — swap in an LLM strategy per [`docs/llm-repair-design.md`](docs/llm-repair-design.md) |
+| `refine repair <id>`                   | Bounded LLM repair loop against Lean's LSP server. Strategies: `mock` (declines all), `anthropic-mock` (canned), `anthropic` (real HTTP, needs `ANTHROPIC_API_KEY`). See [`docs/llm-repair-design.md`](docs/llm-repair-design.md) |
+| `refine-eval --corpus … --strategy …`  | Drive `refine repair` against a JSONL corpus; emit JSON report. See [`docs/repair-evaluation.md`](docs/repair-evaluation.md) |
 | `refine templates`                     | List scaffolding templates                                              |
 | `refine new --template <t> --module <M> <ID>` | Scaffold a new claim from a template                             |
 

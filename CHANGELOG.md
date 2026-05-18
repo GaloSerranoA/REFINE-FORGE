@@ -10,6 +10,50 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Highlights (read first)
+
+Everything below in `[Unreleased]` accumulated across a single
+multi-pass development session. When ready to cut v0.1.0, run
+`release/release.sh 0.1.0` — it'll rename this section to
+`[0.1.0] — <today>` and seed a fresh `[Unreleased]` above.
+
+**The "all three sections gone deep" arc** (architecture's own
+sequencing advice — one section at a time):
+
+| Section | Headline shipped |
+|---|---|
+| **1 — Lean Specialist** | 5 scaffolding templates (was 3), `#[derive(LeanModel)]` proc-macro for simple struct cases, Mathlib-aware bundle export (`lake-manifest.json` included) |
+| **2 — ML Training Engineer** | LSP-based repair driver, 4 strategies (mock / anthropic-mock / **real anthropic** with retry + prompt caching), `refine-eval` benchmark harness, 3-entry tutorial corpus, first real numbers (67 % repair rate on N=3 with claude-opus-4-7) |
+| **3 — Infrastructure / DevOps** | Multi-arch CI matrix (Ubuntu / macOS / Windows) with caches, Sigstore keyless signing in CI, `refine bundle verify --verify-signature` (delegates to cosign), release scripts (POSIX + PowerShell), verifier Docker image, SECURITY.md, Nix flake (authored; first-build pending) |
+
+**Workspace at the end of the arc:** 57/57 tests passing; 6 crates
+(`refineforge-repair-api`, `refineforge-cli`, `refineforge-derive`,
+`refineforge-strategies`, `refineforge-eval`, `example-counter`); 5
+scaffolding templates; 2 tutorial claims (EXAMPLE-001 Lean-only,
+EXAMPLE-002 refined); 9 docs under `docs/` plus README / ARCHITECTURE
+/ ROLES / STRUCTURE / SECURITY / CHANGELOG at root.
+
+**Honesty disclosures carried forward from each pass:**
+
+- `--strategy anthropic`'s real HTTP path WAS exercised against the
+  live Anthropic API on this dev machine — 4 runs × 3 corpus
+  entries; that produced the 67 % number AND surfaced 2 latent
+  driver bugs (final-diagnostic-check + Patch::apply line-clamp)
+  which were then fixed in the same pass.
+- CI workflow, Sigstore signing, and the Nix flake were NOT
+  exercised by a real CI run / Fulcio cert / `nix build` because
+  this repo has no GitHub remote AND no Nix install on this Windows
+  dev machine. Each item is unit-tested where unit-testable; first
+  real CI run / first real Nix user is the verification.
+- `LeanModel` proc-macro handles simple struct cases only;
+  generics / lifetimes / nested structs / tuple / enums / unions
+  emit clean compile errors pointing at the offending span.
+- N=3 corpus is the smoke-test tier per
+  `docs/repair-evaluation.md` §2.1; the 67 % number describes those
+  three claims, NOT "refine repair's general repair rate." Real
+  benchmark needs N≥1000 from a Mathlib mutation pipeline
+  (multi-week, deferred).
+
 ### Added — Section 1 deep: 2 new templates + LeanModel derive + Mathlib-aware bundle
 
 The third "go deep on one section" pass, completing the arc across
