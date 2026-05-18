@@ -1,0 +1,61 @@
+/-
+{{CLAIM_ID}}: {{TITLE}}
+
+Template: linear_types
+----------------------
+A resource that can be consumed at most once. The model treats
+linearity via an explicit `consumed : Bool` flag rather than via
+Lean 4's experimental linear types (which are unstable as of v4.29.x).
+
+Trust property: once a `Token` has been consumed, its predicate
+`isValid` is permanently false. No operation in the model can flip
+`consumed` back to false. The Rust refinement (when written) must
+encode the same one-way transition — typically by making `consume`
+take ownership of the token (`fn consume(self) -> ConsumedToken`)
+so the Rust type system enforces what the Lean model proves.
+
+Fill in the TODOs below. Then run:
+  refine lean check {{CLAIM_ID}}
+
+Policy: no sorry, no admit, no axioms.
+-/
+
+namespace {{MODULE}}
+
+/-- A single-use token. The `consumed` flag tracks lifecycle. -/
+structure Token where
+  id       : Nat
+  consumed : Bool
+  deriving Repr, DecidableEq
+
+/-- `isValid` iff the token has not been consumed. -/
+def isValid (t : Token) : Prop := t.consumed = false
+
+/-- Decidability of `isValid` so the runtime can branch on it. -/
+instance (t : Token) : Decidable (isValid t) := by
+  simp [isValid]; exact inferInstance
+
+/-- Consume the token. The model produces a NEW token with the flag
+    flipped; in Rust this would typically be `fn consume(self) -> _`. -/
+def consume (t : Token) : Token :=
+  { t with consumed := true }
+
+/-! ## {{CLAIM_ID}} theorems -/
+
+/-- T1. A freshly-minted token is valid. -/
+theorem fresh_token_is_valid (id : Nat) :
+    isValid { id, consumed := false } := by
+  simp [isValid]
+
+/-- T2. **Main theorem.** Consuming a token makes it invalid. -/
+theorem consume_invalidates (t : Token) :
+    ¬ isValid (consume t) := by
+  simp [isValid, consume]
+
+/-- T3. `consume` always sets the flag — demonstrates the operation
+    semantics directly. -/
+theorem consume_sets_consumed (t : Token) :
+    (consume t).consumed = true := by
+  rfl
+
+end {{MODULE}}

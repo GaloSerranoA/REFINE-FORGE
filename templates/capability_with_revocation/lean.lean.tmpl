@@ -1,0 +1,66 @@
+/-
+{{CLAIM_ID}}: {{TITLE}}
+
+Template: capability_with_revocation
+------------------------------------
+An extension of the standard `capability` template. A `Capability`
+is a set of rights PLUS a `revoked` flag. Once revoked, the
+capability authorizes nothing — regardless of which rights it held.
+
+Trust property: revocation is monotone. There is no `unrevoke`
+operation in the model; the Rust refinement must encode the same
+one-way transition (typically: `revoke` consumes the capability
+or moves it to a different type that has no `authorizes` method).
+
+Difference from the plain `capability` template:
+  - `authorizes` now requires BOTH right-membership AND
+    `revoked = false`.
+  - New `revoke` operation flips the flag.
+  - Theorems prove "revoke is idempotent" and "revoked authorizes
+    nothing" alongside the standard subsumption properties.
+
+Fill in the TODOs below. Then run:
+  refine lean check {{CLAIM_ID}}
+
+Policy: no sorry, no admit, no axioms.
+-/
+
+namespace {{MODULE}}
+
+/-- A single right. -/
+abbrev Right := String
+
+/-- A capability is a set of rights + a revocation flag. -/
+structure Capability where
+  rights  : List Right
+  revoked : Bool
+  deriving Repr
+
+/-- `authorizes c r` iff `c` is unrevoked AND holds `r`. -/
+def authorizes (c : Capability) (r : Right) : Prop :=
+  c.revoked = false ∧ r ∈ c.rights
+
+/-- Revoke the capability. Monotone — there is no inverse. -/
+def revoke (c : Capability) : Capability :=
+  { c with revoked := true }
+
+/-! ## {{CLAIM_ID}} theorems -/
+
+/-- T1. **Main theorem.** A revoked capability authorizes nothing. -/
+theorem revoked_authorizes_nothing (c : Capability) (r : Right) :
+    ¬ authorizes (revoke c) r := by
+  intro ⟨h1, _⟩
+  simp [revoke] at h1
+
+/-- T2. A fresh (unrevoked) capability that holds `r` authorizes `r`. -/
+theorem fresh_capability_authorizes_held_right
+    (rights : List Right) (r : Right) (h : r ∈ rights) :
+    authorizes { rights, revoked := false } r := by
+  exact ⟨rfl, h⟩
+
+/-- T3. Revocation is idempotent. -/
+theorem revoke_is_idempotent (c : Capability) :
+    revoke (revoke c) = revoke c := by
+  simp [revoke]
+
+end {{MODULE}}

@@ -106,6 +106,47 @@ its YAML — but doing so should be a deliberate, reviewed decision.
   (Lean's kernel is small and has been extensively reviewed; this
   is the standard trust assumption.)
 
+## Bundled Lake dependencies (Mathlib, Std, etc.)
+
+A claim that imports Mathlib (or any other Lake-managed package)
+has an additional trust link: the bundle's verifier-side
+`lake build` will resolve those packages from `lake-manifest.json`,
+which pins each dependency to a specific git commit.
+
+`refine bundle export` includes `lake-manifest.json` (when present)
+alongside `lakefile.toml` and `lean-toolchain`. This means:
+
+1. **A bundle for a Mathlib-using claim is reproducible** in the
+   sense that two builds against the same `lake-manifest.json` see
+   the same Mathlib commit. The hash of the Mathlib source is NOT
+   in the manifest (Mathlib is fetched by the verifier from
+   `github.com/leanprover-community/mathlib4`), so the trust chain
+   extends to GitHub's content-addressed storage of that commit.
+
+2. **A bundle does NOT include the Mathlib source itself.** Mathlib
+   is tens of MB; bundling it would defeat the "small, auditable
+   archive" property. The verifier MUST run `lake update` (or
+   `lake build`, which triggers a fetch) before re-checking, and
+   MUST trust that the pinned commit in `lake-manifest.json`
+   resolves to the same Mathlib bytes today as at bundle-export time.
+
+3. **Mitigations available to a paranoid verifier:**
+   - Pre-mirror Mathlib at the pinned commit to a local cache; run
+     `lake build` offline.
+   - Compare the SHA-256 of the resolved Mathlib `.git/objects`
+     against an out-of-band trusted record.
+   - For air-gapped review: build a Mathlib `lake` package
+     locally, vendor it into the bundle out-of-band.
+
+4. **A bundle that has NO `lake-manifest.json`** (i.e. the project
+   uses zero Lake dependencies, as our EXAMPLE-* claims do) carries
+   no Mathlib-trust dependency; the bundle's manifest hash chain is
+   complete for its claim.
+
+Sibling `<PROJECT>-DEPS-*` claims may be written to formalise the
+trust in specific Lake packages; that is out of scope for this
+framework today.
+
 ## Failure modes to advertise honestly
 
 If a customer asks "is X proven?" the answer template is:

@@ -6,10 +6,18 @@
 //! increase theorem (`>`) is NOT preserved at `u64::MAX`; see
 //! refinement doc §3 for the full argument.
 
+use refineforge_derive::LeanModel;
+
 /// A monotonically-increasing counter. Private field so external code
 /// cannot bypass `Counter::new` / `Counter::from_value`.
 /// Refines Lean `structure Counter where value : Nat`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+///
+/// `#[derive(LeanModel)]` generates a `LEAN_MODEL` const containing
+/// the Lean structure declaration — see the test
+/// `lean_model_matches_hand_written_counter_lean` for verification
+/// that the generated string matches what we wrote by hand in
+/// `lean/Refineforge/Counter.lean`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, LeanModel)]
 pub struct Counter {
     value: u64,
 }

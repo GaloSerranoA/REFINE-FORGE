@@ -10,5 +10,6 @@ name = "example_counter"
 path = "src/lib.rs"
 
 [dependencies]
+refineforge-derive = { path = "../refineforge-derive" }
 
 [dev-dependencies]

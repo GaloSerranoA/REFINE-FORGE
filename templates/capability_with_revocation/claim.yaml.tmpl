@@ -1,0 +1,50 @@
+claim_id: {{CLAIM_ID}}
+title: "{{TITLE}}"
+description: |
+  TODO: describe the trust property in plain English.
+
+  Scaffolded from `capability_with_revocation` template. The Lean
+  side proves that a revoked capability authorizes nothing —
+  regardless of which rights it held before revocation. The Rust
+  refinement should encode one-way revocation at the type level
+  (e.g. `fn revoke(self) -> RevokedCapability`) so the type system
+  enforces what the Lean model proves.
+
+scope: model-only
+status: drafted
+authors:
+  - TODO
+
+rust_source:
+  - path: TODO
+    types:
+      - Capability
+    functions:
+      - authorizes
+      - revoke
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: {{MODULE}}
+  file: {{LEAN_FILE}}
+  theorems:
+    - revoked_authorizes_nothing
+    - fresh_capability_authorizes_held_right
+    - revoke_is_idempotent
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: |
+    The refinement doc for this claim MUST address:
+      - How does the Rust API prevent un-revocation? (Type system
+        boundary? Runtime check?)
+      - Are revocations persistent across process restarts? If yes,
+        cite the persistence story; if no, document the scope.
+      - What happens to in-flight operations holding a reference to
+        the capability at the moment of revocation? (Race window.)

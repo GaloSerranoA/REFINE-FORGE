@@ -1,0 +1,46 @@
+claim_id: {{CLAIM_ID}}
+title: "{{TITLE}}"
+description: |
+  TODO: describe the trust property in plain English.
+
+  Scaffolded from `linear_types` template. The Lean side models a
+  single-use token: once consumed, the `isValid` predicate is
+  permanently false. The Rust refinement should encode one-way
+  consumption at the type level (e.g. `fn consume(self) -> Consumed`),
+  so that the Rust type system enforces what the Lean model proves.
+
+scope: model-only
+status: drafted
+authors:
+  - TODO
+
+rust_source:
+  - path: TODO
+    types:
+      - Token
+    functions:
+      - consume
+      - isValid
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: {{MODULE}}
+  file: {{LEAN_FILE}}
+  theorems:
+    - fresh_token_is_valid
+    - consume_invalidates
+    - consume_sets_consumed
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: |
+    When you fill in `rust_source.path`, ensure the Rust `consume`
+    signature is `fn consume(self) -> ConsumedToken` (takes
+    ownership). A `&mut self` signature would NOT refine the Lean
+    model — the model says the old token is *gone*, not mutated.

@@ -60,6 +60,19 @@ pub fn export(root: &Path, claim_id: &str, out: Option<PathBuf>) -> Result<()> {
     // Walk lean/ for every source file lake needs to build the library.
     // Lake build will import the whole library root, so we cannot ship
     // only the claim's own .lean file.
+    //
+    // Files included:
+    //   *.lean              — the proofs themselves
+    //   *.toml              — lakefile.toml (project layout)
+    //   lean-toolchain      — pinned Lean version (no extension)
+    //   lake-manifest.json  — package-deps pin (Mathlib commit etc.)
+    //
+    // The lake-manifest is the load-bearing addition for Mathlib-
+    // using claims: without it, a verifier doing `lake build` against
+    // the bundled sources would fetch the LATEST Mathlib rather than
+    // the one the proofs were checked against. With it, lake resolves
+    // to the exact commit pinned at bundle-export time. See
+    // `docs/methodology.md` §3 on the trust model around bundled deps.
     let mut sources: Vec<PathBuf> = vec![claim_path.clone()];
     let lean_dir = root.join("lean");
     for entry in walkdir::WalkDir::new(&lean_dir) {
@@ -68,11 +81,21 @@ pub fn export(root: &Path, claim_id: &str, out: Option<PathBuf>) -> Result<()> {
             continue;
         }
         let p = entry.path();
-        let keep = matches!(
+        // Skip the `.lake/` build cache — re-derivable; would bloat
+        // bundles by hundreds of MB on Mathlib-using projects.
+        if p.components().any(|c| c.as_os_str() == ".lake") {
+            continue;
+        }
+        let ext_keep = matches!(
             p.extension().and_then(|s| s.to_str()),
             Some("lean") | Some("toml")
-        ) || p.file_name().map(|n| n == "lean-toolchain").unwrap_or(false);
-        if keep {
+        );
+        let name_keep = p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n == "lean-toolchain" || n == "lake-manifest.json")
+            .unwrap_or(false);
+        if ext_keep || name_keep {
             sources.push(p.to_path_buf());
         }
     }

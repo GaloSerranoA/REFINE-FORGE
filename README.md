@@ -97,6 +97,8 @@ refineforge/
 ├── templates/                 # scaffolding for new claims
 │   ├── append_chain/          # append-only linked chain with hash check
 │   ├── capability/            # capability-based authorization
+│   ├── capability_with_revocation/ # capability + monotone revocation
+│   ├── linear_types/          # single-use token (consume-once)
 │   └── state_machine/         # state-machine transitions
 ├── artifacts/                 # exported verification bundles
 ├── docs/

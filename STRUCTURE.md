@@ -30,7 +30,8 @@ refineforge/
 │   ├── refineforge-cli/        # Section 1: the `refine` binary + driver
 │   ├── refineforge-strategies/ # Section 2: pluggable strategies (+ real HTTP transport)
 │   ├── refineforge-eval/       # Section 2: `refine-eval` benchmark harness
-│   └── example-counter/        # EXAMPLE-002 tutorial impl
+│   ├── refineforge-derive/     # Section 1: #[derive(LeanModel)] proc-macro
+│   └── example-counter/        # EXAMPLE-002 tutorial impl (uses LeanModel)
 ├── eval/
 │   ├── corpus/                 # broken-proof entries + ground truth
 │   └── runs/                   # refine-eval JSON outputs (gitignored)
@@ -115,6 +116,24 @@ The cross-section API that prevents `refineforge-cli` and
 `RepairStrategy` trait, `Patch`, `Diagnostic`, `Severity`, `Range`,
 `Position`, `MockStrategy`, and the LSP conversions. Owned by
 Section 1 because changing this surface affects every consumer.
+
+### `crates/refineforge-derive/` — `#[derive(LeanModel)]` proc-macro (Section 1)
+
+Single proc-macro: `LeanModel` derive that generates a `pub const
+LEAN_MODEL: &'static str` containing the Lean structure declaration
+equivalent to the Rust struct. Type mapping table in the crate's
+module-level docs.
+
+Supported field types: `u8/u16/u32/u64/usize` → `Nat`; `i8/i16/i32/i64/isize`
+→ `Int`; `bool` → `Bool`; `String`/`&str` → `String`; `[u8; N]` →
+`ByteArray`; `Vec<T>` → `List T`. Unsupported (generics, lifetimes,
+nested structs, tuple/unit-variant enums) yield a `syn::Error`
+pointing at the offending field — normal compile error with
+file:line. Demo: `example-counter::Counter` has `LeanModel` derived
+and the test
+[`lean_model_matches_hand_written_counter_lean`](crates/example-counter/tests/counter.rs)
+pins the generated string against the hand-written
+`lean/Refineforge/Counter.lean`.
 
 ### `crates/refineforge-strategies/` — concrete strategies (Section 2)
 
