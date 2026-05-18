@@ -10,6 +10,124 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Section 2 phase 1.5: training-experiment orchestration (no actual training)
+
+The "training infrastructure scaffold" the user asked for. The
+six day-to-day duties listed in the ML-engineer description are
+now SUPPORTED as code paths in `crates/refineforge-trainer` —
+EXERCISED with stub trainer scripts in tests; never run against a
+real GPU or real model in this commit (which would require a
+multi-month engagement, not a session).
+
+- **New workspace crate `crates/refineforge-trainer`** with the
+  `refine-train` binary. Modules:
+  - `experiment` — YAML schema (`id`, `base_model`,
+    `dataset`, `backend{axolotl,hf_trainer,custom}`,
+    `hyperparameters`, `checkpoint{dir,save_steps,keep_last}`,
+    `monitoring{log_file,progress_format,metrics_to_track}`,
+    `retry{max_attempts,backoff_seconds,resume_from_checkpoint}`).
+    Validates id format + backend kind + custom-requires-command
+    at load time.
+  - `runner` — spawns the backend subprocess, captures
+    stdout+stderr to `train.log`, feeds stdout lines to the
+    progress parser, writes parsed records to `progress.jsonl`.
+    Template substitution: `{run_dir}`, `{checkpoint_dir}`,
+    `{dataset_path}`, `{resume_from}`.
+  - `progress` — three parsers: `huggingface` (parses
+    HF Trainer's dict-printed lines `{'loss': 0.4, ...}`),
+    `axolotl` (delegates to HF parser; future-specialised),
+    `generic` (regex `key=value`). Factory `parser_for(name)`.
+  - `checkpoint` — scans for `step-N` / `checkpoint-N`
+    directories; sorted by step descending; `latest()` for resume;
+    `prune(dir, keep_last)` for cleanup.
+  - `sweep` — `cartesian` (full grid) and `random:N`
+    (deterministic-seeded Fisher-Yates sample) strategies.
+    Generates per-run experiment configs with `{sweep_id}/run-NNNN`
+    ids.
+  - `failure` — classifies failures by scanning log tail:
+    `OutOfMemory` (CUDA OOM / "out of memory" / "oom"),
+    `Interrupted` (SIGINT / KeyboardInterrupt / exit 130),
+    `Network` (SSLError / connection refused / DNS / timeout),
+    `BackendError` (any traceback / "error:"), `Unknown`.
+    `decide_action` picks: `ResumeFromCheckpoint`,
+    `RetryFromScratch`, `Abort` (e.g. OOM with no checkpoint —
+    retrying won't help), `Done`. Appends one
+    `FailureRecord` to `failures.jsonl` per attempt.
+  - `report` — final `report.json` with experiment config,
+    per-metric summary stats (samples, first, last, min, max,
+    mean), checkpoint manifest (step + path + size_bytes),
+    failure timeline, attempt count.
+
+- **CLI**: `refine-train run <exp.yaml> [--dry-run]`,
+  `sweep <sweep.yaml> [--fail-fast]`,
+  `monitor <run_dir> [--tail N] [--no-follow]`,
+  `report <run_dir>`, `checkpoints <run_dir>`.
+  `--dry-run` is the recommended first invocation — prints the
+  resolved argv + run-dir without burning compute.
+
+- **`training/` top-level** with:
+  - `README.md` — usage walkthrough, run-directory layout,
+    explicit "what this does NOT do" honesty section,
+    cost-discipline reminder ("always `--dry-run` first").
+  - `configs/example-qwen-1.5b.yaml` — template experiment
+    targeting Qwen2.5-Coder-1.5B with LoRA; hyperparameters are
+    reasonable starting points, NOT measured optima.
+  - `configs/example-sweep.yaml` — 3×3 grid over learning_rate
+    × batch_size.
+  - `scripts/stub-trainer.sh` (POSIX) and `.ps1` (PowerShell) —
+    emit HF-style progress + dummy checkpoints; `--fail-at STEP`
+    flag for failure-recovery testing.
+  - `data/` — empty; populating it is the multi-week mathlib
+    mutation pipeline.
+  - `runs/.gitkeep` — runtime output dir (contents gitignored).
+
+- **Workspace** now has 7 members (was 6); workspace-tests
+  jumped 57→131 (35 unique trainer-crate unit tests, counted
+  twice because they appear in both the lib and bin targets,
+  plus the 2 POSIX-only end-to-end tests that compile but only
+  execute on unix).
+
+### Mapping to the six day-to-day duties
+
+| Duty (from user's spec) | Where it lives |
+|---|---|
+| Manages training infrastructure (cloud GPUs / local cluster) | The backend subprocess does. `refine-train` shells out to whatever's on PATH. |
+| Runs training experiments | `refine-train run <exp.yaml>` |
+| Tunes hyperparameters | `refine-train sweep <sweep.yaml>` (cartesian + random:N) |
+| Monitors training progress | `refine-train monitor <run_dir>` (tail + follow) |
+| Handles failures and recovery | `failure.rs`: classify + retry-with-backoff + resume-from-checkpoint |
+| Produces training reports | `report.rs`: `report.json` with metric summary + checkpoints + failure timeline |
+
+### Honesty disclosures (load-bearing)
+
+- **No model was trained by this commit.** The 6 duties are
+  *supported as code paths*; *exercised* only against the stub
+  trainer scripts in unit + e2e tests. A real fine-tune run
+  requires GPU access, ANTHROPIC_API_KEY-equivalent for the
+  HuggingFace Hub (or local model weights), and an ML engineer
+  to write the actual backend config file (e.g. axolotl YAML).
+- **The mathlib mutation pipeline that produces training data
+  is NOT included** in this commit. `training/data/` is empty.
+  That pipeline is multi-week work documented in
+  `docs/repair-evaluation.md` §9 as the gating step.
+- **`example-qwen-1.5b.yaml` hyperparameters are reasonable
+  starting points, NOT measured optima.** Anyone using them
+  should do their own LR-range-finder pass first.
+- **No distributed-training coordination.** Use
+  `accelerate launch ...` or `torchrun ...` in your backend
+  `command` for that.
+- **No GPU resource management.** Whatever your backend uses,
+  the scaffold doesn't interfere.
+- **End-to-end tests are POSIX-only** (`#![cfg(unix)]`). The
+  stub trainer is a bash script. The PowerShell variant exists
+  in `training/scripts/stub-trainer.ps1` for Windows users to
+  test manually; a Windows-runner CI job would cover it
+  automatically, but the in-test smoke is unix.
+- **Cost discipline:** a real training run on a 7B model can
+  burn $50-500/attempt. `--dry-run` is the safety. The CHANGELOG
+  for the FIRST real training run will document the actual
+  spend.
+
 ### Highlights (read first)
 
 Everything below in `[Unreleased]` accumulated across a single

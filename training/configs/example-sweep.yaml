@@ -1,0 +1,23 @@
+# Example sweep — sweep learning rate × batch size on the
+# example-qwen-1.5b base experiment. 3×3 = 9 runs.
+#
+# To execute:
+#   refine-train sweep training/configs/example-sweep.yaml
+#
+# Each generated run gets a unique id of the form
+#   2026-05-18-qwen-1.5b-lr-bs/run-0001  ... /run-0009
+
+id: 2026-05-18-qwen-1.5b-lr-bs
+
+description: |
+  Sweep learning rate × per-device batch size on the baseline
+  Qwen-1.5b LoRA recipe. Cartesian product = 9 experiments.
+
+base_experiment: example-qwen-1.5b.yaml
+
+grid:
+  hyperparameters.learning_rate: [0.0001, 0.0002, 0.0005]
+  hyperparameters.batch_size: [4, 8, 16]
+
+strategy: cartesian
+# Alternative: `random:5` would sample 5 from the 9-cell grid.

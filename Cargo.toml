@@ -5,6 +5,7 @@ members = [
     "crates/refineforge-strategies",
     "crates/refineforge-eval",
     "crates/refineforge-derive",
+    "crates/refineforge-trainer",
     "crates/example-counter",
 ]
 resolver = "2"

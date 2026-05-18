@@ -30,8 +30,14 @@ refineforge/
 │   ├── refineforge-cli/        # Section 1: the `refine` binary + driver
 │   ├── refineforge-strategies/ # Section 2: pluggable strategies (+ real HTTP transport)
 │   ├── refineforge-eval/       # Section 2: `refine-eval` benchmark harness
+│   ├── refineforge-trainer/    # Section 2: `refine-train` orchestration CLI
 │   ├── refineforge-derive/     # Section 1: #[derive(LeanModel)] proc-macro
 │   └── example-counter/        # EXAMPLE-002 tutorial impl (uses LeanModel)
+├── training/
+│   ├── configs/                # example experiment + sweep YAMLs
+│   ├── scripts/                # stub-trainer.sh/.ps1 for tests
+│   ├── data/                   # training datasets (empty)
+│   └── runs/                   # refine-train per-experiment runs (gitignored)
 ├── eval/
 │   ├── corpus/                 # broken-proof entries + ground truth
 │   └── runs/                   # refine-eval JSON outputs (gitignored)
@@ -157,6 +163,32 @@ Plugin implementations of `RepairStrategy`. Ships:
 18 unit tests across the prompt-construction, response-parsing,
 and transport layers (in-process `tiny_http` stub server for the
 retry / header / error-mapping tests).
+
+### `crates/refineforge-trainer/` — training orchestration (Section 2)
+
+Binary `refine-train`. Wraps any training backend (axolotl,
+HuggingFace Trainer, custom script) with run tracking, checkpoint
+resume, retry-with-backoff failure recovery, and JSON training
+reports. **Does NOT perform training itself** — the backend does.
+
+Subcommands: `run <exp.yaml>` (+ `--dry-run`), `sweep <sweep.yaml>`
+(cartesian or random:N), `monitor <run_dir>` (tail
+`progress.jsonl`), `report <run_dir>` (build/refresh `report.json`),
+`checkpoints <run_dir>` (list).
+
+Modules: `experiment` (YAML schema), `runner` (subprocess +
+log capture + per-line progress parsing), `progress` (HF /
+axolotl / generic parsers), `checkpoint` (find latest / prune
+old), `sweep` (cartesian + deterministic random sample),
+`failure` (OOM / Interrupt / Network / BackendError / Unknown
+classifier + recovery action chooser), `report` (final JSON
+with metric summary stats + checkpoint manifest + failure
+timeline).
+
+35 unit tests + 2 POSIX-only end-to-end tests using a stub
+trainer script. Stub trainer lives in
+[`training/scripts/stub-trainer.sh`](training/scripts/stub-trainer.sh)
+(POSIX) and `.ps1` (PowerShell).
 
 ### `crates/refineforge-eval/` — evaluation harness (Section 2)
 

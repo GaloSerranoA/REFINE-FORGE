@@ -98,12 +98,13 @@ refineforge/
 ├── claims/                     # claim registry (YAML, one per claim)
 │   ├── example.yaml            # EXAMPLE-001
 │   └── example-counter.yaml    # EXAMPLE-002
-├── crates/                     # Rust workspace (6 members)
+├── crates/                     # Rust workspace (7 members)
 │   ├── refineforge-repair-api/ # stable trait + types (Section 1)
 │   ├── refineforge-cli/        # `refine` binary + driver (Section 1)
 │   ├── refineforge-derive/     # #[derive(LeanModel)] proc-macro (Section 1)
 │   ├── refineforge-strategies/ # AnthropicStrategy + ReqwestTransport (Section 2)
 │   ├── refineforge-eval/       # `refine-eval` benchmark harness (Section 2)
+│   ├── refineforge-trainer/    # `refine-train` orchestration CLI (Section 2)
 │   └── example-counter/        # EXAMPLE-002 Rust side
 ├── templates/                  # scaffolding for `refine new`
 │   ├── append_chain/           # append-only linked chain with hash check
@@ -114,6 +115,11 @@ refineforge/
 ├── eval/
 │   ├── corpus/                 # broken-proof corpus for refine-eval
 │   └── runs/                   # refine-eval JSON outputs (gitignored)
+├── training/                   # Section 2: training experiments
+│   ├── configs/                # example experiment + sweep YAMLs
+│   ├── scripts/                # stub-trainer for tests; backend shims
+│   ├── data/                   # training datasets (empty; mathlib mut. pipeline pending)
+│   └── runs/                   # refine-train per-experiment output (gitignored)
 ├── artifacts/                  # exported verification bundles
 ├── containers/
 │   └── Dockerfile.verifier     # elan + Lean preinstalled for reviewers
@@ -180,6 +186,10 @@ cargo build --release
 | `refine bundle verify <bundle-dir> --verify-signature` | Hashes + Sigstore signature (via cosign). See [SECURITY.md](SECURITY.md) |
 | `refine repair <id>`                   | Bounded LLM repair loop against Lean's LSP server. Strategies: `mock` (declines all), `anthropic-mock` (canned), `anthropic` (real HTTP, needs `ANTHROPIC_API_KEY`). See [`docs/llm-repair-design.md`](docs/llm-repair-design.md) |
 | `refine-eval --corpus … --strategy …`  | Drive `refine repair` against a JSONL corpus; emit JSON report. See [`docs/repair-evaluation.md`](docs/repair-evaluation.md) |
+| `refine-train run <exp.yaml>`          | Run one training experiment (axolotl / HF Trainer / custom backend). See [`training/README.md`](training/README.md). Always start with `--dry-run`. |
+| `refine-train sweep <sweep.yaml>`      | Grid or random hyperparameter sweep |
+| `refine-train monitor <run_dir>`       | Tail `progress.jsonl` and show latest metrics |
+| `refine-train report <run_dir>`        | Build / refresh `report.json` for a run |
 | `refine templates`                     | List scaffolding templates                                              |
 | `refine new --template <t> --module <M> <ID>` | Scaffold a new claim from a template                             |
 
@@ -220,6 +230,7 @@ Where each thing currently lives:
 | LLM repair loop (LSP client)               | ✅ shipped: `mock`, `anthropic-mock`, **`anthropic`** (real HTTP with retry + prompt caching) |
 | `refineforge-strategies` workspace member  | ✅ `AnthropicStrategy` + `ReqwestTransport` (real HTTP, retry-with-backoff, error mapping; 18 unit tests) |
 | `refineforge-eval` (`refine-eval` binary)  | ✅ corpus-driven evaluation harness with JSON output; ships a 3-entry tutorial corpus under [`eval/corpus/`](eval/corpus) |
+| `refineforge-trainer` (`refine-train` binary) | ✅ training-experiment orchestration (axolotl / HF Trainer / custom); run tracking, checkpoint resume, failure recovery, JSON reports. Does NOT perform training itself — backend does. See [`training/README.md`](training/README.md) |
 | Verifier Docker image                      | ✅ `containers/Dockerfile.verifier` — multi-stage build, elan + Lean v4.29.1 preinstalled |
 | Multi-arch CI matrix                       | ✅ Ubuntu + macOS + Windows with elan / lake / cargo caches |
 | Sigstore signing in CI + `--verify-signature` | ✅ keyless cosign sign-blob on main + tags; verifier-side `refine bundle verify --verify-signature` (cosign subprocess) |

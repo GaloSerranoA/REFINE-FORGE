@@ -1,0 +1,67 @@
+# Example experiment — fine-tune Qwen2.5-Coder-1.5B with LoRA on a
+# (hypothetical) mathlib-mutation corpus.
+#
+# THIS IS A TEMPLATE — the dataset path points at a file that doesn't
+# exist yet (the Mathlib mutation pipeline is Section 2 phase 1 item
+# 3, multi-week work). The hyperparameters are reasonable starting
+# points for a small-LoRA proof-repair experiment, not measured
+# optima.
+#
+# To run for real you also need axolotl (or your chosen backend)
+# installed and a real config file under the path below.
+
+id: 2026-05-18-qwen-1.5b-mathlib-v1
+
+description: |
+  Baseline LoRA fine-tune of Qwen2.5-Coder-1.5B on the mathlib
+  mutation corpus (broken → fixed Lean 4 proofs). Goal: beat the
+  AnthropicStrategy 67 % baseline measured in eval/runs/anthropic-v4-after-bugfix.json
+  on the held-out 10 % of the mathlib-5000 corpus.
+
+base_model:
+  name: "Qwen/Qwen2.5-Coder-1.5B"
+  source: huggingface
+  # revision: optional commit-pin for reproducibility:
+  # revision: 8a3c9f...
+
+dataset:
+  # Replace when the mathlib mutation pipeline lands:
+  path: training/data/mathlib-mutations-v1.jsonl
+  format: jsonl
+  fields:
+    input: broken
+    output: fixed
+
+backend:
+  kind: axolotl
+  # Real run needs this file to exist with axolotl's LoRA recipe:
+  config_file: training/configs/axolotl-qwen-1.5b-lora.yaml
+
+hyperparameters:
+  learning_rate: 0.0002
+  batch_size: 8
+  gradient_accumulation: 4
+  num_epochs: 3
+  warmup_steps: 100
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+
+checkpoint:
+  dir: checkpoints
+  save_steps: 200
+  keep_last: 3
+
+monitoring:
+  log_file: train.log
+  progress_format: huggingface
+  metrics_to_track:
+    - loss
+    - eval_loss
+    - learning_rate
+    - grad_norm
+
+retry:
+  max_attempts: 3
+  backoff_seconds: 60
+  resume_from_checkpoint: true
