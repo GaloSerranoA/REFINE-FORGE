@@ -15,3 +15,6 @@ lean/build/
 
 # generated artifacts are committed selectively; ignore by default
 /artifacts/*/manifest.json.tmp
+
+# eval run outputs — produced by refine-eval, not committed
+/eval/runs/

@@ -233,11 +233,13 @@ pub fn run_cli(
     let strategy: Box<dyn RepairStrategy> = match strategy_name {
         "mock" => Box::new(MockStrategy),
         // Exercises the AnthropicStrategy prompt + parsing code path
-        // with a canned-decline transport. Useful for end-to-end
-        // smoke tests without an API key.
+        // with a canned-decline transport. No API key needed.
         "anthropic-mock" => refineforge_strategies::anthropic_mock_strategy(),
+        // Real Anthropic API call via ReqwestTransport with retry +
+        // prompt caching. Needs ANTHROPIC_API_KEY in the environment.
+        "anthropic" => refineforge_strategies::anthropic_strategy_from_env()?,
         other => anyhow::bail!(
-            "unknown strategy '{other}'; available: mock, anthropic-mock (real LLM strategies — see docs/llm-repair-design.md + crates/refineforge-strategies/README.md)"
+            "unknown strategy '{other}'; available: mock, anthropic-mock, anthropic (real, needs ANTHROPIC_API_KEY). See crates/refineforge-strategies/README.md."
         ),
     };
     let config = RepairConfig {

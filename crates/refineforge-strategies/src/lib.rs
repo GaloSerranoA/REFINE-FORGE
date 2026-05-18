@@ -7,23 +7,50 @@
 //!
 //! # What ships today
 //!
-//! - [`anthropic::AnthropicStrategy`]: real trait wiring, real
-//!   prompt construction, real response parsing. The HTTP layer is
-//!   abstracted behind the [`anthropic::AnthropicTransport`] trait
-//!   and a [`anthropic::MockTransport`] is provided. NO real HTTP
-//!   client is included in dependencies; wiring a real transport
-//!   (e.g. `reqwest`) is a one-file change documented in
-//!   `crates/refineforge-strategies/README.md`.
+//! - [`anthropic::AnthropicStrategy`]: real `RepairStrategy` impl
+//!   over an abstract [`anthropic::AnthropicTransport`]. Real
+//!   prompt construction (with Anthropic prompt caching markers)
+//!   and real response parsing.
+//! - [`anthropic::MockTransport`]: canned-response transport for
+//!   the `anthropic-mock` CLI strategy + unit tests.
+//! - [`reqwest_transport::ReqwestTransport`]: **real HTTP transport**
+//!   targeting `https://api.anthropic.com/v1/messages`. Blocking
+//!   `reqwest` client (`rustls-tls`); retry with exponential backoff
+//!   for 429 and 5xx; distinct error reporting for 4xx
+//!   (auth / bad request / model not found / payload too large).
 //!
 //! # What's intentionally NOT here
 //!
-//! - Real HTTP client. The skeleton is honest about being a skeleton.
-//! - Local-LLM strategy (planned: Section 2 phase 2).
-//! - Fine-tuned strategy (planned: Section 2 phase 2).
+//! - Local-LLM strategy (planned: Section 2 phase 2). The trait
+//!   surface and the retry/error pattern in `reqwest_transport`
+//!   are reusable as a starting point.
+//! - Fine-tuned strategy (planned: Section 2 phase 3). Requires a
+//!   trained model artifact — a research commitment, not a
+//!   single-session engineering task.
 
 pub mod anthropic;
+pub mod reqwest_transport;
 
 pub use anthropic::{
-    AnthropicStrategy, AnthropicTransport, MockTransport,
-    anthropic_mock_strategy,
+    anthropic_mock_strategy, AnthropicStrategy, AnthropicTransport, MockTransport,
 };
+pub use reqwest_transport::ReqwestTransport;
+
+// ─── Convenience factories used by the refine CLI ───────────────────────
+
+use anyhow::{anyhow, Result};
+use refineforge_repair_api::RepairStrategy;
+
+/// Build the real Anthropic strategy from the environment.
+/// Used by the `refine repair --strategy anthropic` dispatch.
+///
+/// Reads `ANTHROPIC_API_KEY` (required) and optionally
+/// `ANTHROPIC_MODEL` (default: `claude-opus-4-7`).
+pub fn anthropic_strategy_from_env() -> Result<Box<dyn RepairStrategy>> {
+    let key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| {
+        anyhow!("ANTHROPIC_API_KEY env var is not set — refine repair --strategy anthropic needs it")
+    })?;
+    let model = std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-opus-4-7".into());
+    let transport = ReqwestTransport::new(key.clone());
+    Ok(Box::new(AnthropicStrategy::new(key, model, transport)))
+}

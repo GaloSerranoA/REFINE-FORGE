@@ -10,6 +10,98 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Section 2 deep: real LLM repair + evaluation harness
+
+This is the "go deep on one section" pass. Section 2 (ML
+Training Engineer) moves from skeleton-only to a working repair
+loop + a measurement framework.
+
+- **Real `AnthropicStrategy` with `ReqwestTransport`** —
+  `crates/refineforge-strategies/src/reqwest_transport.rs`.
+  Blocking `reqwest` client (`rustls-tls`, no OpenSSL). Real POST
+  to `https://api.anthropic.com/v1/messages`. Retry-with-
+  exponential-backoff (1s, 2s, 4s; default 3 retries) for HTTP
+  429 (rate limit) and 5xx (server error); honest distinct error
+  reporting for 4xx (auth → don't retry + tell user to check
+  `ANTHROPIC_API_KEY`; 400 bad request → don't retry; 404 →
+  include model name in error; 413 payload-too-large → don't retry).
+  Configurable base URL for tests.
+- **Prompt caching** — `anthropic.rs` wire types refactored from
+  single-string content to content-block arrays. System prompt
+  and file-content block are marked
+  `cache_control: { type: "ephemeral" }`; the diagnostic block
+  (changes per iteration) is not. Sends
+  `anthropic-beta: prompt-caching-2024-07-31`. Across iterations
+  within a session this should cut cost by ~90 %.
+- **CLI dispatch `--strategy anthropic`** — wired through
+  `anthropic_strategy_from_env()`. Reads `ANTHROPIC_API_KEY`
+  (required) and optional `ANTHROPIC_MODEL` (default
+  `claude-opus-4-7`).
+- **New crate `refineforge-eval` with `refine-eval` binary** —
+  JSONL corpus loader, runner that drives `refineforge_cli::repair`
+  per entry, metrics aggregator (repair rate, median + p95
+  latency, per-outcome counts), JSON report writer with run
+  metadata.
+- **3-entry tutorial corpus** at `eval/corpus/example.jsonl`
+  exercising three mutations of EXAMPLE-002 (Counter):
+  - `counter-swap-lemma` — wrong lemma in `simp` call
+  - `counter-wrong-tactic` — `rfl` where `simp [incr]` is needed
+  - `counter-rename-field` — `value` → `val` in the struct but
+    callers not updated (cross-cutting break)
+  All three confirmed broken by `refine lean check` and surfaced
+  by `refine-eval` as `NoProposal` under the mock strategy.
+- **Runner pre-warms the temp project's `.lake/` cache** by
+  invoking `lake build` on the unmodified source before swapping
+  in the broken file. Without this, cold lake elaboration exceeds
+  the LSP diagnostic timeout (20s) and breaks register as false
+  `AlreadyClean`. Fix discovered during smoke testing; honesty
+  win — without it we would have shipped a harness that lies.
+
+### Tests
+
+- Workspace test count: **47/47 pass** (was 32/32 before this
+  pass; +15 = 8 reqwest_transport (success / retry-429 / retry-5xx /
+  exhaustion / 401-no-retry / 400-no-retry / 404-includes-model /
+  headers-correct) + 3 new anthropic cache-control behaviour tests
+  + 4 eval crate tests (1 corpus + 3 metrics)).
+- The transport tests use an in-process `tiny_http` stub server
+  with configurable per-attempt responses and `backoff_base_ms = 1`
+  so retry tests don't sleep.
+- Smoke-tested `refine-eval --corpus eval/corpus/example.jsonl
+  --strategy mock`: 3/3 entries report `NoProposal` (correct —
+  files are broken, mock declines), 0/3 fixed (correct — mock
+  never proposes). Latency 1.8 s per entry with pre-warm.
+
+### Honest disclosures
+
+- **The real `--strategy anthropic` path has NOT been exercised
+  against a live Anthropic API** in this session. I have no
+  `ANTHROPIC_API_KEY` to test with. The transport's HTTP framing,
+  retry semantics, header generation, error mapping, and JSON
+  parsing are all unit-tested against a local stub server — those
+  paths work. The Anthropic API contract (URL, headers, body
+  shape) follows the published `2023-06-01` spec + the
+  `prompt-caching-2024-07-31` beta header; first real call will
+  surface any mismatch.
+- **Prompt is a first draft.** Built from the diagnostic
+  message, severity, range, and full file content. No iteration
+  feedback ("the gate rejected my last patch because…") because
+  the trait surface is stateless. Smarter prompts are a future
+  enhancement requiring a richer trait.
+- **Eval corpus is tiny (3 entries).** This is the
+  smoke-test-tier corpus from `docs/repair-evaluation.md` §2.1.
+  Bootstrap CIs in `metrics.rs` are NOT implemented because they
+  would be meaningless at N=3. The Mathlib-mutation pipeline that
+  delivers N≥1000 is still Section 2 phase 1 item 3 — multi-week
+  work, not in this session.
+- **No fine-tuned model.** That's a 6+ month research commitment
+  (compute time, training runs, evaluation iterations). Section 2
+  phase 2/3 in the architecture's sequencing.
+- **Runner copies the whole project per entry.** With pre-warm
+  this is ~1.8 s per entry on the dev machine; with N=1000 entries
+  this is 30 min per eval run. Acceptable; a parallel runner is a
+  future optimisation.
+
 ### Added — Tier 3: structural scaffolding
 
 - **New workspace crate `refineforge-repair-api`** — the stable

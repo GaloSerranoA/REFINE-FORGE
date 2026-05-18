@@ -3,6 +3,7 @@ members = [
     "crates/refineforge-repair-api",
     "crates/refineforge-cli",
     "crates/refineforge-strategies",
+    "crates/refineforge-eval",
     "crates/example-counter",
 ]
 resolver = "2"

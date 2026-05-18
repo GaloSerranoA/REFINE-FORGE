@@ -1,15 +1,28 @@
-//! Anthropic strategy SKELETON.
+//! Anthropic strategy: turns Lean diagnostics into proposed patches
+//! via Anthropic's `/v1/messages` endpoint.
 //!
-//! Real:
-//! - The `RepairStrategy` trait impl.
-//! - Prompt construction (`build_request`).
-//! - Response parsing (`parse_response_into_patch`).
-//! - The transport trait (`AnthropicTransport`).
+//! Architecture:
 //!
-//! Mocked:
-//! - The HTTP transport itself. `MockTransport` returns a canned
-//!   string; no network is touched. Swap for a real `ReqwestTransport`
-//!   to make this useful (see crate README §"Wiring a real transport").
+//! ```
+//!  AnthropicStrategy<T>   ─uses─►   T: AnthropicTransport
+//!         │                                │
+//!         │ build_request                  │ send (HTTP)
+//!         │ parse_response_into_patch      │
+//!         ▼                                ▼
+//!   prompt + parsing                 MockTransport  (canned responses)
+//!   are PURE FUNCTIONS,           or ReqwestTransport (real HTTP, retry)
+//!   fully unit-tested
+//! ```
+//!
+//! The wire types (`MessagesRequest`, `Message`, `SystemBlock`,
+//! `UserBlock`, `CacheControl`) mirror Anthropic's API exactly so
+//! that swapping the transport requires zero changes to the
+//! request/response shape.
+//!
+//! Prompt caching: the system prompt and the file_content block are
+//! marked `cache_control: ephemeral`. Across iterations within a
+//! session, only the diagnostic block changes — saves ~90% of cost
+//! on long files.
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -19,29 +32,31 @@ use refineforge_repair_api::{Diagnostic, Patch, Position, Range, RepairStrategy}
 // ─── Transport ──────────────────────────────────────────────────────────
 
 /// Abstraction over the HTTP call to Anthropic's `/v1/messages`.
-/// The skeleton ships only `MockTransport`; a real implementation
-/// would use `reqwest` (async) or `ureq` (sync).
+/// Implementations: `MockTransport` (canned responses, ships in this
+/// crate) and `ReqwestTransport` (real HTTP, also in this crate).
 pub trait AnthropicTransport: Send + Sync {
     fn send(&self, request: &MessagesRequest) -> Result<MessagesResponse>;
 }
 
 /// Canned-response transport. The CLI's `anthropic-mock` strategy
-/// uses [`MockTransport::declines`] so it always returns `None` and
-/// the repair loop reports `NoProposal` — same observable behaviour
-/// as `mock`, but exercises the prompt / parsing / trait wiring.
+/// uses [`MockTransport::declines`] so it always returns `None`
+/// and the repair loop reports `NoProposal` — same observable
+/// behaviour as `mock`, but exercises the full prompt construction
+/// + response parsing pipeline (which the real transport then
+/// reuses unchanged).
 pub struct MockTransport {
     pub canned_text: String,
 }
 
 impl MockTransport {
-    /// A transport that returns an empty JSON object — parses to
-    /// `None`, so the strategy declines every proposal.
+    /// Returns an empty JSON object — parses to `None`, so the
+    /// strategy declines every proposal.
     pub fn declines() -> Self {
         Self { canned_text: "{}".into() }
     }
 
-    /// A transport that returns a specific JSON patch. Useful for
-    /// unit tests; not exposed via the CLI.
+    /// Returns the supplied JSON. Useful for unit tests; not exposed
+    /// via the CLI.
     pub fn returns(json_patch: impl Into<String>) -> Self {
         Self { canned_text: json_patch.into() }
     }
@@ -54,6 +69,8 @@ impl AnthropicTransport for MockTransport {
                 kind: "text".into(),
                 text: Some(self.canned_text.clone()),
             }],
+            stop_reason: Some("end_turn".into()),
+            usage: None,
         })
     }
 }
@@ -64,20 +81,51 @@ impl AnthropicTransport for MockTransport {
 pub struct MessagesRequest {
     pub model: String,
     pub max_tokens: u32,
-    pub messages: Vec<Message>,
+    /// System prompt as an array of blocks so we can mark them
+    /// `cache_control: ephemeral`. Single-block array is the common
+    /// case.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub system: Option<String>,
+    pub system: Option<Vec<SystemBlock>>,
+    pub messages: Vec<Message>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SystemBlock {
+    #[serde(rename = "type")]
+    pub kind: String, // always "text"
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<CacheControl>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Message {
-    pub role: String,
-    pub content: String,
+    pub role: String, // "user" or "assistant"
+    pub content: Vec<UserBlock>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UserBlock {
+    #[serde(rename = "type")]
+    pub kind: String, // always "text"
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<CacheControl>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheControl {
+    #[serde(rename = "type")]
+    pub kind: String, // "ephemeral"
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct MessagesResponse {
     pub content: Vec<ContentBlock>,
+    #[serde(default)]
+    pub stop_reason: Option<String>,
+    #[serde(default)]
+    pub usage: Option<Usage>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -87,41 +135,88 @@ pub struct ContentBlock {
     pub text: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct Usage {
+    #[serde(default)]
+    pub input_tokens: u32,
+    #[serde(default)]
+    pub output_tokens: u32,
+    #[serde(default)]
+    pub cache_creation_input_tokens: u32,
+    #[serde(default)]
+    pub cache_read_input_tokens: u32,
+}
+
 // ─── Strategy ───────────────────────────────────────────────────────────
 
 pub struct AnthropicStrategy<T: AnthropicTransport> {
     pub api_key: String,
     pub model: String,
     pub max_tokens: u32,
+    pub enable_caching: bool,
     transport: T,
 }
 
 impl<T: AnthropicTransport> AnthropicStrategy<T> {
+    /// Default constructor: caching enabled, max_tokens=4096.
     pub fn new(api_key: String, model: impl Into<String>, transport: T) -> Self {
         Self {
             api_key,
             model: model.into(),
             max_tokens: 4096,
+            enable_caching: true,
             transport,
         }
     }
 
-    fn build_request(&self, d: &Diagnostic, file: &str) -> MessagesRequest {
-        let user = format!(
-            "DIAGNOSTIC:\n  severity: {:?}\n  range: line {}, col {} -- line {}, col {}\n  message: {}\n\nFILE (lean):\n```lean\n{}\n```\n\nPropose ONE minimal patch as a single JSON object with keys: start_line, start_char, end_line, end_char, new_text, rationale. Do NOT use sorry/admit/axiom — the policy gate will reject those. Respond with ONLY the JSON object, no prose, no markdown fences.",
-            d.severity,
-            d.range.start.line, d.range.start.character,
-            d.range.end.line, d.range.end.character,
-            d.message,
-            file,
-        );
+    pub fn with_max_tokens(mut self, n: u32) -> Self {
+        self.max_tokens = n;
+        self
+    }
+
+    pub fn without_caching(mut self) -> Self {
+        self.enable_caching = false;
+        self
+    }
+
+    pub(crate) fn build_request(&self, d: &Diagnostic, file: &str) -> MessagesRequest {
+        let cache = if self.enable_caching {
+            Some(CacheControl { kind: "ephemeral".into() })
+        } else {
+            None
+        };
+        // System prompt is stable across iterations — cache it.
+        let system = vec![SystemBlock {
+            kind: "text".into(),
+            text: SYSTEM_PROMPT.to_string(),
+            cache_control: cache.clone(),
+        }];
+        // File content is stable across iterations within a repair
+        // session — cache it. Diagnostic is the only per-request
+        // payload.
+        let file_block = UserBlock {
+            kind: "text".into(),
+            text: format!("FILE (lean):\n```lean\n{}\n```", file),
+            cache_control: cache,
+        };
+        let diag_block = UserBlock {
+            kind: "text".into(),
+            text: format!(
+                "DIAGNOSTIC:\n  severity: {:?}\n  range: line {}, col {} -- line {}, col {}\n  message: {}\n\nPropose ONE minimal patch as a single JSON object with keys: start_line, start_char, end_line, end_char, new_text, rationale. Do NOT use sorry/admit/axiom — the policy gate will reject those. Respond with ONLY the JSON object, no prose, no markdown fences.",
+                d.severity,
+                d.range.start.line, d.range.start.character,
+                d.range.end.line, d.range.end.character,
+                d.message,
+            ),
+            cache_control: None,
+        };
         MessagesRequest {
             model: self.model.clone(),
             max_tokens: self.max_tokens,
-            system: Some(SYSTEM_PROMPT.to_string()),
+            system: Some(system),
             messages: vec![Message {
                 role: "user".into(),
-                content: user,
+                content: vec![file_block, diag_block],
             }],
         }
     }
@@ -166,14 +261,8 @@ pub fn parse_response_into_patch(response: &MessagesResponse) -> Option<Patch> {
     let p: PatchJson = serde_json::from_str(trimmed).ok()?;
     Some(Patch {
         range: Range {
-            start: Position {
-                line: p.start_line,
-                character: p.start_char,
-            },
-            end: Position {
-                line: p.end_line,
-                character: p.end_char,
-            },
+            start: Position { line: p.start_line, character: p.start_char },
+            end: Position { line: p.end_line, character: p.end_char },
         },
         new_text: p.new_text,
         rationale: if p.rationale.is_empty() {
@@ -196,7 +285,7 @@ fn strip_markdown_fences(s: &str) -> &str {
 
 /// Returns an `AnthropicStrategy` wired to `MockTransport::declines()`.
 /// The CLI's `--strategy anthropic-mock` uses this. Useful for proving
-/// the prompt-and-parsing path runs end-to-end without an API key.
+/// the prompt + parsing path runs end-to-end without an API key.
 pub fn anthropic_mock_strategy() -> Box<dyn RepairStrategy> {
     Box::new(AnthropicStrategy::new(
         "MOCK-KEY-NOT-USED".to_string(),
@@ -213,14 +302,8 @@ mod tests {
     fn d() -> Diagnostic {
         Diagnostic {
             range: Range {
-                start: Position {
-                    line: 5,
-                    character: 12,
-                },
-                end: Position {
-                    line: 5,
-                    character: 18,
-                },
+                start: Position { line: 5, character: 12 },
+                end: Position { line: 5, character: 18 },
             },
             severity: Severity::Error,
             message: "unsolved goals".into(),
@@ -229,20 +312,54 @@ mod tests {
     }
 
     #[test]
-    fn build_request_includes_diagnostic_message_and_file() {
+    fn build_request_uses_two_content_blocks_for_caching() {
         let s = AnthropicStrategy::new(
             "k".into(),
             "claude-opus-4-7",
             MockTransport::declines(),
         );
         let req = s.build_request(&d(), "theorem t : True := by sorry");
+
         assert_eq!(req.model, "claude-opus-4-7");
         assert_eq!(req.max_tokens, 4096);
-        assert!(req.system.as_deref().unwrap().contains("MUST NOT use sorry"));
-        let user = &req.messages[0].content;
-        assert!(user.contains("unsolved goals"));
-        assert!(user.contains("theorem t : True := by sorry"));
-        assert!(user.contains("line 5, col 12"));
+
+        // System prompt is cached.
+        let sys = req.system.as_ref().expect("system must be set");
+        assert_eq!(sys.len(), 1);
+        assert!(sys[0].text.contains("MUST NOT use sorry"));
+        assert!(sys[0].cache_control.is_some(), "system block must be cached");
+
+        // Two user blocks: file (cached) + diagnostic (not cached).
+        assert_eq!(req.messages.len(), 1);
+        let blocks = &req.messages[0].content;
+        assert_eq!(blocks.len(), 2);
+        assert!(blocks[0].text.contains("theorem t : True := by sorry"));
+        assert!(blocks[0].cache_control.is_some(), "file block must be cached");
+        assert!(blocks[1].text.contains("unsolved goals"));
+        assert!(blocks[1].text.contains("line 5, col 12"));
+        assert!(blocks[1].cache_control.is_none(), "diagnostic block must NOT be cached (changes per iteration)");
+    }
+
+    #[test]
+    fn without_caching_disables_cache_control_on_all_blocks() {
+        let s = AnthropicStrategy::new(
+            "k".into(),
+            "claude-opus-4-7",
+            MockTransport::declines(),
+        ).without_caching();
+        let req = s.build_request(&d(), "file");
+        let sys = req.system.as_ref().unwrap();
+        assert!(sys[0].cache_control.is_none());
+        for b in &req.messages[0].content {
+            assert!(b.cache_control.is_none(), "no block should be cached when caching disabled");
+        }
+    }
+
+    #[test]
+    fn with_max_tokens_overrides_default() {
+        let s = AnthropicStrategy::new("k".into(), "claude-opus-4-7", MockTransport::declines())
+            .with_max_tokens(1024);
+        assert_eq!(s.max_tokens, 1024);
     }
 
     #[test]
@@ -254,6 +371,8 @@ mod tests {
                     r#"{"start_line":5,"start_char":12,"end_line":5,"end_char":18,"new_text":"trivial","rationale":"closes by trivial"}"#.into(),
                 ),
             }],
+            stop_reason: None,
+            usage: None,
         };
         let p = parse_response_into_patch(&response).expect("must parse");
         assert_eq!(p.range.start.line, 5);
@@ -272,10 +391,11 @@ mod tests {
                         .into(),
                 ),
             }],
+            stop_reason: None,
+            usage: None,
         };
         let p = parse_response_into_patch(&response).expect("must parse");
         assert_eq!(p.new_text, "x");
-        // Empty rationale gets a default attribution.
         assert_eq!(p.rationale, "anthropic-proposed");
     }
 
@@ -286,6 +406,8 @@ mod tests {
                 kind: "text".into(),
                 text: Some("{}".into()),
             }],
+            stop_reason: None,
+            usage: None,
         };
         assert!(parse_response_into_patch(&response).is_none());
     }
@@ -297,6 +419,8 @@ mod tests {
                 kind: "text".into(),
                 text: Some("not even json".into()),
             }],
+            stop_reason: None,
+            usage: None,
         };
         assert!(parse_response_into_patch(&response).is_none());
     }
@@ -320,5 +444,20 @@ mod tests {
         let s = anthropic_mock_strategy();
         assert_eq!(s.propose_patch(&d(), "anything").unwrap(), None);
         assert_eq!(s.name(), "anthropic");
+    }
+
+    #[test]
+    fn request_serializes_with_cache_control_on_marked_blocks() {
+        let s = AnthropicStrategy::new("k".into(), "claude-opus-4-7", MockTransport::declines());
+        let req = s.build_request(&d(), "file");
+        let json = serde_json::to_string(&req).unwrap();
+        // The cached blocks include "cache_control":{"type":"ephemeral"}
+        assert!(json.contains("\"cache_control\":{\"type\":\"ephemeral\"}"),
+                "serialized request must include cache_control marker");
+        // The unmarked diagnostic block must NOT include cache_control.
+        // (Hard to assert directly without parsing; checked by inspecting
+        // count of cache_control occurrences = 2 — system + file.)
+        let count = json.matches("\"cache_control\"").count();
+        assert_eq!(count, 2, "expected exactly 2 cache_control markers (system + file); got {count}");
     }
 }

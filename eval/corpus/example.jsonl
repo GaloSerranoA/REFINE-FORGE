@@ -1,0 +1,11 @@
+# Tutorial-grade eval corpus. 3 hand-crafted broken variants of
+# EXAMPLE-002 (Refineforge.Counter). Each line is one entry.
+#
+# A statistically-meaningful corpus needs the mathlib mutation
+# pipeline (Section 2 phase 1, item 3) and N >= 1000.
+#
+# See docs/repair-evaluation.md for the mutation taxonomy.
+
+{"id":"counter-swap-lemma","claim_id":"EXAMPLE-002","mutation":"swap_lemma","broken_file":"eval/corpus/counter-swap-lemma.broken.lean","fixed_file":"eval/corpus/counter-fixed.lean","notes":"add_comm replaced with mul_comm"}
+{"id":"counter-wrong-tactic","claim_id":"EXAMPLE-002","mutation":"wrong_tactic","broken_file":"eval/corpus/counter-wrong-tactic.broken.lean","fixed_file":"eval/corpus/counter-fixed.lean","notes":"simp replaced with rfl"}
+{"id":"counter-rename-field","claim_id":"EXAMPLE-002","mutation":"rename_field","broken_file":"eval/corpus/counter-missing-import.broken.lean","fixed_file":"eval/corpus/counter-fixed.lean","notes":"value field renamed to val; callers not updated"}

@@ -26,8 +26,12 @@ refineforge/
 ├── crates/                     # Rust workspace members
 │   ├── refineforge-repair-api/ # Section 1: stable trait + types
 │   ├── refineforge-cli/        # Section 1: the `refine` binary + driver
-│   ├── refineforge-strategies/ # Section 2: pluggable strategies
+│   ├── refineforge-strategies/ # Section 2: pluggable strategies (+ real HTTP transport)
+│   ├── refineforge-eval/       # Section 2: `refine-eval` benchmark harness
 │   └── example-counter/        # EXAMPLE-002 tutorial impl
+├── eval/
+│   ├── corpus/                 # broken-proof entries + ground truth
+│   └── runs/                   # refine-eval JSON outputs (gitignored)
 ├── templates/                  # scaffolding for `refine new`
 ├── artifacts/                  # exported verification bundles
 ├── containers/                 # Section 3: Dockerfile.verifier and friends
@@ -111,11 +115,39 @@ Section 1 because changing this surface affects every consumer.
 
 ### `crates/refineforge-strategies/` — concrete strategies (Section 2)
 
-Plugin implementations of `RepairStrategy`. Today ships
-`AnthropicStrategy<MockTransport>` (real trait wiring + real prompt
-+ real response parsing; mocked HTTP). The plugin pattern + recipe
-for wiring a real HTTP transport are documented in the crate's
-[README.md](crates/refineforge-strategies/README.md).
+Plugin implementations of `RepairStrategy`. Ships:
+
+- `AnthropicStrategy<MockTransport>` — canned-response transport for
+  unit tests and the `anthropic-mock` CLI strategy.
+- `AnthropicStrategy<ReqwestTransport>` — **real HTTP** to
+  `https://api.anthropic.com/v1/messages` with prompt caching
+  (`cache_control: ephemeral` on system + file blocks), retry-with-
+  exponential-backoff for 429 and 5xx, distinct error reporting
+  for 4xx (auth / bad request / model not found / payload too large).
+- `anthropic_strategy_from_env()` — factory wired into the CLI's
+  `--strategy anthropic` path; reads `ANTHROPIC_API_KEY` and
+  optional `ANTHROPIC_MODEL` (default `claude-opus-4-7`).
+
+18 unit tests across the prompt-construction, response-parsing,
+and transport layers (in-process `tiny_http` stub server for the
+retry / header / error-mapping tests).
+
+### `crates/refineforge-eval/` — evaluation harness (Section 2)
+
+Binary `refine-eval`. Drives `refine repair` against a JSONL
+corpus of broken-Lean entries, captures per-entry outcomes +
+latencies, emits a JSON report with summary statistics
+(repair rate, median latency, p95 latency).
+
+Ships a 3-entry tutorial corpus at [`eval/corpus/example.jsonl`](eval/corpus/example.jsonl)
+exercising 3 mutations of EXAMPLE-002 (Counter):
+`swap_lemma`, `wrong_tactic`, `rename_field`.
+
+Architectural note: the runner pre-warms the temp project's
+`.lake/` cache via `lake build` on the unmodified source before
+swapping in the broken file. Without pre-warm, cold lake
+elaboration exceeds the LSP diagnostic timeout and breaks
+register as false `AlreadyClean`.
 
 ### `crates/refineforge-cli/` — the `refine` binary
 

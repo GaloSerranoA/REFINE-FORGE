@@ -191,9 +191,15 @@ Where each thing currently lives:
 | Proof template generator (`refine new`)    | ✅ implemented      |
 | Rust source scan (name-presence check)     | ✅ implemented      |
 | Refinement-argument template               | ✅ `docs/refinement-template.md` |
-| LLM repair loop (LSP client)               | ⚠️ skeleton landed; `mock` and `anthropic-mock` strategies only — wire a real HTTP transport per [`crates/refineforge-strategies/README.md`](crates/refineforge-strategies/README.md) |
-| `refineforge-strategies` workspace member  | ✅ scaffold landed: `AnthropicStrategy<MockTransport>` skeleton with real trait wiring |
+| LLM repair loop (LSP client)               | ✅ shipped: `mock`, `anthropic-mock`, **`anthropic`** (real HTTP with retry + prompt caching) |
+| `refineforge-strategies` workspace member  | ✅ `AnthropicStrategy` + `ReqwestTransport` (real HTTP, retry-with-backoff, error mapping; 18 unit tests) |
+| `refineforge-eval` (`refine-eval` binary)  | ✅ corpus-driven evaluation harness with JSON output; ships a 3-entry tutorial corpus under [`eval/corpus/`](eval/corpus) |
 | Verifier Docker image                      | ✅ `containers/Dockerfile.verifier` — multi-stage build, elan + Lean v4.29.1 preinstalled |
+| Multi-arch CI matrix                       | not yet             |
+| Sigstore signing in CI + `--verify-signature` | not yet             |
+| Nix flake for hermetic builds              | not yet             |
+| Mathlib mutation pipeline (corpus at N≥1000) | not yet             |
+| Fine-tuned proof-repair model              | not yet (6+ month research commitment) |
 | Syn-based scan (parse, not regex)          | not yet             |
 
 ## License

@@ -16,9 +16,11 @@ refineforge-repair-api = { path = "../refineforge-repair-api" }
 anyhow                 = "1.0"
 serde                  = { version = "1.0", features = ["derive"] }
 serde_json             = "1.0"
-
-# Deliberately NOT in [dependencies]: reqwest, tokio, ureq.
-# A real Anthropic transport adds one of these — the `AnthropicTransport`
-# trait is the seam. See README.md for the wiring recipe.
+# Real HTTP transport for the Anthropic API. Blocking client to
+# match the sync RepairStrategy trait. `rustls-tls` to avoid the
+# OpenSSL system-library dependency on Linux/macOS.
+reqwest                = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 
 [dev-dependencies]
+# In-process HTTP server for transport tests (retry, error mapping).
+tiny_http              = "0.12"
