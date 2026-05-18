@@ -23,6 +23,9 @@ Read in this order — each doc is short and points at the next.
 | [docs/refinement-template.md](docs/refinement-template.md) | Empty template for writing your own refinement-argument doc |
 | [docs/refinement/EXAMPLE-002.md](docs/refinement/EXAMPLE-002.md) | A filled-in refinement doc you can read as the answer key |
 | [docs/llm-repair-design.md](docs/llm-repair-design.md) | Architecture of the LLM repair loop + how to swap in a real strategy |
+| [docs/repair-evaluation.md](docs/repair-evaluation.md) | How we'll measure whether `refine repair` is any good — corpus design, mutation taxonomy, statistical reporting |
+| [docs/security.md](docs/security.md) | Threat model, supply chain, signing chain (planned), vuln reporting |
+| [docs/reproducible-build.md](docs/reproducible-build.md) | Bit-identical-rebuild methodology — Nix flake approach (planned), verification protocol |
 | [docs/HELYX-CASE-STUDY.md](docs/HELYX-CASE-STUDY.md) | Pointer to the external worked example (helyx-proofforge) |
 
 ## What this is

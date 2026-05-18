@@ -10,7 +10,30 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
-### Added
+### Added — Tier 2: design stubs for Sections 2 & 3
+
+- **docs/security.md** (Section 3) — threat model that names the
+  adversaries refineforge does and does NOT defend against; supply
+  chain (what's in vs not in a bundle); planned Sigstore signing
+  chain with `--verify-signature` flag design; vuln-reporting
+  policy with 90-day disclosure window.
+- **docs/reproducible-build.md** (Section 3) — bit-identical-rebuild
+  methodology; enumerated sources of non-determinism with
+  per-source fix; Nix flake approach (chosen) vs Bazel /
+  Docker-only / SOURCE_DATE_EPOCH alternatives (rejected with
+  reasons); verification protocol modelled on
+  reproducible-builds.org.
+- **docs/repair-evaluation.md** (Section 2) — benchmark methodology
+  for `refine repair`; six metrics (repair rate, iters,
+  latency, cost, false-fix, honesty); three corpora (tutorial-40,
+  mathlib-5000, in-the-wild); eight-mutation taxonomy;
+  training/eval separation invariants for any fine-tuned strategy;
+  bootstrap-CI statistical reporting requirement.
+- README documentation map and STRUCTURE.md docs table updated to
+  include the three new docs, with each row tagged by owning
+  section.
+
+### Added — Tier 1: organisational layer
 
 - **ARCHITECTURE.md** at repo root — three-section structure
   (Lean 4 Specialist, ML Training Engineer, Infrastructure/DevOps).

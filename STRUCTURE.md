@@ -180,8 +180,11 @@ the bundle exporter once had is documented in `CHANGELOG.md`).
 | `no-sorry-policy.md` | maintainers | Exactly what the policy gate catches, what it misses, when overrides are legitimate |
 | `refinement-template.md` | claim authors | Empty skeleton to copy into `docs/refinement/<CLAIM-ID>.md` |
 | `refinement/EXAMPLE-002.md` | claim authors | Answer-key showing a filled-in refinement argument with a real idealisation |
-| `llm-repair-design.md` | next-session devs | Architecture of the repair loop + four-step swap-in recipe for a real LLM strategy |
-| `HELYX-CASE-STUDY.md` | adopters | Pointer to the external worked example (`helyx-proofforge`) — same pattern at production scale |
+| `llm-repair-design.md` | ML engineer (Section 2) | Architecture of the repair loop + four-step swap-in recipe for a real LLM strategy |
+| `repair-evaluation.md` | ML engineer (Section 2) | Benchmark methodology, mutation taxonomy, training/eval separation rules |
+| `security.md` | DevOps (Section 3) | Threat model, supply chain, signing chain (planned), vuln reporting |
+| `reproducible-build.md` | DevOps (Section 3) | Bit-identical-rebuild methodology, Nix flake plan, verification protocol |
+| `HELYX-CASE-STUDY.md` | adopters | Pointer to the external worked example (`helyx-proofforge`) |
 
 ## How the pieces connect
 
