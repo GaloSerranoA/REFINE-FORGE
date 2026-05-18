@@ -14,6 +14,8 @@ Read in this order — each doc is short and points at the next.
 | Doc | What it covers |
 |---|---|
 | [README.md](README.md) (this file) | What refineforge is, how to install, the CLI surface |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Three-section structure: Lean Specialist + ML Engineer + DevOps, with interfaces and sequencing |
+| [ROLES.md](ROLES.md) | Short version of who owns what; map a task to a role |
 | [STRUCTURE.md](STRUCTURE.md) | Every file in the repo, what owns it, how the pieces connect |
 | [CHANGELOG.md](CHANGELOG.md) | Version history, what shipped in each release |
 | [docs/methodology.md](docs/methodology.md) | The honest framing: what refineforge claims, what it does NOT claim |

@@ -3,18 +3,24 @@
 Every file in the repo, what owns it, and how the pieces connect.
 
 If you only have time for two files, read [`README.md`](README.md)
-and [`docs/methodology.md`](docs/methodology.md).
+and [`docs/methodology.md`](docs/methodology.md). For the engineering
+discipline split (Lean Specialist / ML Engineer / DevOps) read
+[`ARCHITECTURE.md`](ARCHITECTURE.md) and [`ROLES.md`](ROLES.md).
 
 ## Top-level layout
 
 ```
 refineforge/
 ├── README.md                   # entry point — what / why / quick start
+├── ARCHITECTURE.md             # three-section structure (Lean / ML / DevOps)
+├── ROLES.md                    # short version of ARCHITECTURE — who owns what
 ├── CHANGELOG.md                # version history
 ├── STRUCTURE.md                # this file
 ├── Cargo.toml                  # Rust workspace manifest
 ├── .gitignore
-├── .github/workflows/ci.yml    # CI: lake build + cargo build + verify claims
+├── .github/
+│   ├── CODEOWNERS              # path → section mapping (advisory until remote)
+│   └── workflows/ci.yml        # CI: lake build + cargo build + verify claims
 ├── claims/                     # claim registry (one YAML per claim)
 ├── lean/                       # Lake project: formal models + theorems
 ├── crates/                     # Rust workspace members

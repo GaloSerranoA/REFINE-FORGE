@@ -10,8 +10,34 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
-Nothing yet. Open items live in [README.md](README.md) under
-*Framework build plan*.
+### Added
+
+- **ARCHITECTURE.md** at repo root — three-section structure
+  (Lean 4 Specialist, ML Training Engineer, Infrastructure/DevOps).
+  Defines mission, owned subdirectories, current status, open work,
+  and the two stable cross-section interfaces (`RepairStrategy`
+  trait + bundle-manifest schema). Explicitly priority-ordered, with
+  the warning *"if all three sections start at once with one
+  engineer, every section is 30 % done and nothing ships."*
+- **ROLES.md** at repo root — short-form ownership guide. Maps
+  symptoms to likely owners; defines what ownership does and does
+  not mean; documents the cross-section change protocol.
+- **.github/CODEOWNERS** — path → section mapping using role
+  identifiers (`@refineforge/lean-specialist`,
+  `@refineforge/ml-engineer`, `@refineforge/devops`). Advisory
+  until the repo gets a remote; replaces role identifiers with real
+  GitHub handles at that point.
+- README documentation map updated to include ARCHITECTURE.md and
+  ROLES.md.
+- STRUCTURE.md updated to show `.github/CODEOWNERS` and reference
+  the architecture/roles split.
+
+### Notes
+
+- No source code changed; this is a pure organisational layer.
+- Honest disclosure: the three roles can be filled by one person
+  wearing all three hats. The boundary holds because it's about
+  concerns, not headcount.
 
 ## [0.1.0] — 2026-05-18
 

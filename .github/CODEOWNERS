@@ -1,0 +1,65 @@
+# CODEOWNERS — maps paths to the three sections defined in
+# /ARCHITECTURE.md. Used by GitHub to auto-request review when this
+# repo is published to a remote.
+#
+# These are role identifiers, not real GitHub handles. Replace each
+# `@refineforge/<role>` with the actual GitHub team or user when the
+# repo gets a remote. Until then, this file is documentation:
+# pointing at the line for a path tells you which section owns it.
+#
+# See ROLES.md for the short version of who owns what.
+
+# ─── Section 1: Lean 4 Specialist (foundations) ──────────────────────
+lean/                                              @refineforge/lean-specialist
+claims/                                            @refineforge/lean-specialist
+templates/                                         @refineforge/lean-specialist
+docs/methodology.md                                @refineforge/lean-specialist
+docs/no-sorry-policy.md                            @refineforge/lean-specialist
+docs/refinement-template.md                        @refineforge/lean-specialist
+docs/refinement/                                   @refineforge/lean-specialist
+docs/HELYX-CASE-STUDY.md                           @refineforge/lean-specialist
+crates/refineforge-cli/src/claim.rs                @refineforge/lean-specialist
+crates/refineforge-cli/src/runner.rs               @refineforge/lean-specialist
+crates/refineforge-cli/src/report.rs               @refineforge/lean-specialist
+crates/refineforge-cli/src/sorry_gate.rs           @refineforge/lean-specialist
+crates/refineforge-cli/src/bundle.rs               @refineforge/lean-specialist
+crates/refineforge-cli/src/scaffold.rs             @refineforge/lean-specialist
+crates/refineforge-cli/src/scan.rs                 @refineforge/lean-specialist
+crates/refineforge-cli/src/main.rs                 @refineforge/lean-specialist
+crates/example-counter/                            @refineforge/lean-specialist
+
+# ─── Section 2: ML Training Engineer (repair intelligence) ───────────
+# `repair/` is shared: Section 1 reviews trait surface changes;
+# Section 2 owns the strategy implementations and driver loop.
+crates/refineforge-cli/src/repair/                 @refineforge/ml-engineer @refineforge/lean-specialist
+crates/refineforge-cli/src/repair/strategy.rs      @refineforge/ml-engineer
+crates/refineforge-cli/src/repair/lsp.rs           @refineforge/ml-engineer
+crates/refineforge-cli/src/repair/diagnostic.rs    @refineforge/ml-engineer
+crates/refineforge-cli/src/repair/mod.rs           @refineforge/ml-engineer @refineforge/lean-specialist
+docs/llm-repair-design.md                          @refineforge/ml-engineer
+# Planned, not yet present:
+# crates/refineforge-strategies/                   @refineforge/ml-engineer
+# training/                                        @refineforge/ml-engineer
+# models/                                          @refineforge/ml-engineer
+# docs/repair-evaluation.md                        @refineforge/ml-engineer
+
+# ─── Section 3: Infrastructure / DevOps (production surface) ─────────
+.github/                                           @refineforge/devops
+.gitignore                                         @refineforge/devops
+Cargo.toml                                         @refineforge/devops @refineforge/lean-specialist
+artifacts/                                         @refineforge/devops
+# Planned, not yet present:
+# nix/                                             @refineforge/devops
+# containers/                                      @refineforge/devops
+# attestation/                                     @refineforge/devops
+# release/                                         @refineforge/devops
+# docs/security.md                                 @refineforge/devops
+# docs/reproducible-build.md                       @refineforge/devops
+
+# ─── Repo-wide docs: any role may edit, all are notified ─────────────
+README.md                                          @refineforge/lean-specialist @refineforge/ml-engineer @refineforge/devops
+ARCHITECTURE.md                                    @refineforge/lean-specialist @refineforge/ml-engineer @refineforge/devops
+STRUCTURE.md                                       @refineforge/lean-specialist @refineforge/ml-engineer @refineforge/devops
+CHANGELOG.md                                       @refineforge/lean-specialist @refineforge/ml-engineer @refineforge/devops
+ROLES.md                                           @refineforge/lean-specialist @refineforge/ml-engineer @refineforge/devops
+CODEOWNERS                                         @refineforge/lean-specialist @refineforge/ml-engineer @refineforge/devops
