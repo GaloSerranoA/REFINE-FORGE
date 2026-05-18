@@ -1,0 +1,47 @@
+claim_id: EXAMPLE-002
+title: "Monotone counter (refined tutorial)"
+description: |
+  Second tutorial shipped with refineforge. Demonstrates the FULL
+  refinement pattern end-to-end: Lean model + Rust implementation +
+  refinement-argument doc. Where EXAMPLE-001 only exercises the
+  Lean-and-bundle path, EXAMPLE-002 also gets `refine scan` to
+  Verified.
+
+  Scope: tutorial. The intent is that operators copy this triple
+  (Lean file + Rust crate + refinement doc) as the starting shape
+  for their own first refined claim.
+
+scope: tutorial
+status: proven
+authors:
+  - refineforge
+
+rust_source:
+  - path: crates/example-counter/src/counter.rs
+    types:
+      - Counter
+    functions:
+      - incr
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.Counter
+  file: lean/Refineforge/Counter.lean
+  theorems:
+    - incr_monotone
+    - incr_strictly_increases
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: |
+    Tutorial example. The refinement argument in
+    docs/refinement/EXAMPLE-002.md walks through one real
+    Lean-vs-Rust idealisation (Nat → u64 with saturation),
+    explaining why `incr_monotone` survives but
+    `incr_strictly_increases` does not at the u64::MAX boundary.

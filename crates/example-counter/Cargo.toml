@@ -1,0 +1,14 @@
+[package]
+name = "example-counter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "refineforge tutorial: monotone counter (refines EXAMPLE-002)"
+
+[lib]
+name = "example_counter"
+path = "src/lib.rs"
+
+[dependencies]
+
+[dev-dependencies]

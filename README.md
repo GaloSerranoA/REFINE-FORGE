@@ -1,5 +1,8 @@
 # refineforge
 
+Autor: Galo Serrano Abad
+
+
 A Lean 4 proof engineering + refinement-bundle framework for trust-critical Rust.
 
 > **Doctrine:** LLM may propose. Lean must verify. Human operator must approve.
@@ -27,13 +30,30 @@ behaviour and links those models to specific Rust source files via
 The refinement argument — not the proof — is the trust-critical
 artifact. See [`docs/methodology.md`](docs/methodology.md).
 
-## Worked example
+## Tutorials shipped in this repo
 
-The HELYX trust-claim project ([helyx-proofforge](https://github.com/) — see
-[`docs/HELYX-CASE-STUDY.md`](docs/HELYX-CASE-STUDY.md)) was the
-original consumer of this framework. It demonstrates the full
-pattern: Lean model (audit chain), Rust crate that refines it,
-refinement-argument doc, and a `Verified` scan + verified bundle.
+Two tutorial claims ship pre-wired so `refine lean check-all` works
+the moment you `cargo build --release`:
+
+| Claim | What it demonstrates | Files |
+|-------|----------------------|-------|
+| **EXAMPLE-001** | The minimum path: Lean theorem → policy gate → bundle. No Rust. | [`lean/Refineforge/Example.lean`](lean/Refineforge/Example.lean), [`claims/example.yaml`](claims/example.yaml) |
+| **EXAMPLE-002** | The full refinement pattern: Lean theorem + Rust crate + refinement-argument doc. `refine scan` reports `Verified`. | [`lean/Refineforge/Counter.lean`](lean/Refineforge/Counter.lean), [`crates/example-counter/`](crates/example-counter), [`claims/example-counter.yaml`](claims/example-counter.yaml), [`docs/refinement/EXAMPLE-002.md`](docs/refinement/EXAMPLE-002.md) |
+
+EXAMPLE-002 deliberately includes a real Lean-vs-Rust idealisation
+(unbounded `Nat` vs saturating `u64`) so the refinement doc has
+something non-trivial to argue. Read it as the answer-key for what
+[`docs/refinement-template.md`](docs/refinement-template.md) asks
+you to write for your own claims.
+
+## External worked example
+
+The HELYX trust-claim project (separate repo `helyx-proofforge` —
+see [`docs/HELYX-CASE-STUDY.md`](docs/HELYX-CASE-STUDY.md)) is the
+production-shape consumer of this framework. It demonstrates the
+same pattern as EXAMPLE-002 with two real claims (append-only
+audit chain + capability subsumption) and walks through the
+`docs/refinement/` doc structure at full scale.
 
 ## Repository layout
 
@@ -44,11 +64,14 @@ refineforge/
 │   ├── lean-toolchain         # pinned: leanprover/lean4:v4.29.1
 │   ├── Refineforge.lean       # library root (rename to your project)
 │   └── Refineforge/
-│       └── Example.lean       # hello-world theorem (delete and replace)
+│       ├── Example.lean       # EXAMPLE-001: Lean-only hello world
+│       └── Counter.lean       # EXAMPLE-002: refined tutorial (Lean side)
 ├── claims/                    # claim registry (YAML, one file per claim)
-│   └── example.yaml           # EXAMPLE-001 wired to the hello-world
+│   ├── example.yaml           # EXAMPLE-001 wired to the hello-world
+│   └── example-counter.yaml   # EXAMPLE-002 wired to Lean + Rust crate
 ├── crates/
-│   └── refineforge-cli/       # Rust CLI: `refine`
+│   ├── refineforge-cli/       # Rust CLI: `refine`
+│   └── example-counter/       # EXAMPLE-002 Rust side (refines Counter.lean)
 ├── templates/                 # scaffolding for new claims
 │   ├── append_chain/          # append-only linked chain with hash check
 │   ├── capability/            # capability-based authorization
@@ -58,7 +81,9 @@ refineforge/
 │   ├── methodology.md         # how refineforge thinks about trust
 │   ├── no-sorry-policy.md     # what the policy gate enforces
 │   ├── refinement-template.md # generic template for refinement-argument docs
-│   └── HELYX-CASE-STUDY.md    # link to the worked example
+│   ├── refinement/
+│   │   └── EXAMPLE-002.md     # filled-in refinement doc for the tutorial
+│   └── HELYX-CASE-STUDY.md    # link to the original worked example
 └── .github/workflows/ci.yml   # builds Lean + Rust on every push
 ```
 
