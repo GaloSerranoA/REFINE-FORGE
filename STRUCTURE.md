@@ -24,8 +24,13 @@ refineforge/
 ├── claims/                     # claim registry (one YAML per claim)
 ├── lean/                       # Lake project: formal models + theorems
 ├── crates/                     # Rust workspace members
+│   ├── refineforge-repair-api/ # Section 1: stable trait + types
+│   ├── refineforge-cli/        # Section 1: the `refine` binary + driver
+│   ├── refineforge-strategies/ # Section 2: pluggable strategies
+│   └── example-counter/        # EXAMPLE-002 tutorial impl
 ├── templates/                  # scaffolding for `refine new`
 ├── artifacts/                  # exported verification bundles
+├── containers/                 # Section 3: Dockerfile.verifier and friends
 └── docs/                       # methodology, policies, refinement docs
 ```
 
@@ -79,7 +84,38 @@ review:                    # operator-filled at sign-off
 
 ## Rust workspace (`crates/`)
 
-The workspace is declared in the top-level `Cargo.toml`. Members:
+The workspace is declared in the top-level `Cargo.toml`. The crate
+dependency graph (kept acyclic):
+
+```
+            refineforge-repair-api  ◄── the stable cross-section trait + types
+                ▲                ▲
+                │                │
+   refineforge-cli ───────► refineforge-strategies
+       │                              ▲
+       └──────────────────────────────┘
+       (the binary's strategy registry imports concrete strategies)
+
+   example-counter  (standalone; refines lean/Refineforge/Counter.lean)
+```
+
+Members:
+
+### `crates/refineforge-repair-api/` — stable trait surface (Section 1)
+
+The cross-section API that prevents `refineforge-cli` and
+`refineforge-strategies` from depending on each other. Contains:
+`RepairStrategy` trait, `Patch`, `Diagnostic`, `Severity`, `Range`,
+`Position`, `MockStrategy`, and the LSP conversions. Owned by
+Section 1 because changing this surface affects every consumer.
+
+### `crates/refineforge-strategies/` — concrete strategies (Section 2)
+
+Plugin implementations of `RepairStrategy`. Today ships
+`AnthropicStrategy<MockTransport>` (real trait wiring + real prompt
++ real response parsing; mocked HTTP). The plugin pattern + recipe
+for wiring a real HTTP transport are documented in the crate's
+[README.md](crates/refineforge-strategies/README.md).
 
 ### `crates/refineforge-cli/` — the `refine` binary
 

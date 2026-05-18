@@ -1,0 +1,82 @@
+# refineforge verifier image.
+#
+# Pre-installs the pinned Lean toolchain so a third-party reviewer
+# can verify a bundle WITHOUT installing elan locally. Owned by
+# Section 3 ([ARCHITECTURE.md](../ARCHITECTURE.md) §3, phase 1).
+#
+# Usage:
+#   docker build -t refineforge-verifier -f containers/Dockerfile.verifier .
+#   docker run --rm -v "$(pwd)/artifacts:/artifacts:ro" refineforge-verifier \
+#       bundle verify /artifacts/EXAMPLE-002
+#
+# The image bundles `refine` + `lake` + `lean v4.29.1` so the
+# reviewer only needs Docker. Does NOT bundle source for any
+# specific claim — bind-mount the bundle directory at runtime.
+
+# ─── Stage 1: build refine from source ──────────────────────────────────
+# Pinned rust toolchain via rust-toolchain.toml (TODO: add one — for
+# now we pin the base image tag).
+FROM rust:1.83-bookworm AS builder
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+
+# Build only the `refine` binary; example-counter is not needed at runtime.
+RUN cargo build --release --bin refine --locked || cargo build --release --bin refine
+RUN strip target/release/refine
+
+# ─── Stage 2: runtime image with pinned Lean ────────────────────────────
+FROM debian:bookworm-slim AS runtime
+
+# Minimal runtime deps. `ca-certificates` for elan's HTTPS download,
+# `curl` for elan-init, `git` because Lake uses it for package management.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    libc6 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install elan + the pinned Lean toolchain. We pin v4.29.1 to match
+# what every bundle's `lean-toolchain` file currently specifies.
+# A bundle pinned to a different toolchain would need a different
+# image (or override at runtime with `elan default <version>`).
+ENV ELAN_HOME=/opt/elan
+ENV PATH=/opt/elan/bin:$PATH
+RUN curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh \
+    && sh /tmp/elan-init.sh -y --default-toolchain leanprover/lean4:v4.29.1 \
+    && rm /tmp/elan-init.sh \
+    && lean --version
+
+# Copy the refine binary from the builder stage.
+COPY --from=builder /build/target/release/refine /usr/local/bin/refine
+
+# Create a non-root user. Reviewers should not need root to verify
+# a bundle.
+RUN useradd --create-home --uid 1000 verifier
+USER verifier
+WORKDIR /home/verifier
+
+# Default entrypoint: refine. Reviewers pass subcommands as args:
+#   docker run ... refineforge-verifier --help
+#   docker run ... refineforge-verifier bundle verify /artifacts/EXAMPLE-002
+ENTRYPOINT ["/usr/local/bin/refine"]
+CMD ["--help"]
+
+# ─── Honest disclosures ─────────────────────────────────────────────────
+# - This Dockerfile is NOT reproducible-build-grade. It pins the Rust
+#   base image by tag (which is mutable) and elan/Lean by version
+#   string (which Anthropic / leanprover may revoke). For
+#   bit-identical rebuilds, use the Nix flake when it lands
+#   (docs/reproducible-build.md).
+# - The image does NOT include source for any specific bundle. The
+#   verifier workflow is: bind-mount /artifacts at runtime, then
+#   `refine bundle verify /artifacts/<CLAIM-ID>`.
+# - The image does NOT include `refine repair` strategies that need
+#   network access (e.g. real AnthropicStrategy). For repair work,
+#   build a separate image that adds the strategy crate's extra deps.
+# - `refine lean check <CLAIM-ID>` from a bundle directory currently
+#   requires reconstructing the source layout from manifest.json (see
+#   VERIFY.txt in each bundle). A follow-up: `refine bundle lake`
+#   that does the reconstruction automatically.

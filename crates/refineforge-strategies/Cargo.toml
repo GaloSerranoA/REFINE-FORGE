@@ -1,0 +1,24 @@
+[package]
+name = "refineforge-strategies"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "refineforge: pluggable RepairStrategy implementations (Section 2)"
+
+[lib]
+name = "refineforge_strategies"
+path = "src/lib.rs"
+
+[dependencies]
+# We depend on the API crate, NOT on refineforge-cli. This breaks the
+# cycle: cli depends on us; we depend only on the api crate.
+refineforge-repair-api = { path = "../refineforge-repair-api" }
+anyhow                 = "1.0"
+serde                  = { version = "1.0", features = ["derive"] }
+serde_json             = "1.0"
+
+# Deliberately NOT in [dependencies]: reqwest, tokio, ureq.
+# A real Anthropic transport adds one of these — the `AnthropicTransport`
+# trait is the seam. See README.md for the wiring recipe.
+
+[dev-dependencies]

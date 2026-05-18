@@ -10,15 +10,22 @@ name = "refine"
 path = "src/main.rs"
 
 [dependencies]
-clap       = { version = "4.5", features = ["derive"] }
-serde      = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.9"
-serde_json = "1.0"
-sha2       = "0.10"
-hex        = "0.4"
-anyhow     = "1.0"
-walkdir    = "2.5"
-regex      = "1.10"
-chrono     = { version = "0.4", features = ["serde"] }
+clap                    = { version = "4.5", features = ["derive"] }
+serde                   = { version = "1.0", features = ["derive"] }
+serde_yaml              = "0.9"
+serde_json              = "1.0"
+sha2                    = "0.10"
+hex                     = "0.4"
+anyhow                  = "1.0"
+walkdir                 = "2.5"
+regex                   = "1.10"
+chrono                  = { version = "0.4", features = ["serde"] }
 # repair module: Lean LSP client + diagnostic types
-lsp-types  = "0.97"
+lsp-types               = "0.97"
+# Cross-section trait surface (Section 1 owns the API; this crate
+# implements the driver and the binary's strategy registry).
+refineforge-repair-api  = { path = "../refineforge-repair-api" }
+# Concrete strategies (Section 2). Pulled in for the binary's
+# strategy registry. No circular dep — strategies depends on the
+# api crate, not on this one.
+refineforge-strategies  = { path = "../refineforge-strategies" }

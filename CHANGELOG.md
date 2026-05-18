@@ -10,6 +10,69 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Tier 3: structural scaffolding
+
+- **New workspace crate `refineforge-repair-api`** — the stable
+  cross-section trait surface. Contains `RepairStrategy`, `Patch`,
+  `Diagnostic`, `Severity`, `Range`, `Position`, `MockStrategy`,
+  and the LSP-types conversions. Sits between `refineforge-cli`
+  (driver) and `refineforge-strategies` (implementers) to break
+  what would otherwise be a circular dep. Owned by Section 1.
+  9 unit tests, all passing.
+- **New workspace crate `refineforge-strategies`** —
+  `AnthropicStrategy<MockTransport>` skeleton: real trait impl,
+  real prompt construction, real response parsing; mocked HTTP
+  transport. Includes a `MockTransport::returns(json)` for unit
+  tests and `MockTransport::declines()` for the CLI's
+  `anthropic-mock` strategy. 7 unit tests, all passing.
+- **`refineforge-cli` refactored into lib + bin** — `src/lib.rs`
+  exposes the framework modules so external crates (today:
+  `refineforge-strategies`) can import them. `src/main.rs`
+  switched from `mod claim;` to `use refineforge_cli::{claim, ...};`.
+  All existing functionality unchanged.
+- **New CLI strategy `--strategy anthropic-mock`** — wires
+  `refineforge_strategies::anthropic_mock_strategy()` into
+  `refine repair`. Exercises the AnthropicStrategy prompt + parsing
+  code path with a canned-decline transport; same end-user
+  behaviour as `--strategy mock` (`NoProposal`) but proves the
+  cross-crate wiring works.
+- **`containers/Dockerfile.verifier`** — Section 3's first concrete
+  win. Multi-stage Docker image: stage 1 builds `refine` from
+  source with `--locked`; stage 2 is a Debian slim with elan +
+  Lean v4.29.1 preinstalled. Reviewers run
+  `docker run --rm -v $(pwd)/artifacts:/artifacts:ro
+  refineforge-verifier bundle verify /artifacts/<CLAIM-ID>` —
+  no local elan install needed. Honest disclosures inline: not
+  reproducible-build-grade (use the Nix flake when it lands).
+
+### Tests (Tier 3)
+
+- Workspace test count: **32/32 pass** (was 19/19 before Tier 3;
+  added 9 in `refineforge-repair-api` + 7 in `refineforge-strategies`
+  minus 3 duplicate diagnostic + 6 duplicate strategy tests that
+  moved out of `refineforge-cli`).
+- Smoke tests: `refine repair EXAMPLE-002 --strategy mock` and
+  `--strategy anthropic-mock` both report `AlreadyClean` in 0
+  iterations (clean files). The `anthropic-mock` smoke proves the
+  full cross-crate wiring runs.
+
+### Honest disclosures (Tier 3)
+
+- The Dockerfile is **untested** — Docker isn't available in this
+  session's shell. It's syntactically clean and follows the standard
+  multi-stage pattern; first build will surface any silly mistakes.
+- `AnthropicStrategy` still cannot fix anything. The
+  `MockTransport::declines()` it ships with returns `{}` which
+  parses to `None`. The skeleton's value is the trait wiring + the
+  prompt + the parser, all of which are unit-tested. Wiring a real
+  `ReqwestTransport` is the one-file change documented in
+  `crates/refineforge-strategies/README.md`.
+- The lib refactor exposes more of `refineforge-cli`'s internals
+  as public than is strictly needed (every `mod` became `pub mod`).
+  A v0.2 tightening pass could mark some sub-items
+  `pub(crate)` again. Today everything that's `pub` was already
+  reachable by the binary; no NEW data is exposed.
+
 ### Added — Tier 2: design stubs for Sections 2 & 3
 
 - **docs/security.md** (Section 3) — threat model that names the

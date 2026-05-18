@@ -1,0 +1,15 @@
+[package]
+name = "refineforge-repair-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "refineforge: the RepairStrategy trait + supporting types. Sits between refineforge-cli (consumer) and refineforge-strategies (implementers) to avoid circular deps."
+
+[lib]
+name = "refineforge_repair_api"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow    = "1.0"
+serde     = { version = "1.0", features = ["derive"] }
+lsp-types = "0.97"

@@ -191,7 +191,9 @@ Where each thing currently lives:
 | Proof template generator (`refine new`)    | ✅ implemented      |
 | Rust source scan (name-presence check)     | ✅ implemented      |
 | Refinement-argument template               | ✅ `docs/refinement-template.md` |
-| LLM repair loop (LSP client)               | ⚠️ skeleton landed; `mock` strategy only — wire your own LLM per [`docs/llm-repair-design.md`](docs/llm-repair-design.md) |
+| LLM repair loop (LSP client)               | ⚠️ skeleton landed; `mock` and `anthropic-mock` strategies only — wire a real HTTP transport per [`crates/refineforge-strategies/README.md`](crates/refineforge-strategies/README.md) |
+| `refineforge-strategies` workspace member  | ✅ scaffold landed: `AnthropicStrategy<MockTransport>` skeleton with real trait wiring |
+| Verifier Docker image                      | ✅ `containers/Dockerfile.verifier` — multi-stage build, elan + Lean v4.29.1 preinstalled |
 | Syn-based scan (parse, not regex)          | not yet             |
 
 ## License

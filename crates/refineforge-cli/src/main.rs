@@ -3,19 +3,15 @@
 //! Doctrine: LLM may propose, Lean must verify, human operator must approve.
 //! This binary is the "Lean must verify" enforcement point. It does not
 //! generate proofs; it gates them.
-
-mod claim;
-mod runner;
-mod report;
-mod sorry_gate;
-mod bundle;
-mod scaffold;
-mod scan;
-mod repair;
+//!
+//! Modules live in `src/lib.rs` so external strategy crates can
+//! import the same types this binary uses.
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+
+use refineforge_cli::{bundle, claim, repair, runner, scaffold, scan};
 
 #[derive(Parser)]
 #[command(
