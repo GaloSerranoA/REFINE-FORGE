@@ -10,6 +10,95 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### First real eval run + bug fixes discovered by it
+
+Real `--strategy anthropic` baseline against the 3-entry tutorial
+corpus using `claude-opus-4-7`. The eval was honest about what it
+found — including two real bugs that the eval itself surfaced and
+that we fixed in this pass.
+
+#### Real numbers (after bug fixes)
+
+| Run | Result | Notes |
+|---|---|---|
+| `eval/runs/anthropic-baseline.json` (v1) | 1/3 fixed (33 %) | First real run; identified two bugs |
+| `eval/runs/anthropic-baseline-v3-explicit-indexing.json` | 1/3 fixed (33 %) | Prompt clarified to say 0-indexed positions; no change |
+| **`eval/runs/anthropic-v4-after-bugfix.json`** | **2/3 fixed (67 %)** | After fixing the two bugs below |
+| `eval/runs/anthropic-v5-maxiter5.json` | 2/3 fixed (67 %) | `--max-iterations 5`; counter-swap-lemma still defeats Claude |
+
+Median latency ~12 s per attempt. counter-wrong-tactic and
+counter-rename-field both Fixed; counter-swap-lemma defeats Claude
+at this prompt because the broken file's structure cascades errors
+that the patches don't fully clean up across iterations.
+
+#### Bugs found by the eval + fixed in this pass
+
+1. **`repair::repair` under-reported `Fixed`** — the loop checked
+   diagnostics *before* applying each patch and broke out on the
+   first clean read, but never re-checked after the *last*
+   iteration's patch. counter-rename-field's iter-2 patch produced
+   a correct file but the loop reported `MaxIterationsReached`.
+   **Fix**: after the loop exits without converging, do one final
+   `collect_diagnostics` to decide between `Fixed { iterations:
+   max }` and `MaxIterationsReached`. ([`repair/mod.rs`](crates/refineforge-cli/src/repair/mod.rs))
+2. **`Patch::apply` didn't clamp character to line length** —
+   when Claude's `end.character` overshot the line's content
+   length, byte-offset arithmetic walked past the line terminator
+   and into the next line. Result on counter-swap-lemma's first
+   eval: `simp [incr]simp [incr]ncreases (c : Counter) ...`
+   (concatenation of the original line tail with the start of the
+   next line). **Fix**: compute the line's content end (excluding
+   `\r\n` or `\n` terminator) and clamp character to that.
+   ([`refineforge-repair-api/src/lib.rs`](crates/refineforge-repair-api/src/lib.rs))
+   + 3 new unit tests covering LF clamping, CRLF clamping, and
+   multi-line replacement-preserves-following-line.
+
+#### Prompt clarification
+
+The `build_request` user-message diagnostic block now states "0-indexed,
+LSP convention" for both the diagnostic range and the patch
+position keys, plus documents the patch-substring semantics
+(`start_line:start_char` inclusive, `end_line:end_char` exclusive;
+`new_text` applied verbatim; out-of-bounds positions clamped). Did
+NOT move the headline number (1/3 → 1/3 between v1 and v3) — the
+gain came from the two real bug fixes.
+
+#### Eval harness enrichment
+
+`EntryResult` now includes:
+- `iteration_log: Vec<IterationSummary>` — per-iteration
+  diagnostic count, first diagnostic message, patch range,
+  patch new-text, rationale, accept/reject, notes.
+- `final_file: Option<String>` — full file contents after the
+  last iteration so a reviewer can diff against the ground truth
+  without re-running.
+
+Without these fields, the headline "1/3 fixed" was the only signal
+— with them, the per-iteration record made the two bugs visible
+within minutes of inspecting the JSON.
+
+#### Honest disclosures (about the eval itself)
+
+- **N=3 is a smoke-test corpus, not a benchmark.** The
+  `docs/repair-evaluation.md` §2 plan requires N≥1000 from a
+  mathlib mutation pipeline (Section 2 phase 1 item 3) for
+  statistically meaningful numbers. The 67 % is real but it
+  describes *these three claims*, not "refine repair's repair
+  rate."
+- **counter-swap-lemma genuinely defeats Claude.** Even at
+  `--max-iterations 5`. The break introduces cascading parse
+  errors that Claude's per-iteration patches can clean up
+  partially but never fully within a few iterations. A smarter
+  strategy with cross-iteration memory (or richer context — e.g.
+  the full file plus the LSP elaborator state) might do better.
+  Not a bug; a real limitation.
+- **The two bugs above were latent in `refineforge-cli` from
+  the LLM repair-loop skeleton commit (`662cf3f`).** They didn't
+  surface until a real strategy started producing patches.
+  Skeletons with `MockStrategy` cannot exercise these paths —
+  honesty win for the doctrine "the harness *is* the test of
+  the framework, not just of the strategy."
+
 ### Added — Section 2 deep: real LLM repair + evaluation harness
 
 This is the "go deep on one section" pass. Section 2 (ML

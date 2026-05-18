@@ -19,9 +19,27 @@ pub struct EntryResult {
     pub strategy: String,
     pub duration_ms: u64,
     pub file_modified: bool,
-    /// Whether the strategy proposed any patch in any iteration
-    /// (regardless of whether it was accepted).
+    /// Whether the strategy proposed any patch in any iteration.
     pub any_patch_proposed: bool,
+    /// Per-iteration patch summaries so reviewers can inspect what
+    /// the strategy actually proposed (and why it did or didn't fix
+    /// the break).
+    pub iteration_log: Vec<IterationSummary>,
+    /// Final file contents after the last iteration. Lets a reviewer
+    /// diff against the ground truth without re-running.
+    pub final_file: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IterationSummary {
+    pub index: usize,
+    pub diagnostic_count: usize,
+    pub first_diagnostic_message: Option<String>,
+    pub patch_range: Option<String>,
+    pub patch_new_text: Option<String>,
+    pub patch_rationale: Option<String>,
+    pub patch_accepted: Option<bool>,
+    pub notes: Vec<String>,
 }
 
 pub fn run_one(
@@ -86,7 +104,34 @@ pub fn run_one(
 
     let any_patch_proposed = report.iterations.iter().any(|i| i.patch_proposed.is_some());
 
-    // tempdir drops + cleans up here.
+    let iteration_log: Vec<IterationSummary> = report
+        .iterations
+        .iter()
+        .map(|it| {
+            let (patch_range, new_text, rationale) = it
+                .patch_proposed
+                .as_ref()
+                .map(|p| (Some(p.range_summary()), Some(p.new_text.clone()), Some(p.rationale.clone())))
+                .unwrap_or((None, None, None));
+            IterationSummary {
+                index: it.index,
+                diagnostic_count: it.diagnostics_before.len(),
+                first_diagnostic_message: it
+                    .diagnostics_before
+                    .first()
+                    .map(|d| d.message.clone()),
+                patch_range,
+                patch_new_text: new_text,
+                patch_rationale: rationale,
+                patch_accepted: it.patch_accepted,
+                notes: it.notes.clone(),
+            }
+        })
+        .collect();
+
+    // Snapshot the final file contents before the tempdir is dropped.
+    let final_file = std::fs::read_to_string(&target).ok();
+
     drop(tempdir);
 
     Ok(EntryResult {
@@ -96,6 +141,8 @@ pub fn run_one(
         duration_ms,
         file_modified: report.file_modified,
         any_patch_proposed,
+        iteration_log,
+        final_file,
     })
 }
 

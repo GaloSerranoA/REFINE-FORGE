@@ -202,7 +202,7 @@ impl<T: AnthropicTransport> AnthropicStrategy<T> {
         let diag_block = UserBlock {
             kind: "text".into(),
             text: format!(
-                "DIAGNOSTIC:\n  severity: {:?}\n  range: line {}, col {} -- line {}, col {}\n  message: {}\n\nPropose ONE minimal patch as a single JSON object with keys: start_line, start_char, end_line, end_char, new_text, rationale. Do NOT use sorry/admit/axiom — the policy gate will reject those. Respond with ONLY the JSON object, no prose, no markdown fences.",
+                "DIAGNOSTIC:\n  severity: {:?}\n  range (0-indexed, LSP convention): line {}, col {} -- line {}, col {}\n  message: {}\n\nPropose ONE minimal patch as a single JSON object with keys: start_line, start_char, end_line, end_char (ALL 0-indexed, LSP convention — the FIRST line of the file is line 0), new_text, rationale.\n\nPatch semantics: the substring of the file from start_line:start_char up to (but not including) end_line:end_char is replaced by new_text. To insert without deleting, set end == start. The patch is applied verbatim — extra context in new_text will be duplicated.\n\nDo NOT use sorry/admit/axiom — the policy gate will reject those. Respond with ONLY the JSON object, no prose, no markdown fences.",
                 d.severity,
                 d.range.start.line, d.range.start.character,
                 d.range.end.line, d.range.end.character,

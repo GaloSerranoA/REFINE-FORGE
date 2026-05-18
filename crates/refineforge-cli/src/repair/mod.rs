@@ -130,6 +130,7 @@ pub fn repair(root: &Path, claim_id: &str, config: RepairConfig) -> Result<Repai
     let mut iterations = Vec::new();
     let mut outcome = RepairOutcome::MaxIterationsReached;
     let mut file_modified = false;
+    let mut converged = false;
 
     for i in 0..config.max_iterations {
         let diagnostics = client.collect_diagnostics(&uri, std::time::Duration::from_secs(20))?;
@@ -140,6 +141,7 @@ pub fn repair(root: &Path, claim_id: &str, config: RepairConfig) -> Result<Repai
             } else {
                 RepairOutcome::Fixed { iterations: i }
             };
+            converged = true;
             break;
         }
 
@@ -208,6 +210,22 @@ pub fn repair(root: &Path, claim_id: &str, config: RepairConfig) -> Result<Repai
 
         iter.patch_accepted = Some(true);
         iterations.push(iter);
+    }
+
+    // After the loop: if we exhausted iterations without an early
+    // break, the LAST patch may or may not have fixed the file. The
+    // original implementation always reported MaxIterationsReached
+    // here, under-counting Fixed cases. Do one final diagnostic
+    // check to decide honestly.
+    if !converged && file_modified {
+        let final_diagnostics =
+            client.collect_diagnostics(&uri, std::time::Duration::from_secs(20))?;
+        if final_diagnostics.is_empty() {
+            outcome = RepairOutcome::Fixed {
+                iterations: config.max_iterations,
+            };
+        }
+        // else: MaxIterationsReached stands.
     }
 
     client.shutdown()?;

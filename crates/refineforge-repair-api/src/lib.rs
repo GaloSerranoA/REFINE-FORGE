@@ -145,15 +145,41 @@ fn line_offsets(s: &str) -> Vec<usize> {
     v
 }
 
-/// Compute byte offset for an LSP position. LSP characters are
-/// UTF-16 code units; this implementation assumes ASCII source
-/// (which Lean files generally are).
+/// Compute byte offset for an LSP position.
+///
+/// LSP `character` is nominally UTF-16 code units; this
+/// implementation treats it as a byte offset, which is identical to
+/// UTF-16 for ASCII content. Lean source files within a *single
+/// line* are usually ASCII even when the file as a whole contains
+/// multi-byte characters (`≥`, `λ`, etc.) — patches that target
+/// such lines would need a UTF-16-aware converter; documented as
+/// future work.
+///
+/// Clamps `character` to the line's content length (excluding `\r\n`
+/// or `\n` terminator). Without this clamp, an over-the-line-end
+/// `character` value silently consumes the line terminator, which
+/// concatenates adjacent lines and produces "stvalueture"-style
+/// corruption when a multi-line patch follows. Observed in the
+/// `refineforge-eval` baseline run on counter-swap-lemma (2026-05-18).
 fn char_offset(line_offsets: &[usize], source: &str, line: u32, character: u32) -> usize {
     let line = line as usize;
     if line >= line_offsets.len() {
         return source.len();
     }
-    line_offsets[line] + character as usize
+    let line_start = line_offsets[line];
+    let next_line_start = line_offsets.get(line + 1).copied().unwrap_or(source.len());
+    // Strip the line terminator (\n, or \r\n) when computing the
+    // line's "end of content" position.
+    let bytes = source.as_bytes();
+    let mut content_end = next_line_start;
+    if content_end > line_start && bytes.get(content_end - 1) == Some(&b'\n') {
+        content_end -= 1;
+        if content_end > line_start && bytes.get(content_end - 1) == Some(&b'\r') {
+            content_end -= 1;
+        }
+    }
+    let max_char = content_end - line_start;
+    line_start + (character as usize).min(max_char)
 }
 
 // ─── Trait ──────────────────────────────────────────────────────────────
@@ -275,6 +301,59 @@ mod tests {
             rationale: "test".into(),
         };
         assert_eq!(patch.apply(source), "abcignored");
+    }
+
+    /// Regression: a character offset past the end of a line must
+    /// NOT consume the line terminator and slurp the next line.
+    /// Bug discovered in refineforge-eval baseline (2026-05-18) —
+    /// without the fix, patches end up with "stvalueture" / duplicated
+    /// content from concatenation of adjacent lines.
+    #[test]
+    fn patch_apply_clamps_character_to_line_length_lf() {
+        let source = "  simp [Nat.mul_comm]\nnext line\n";
+        // Range goes past the end-of-line character (line is 21 chars).
+        let patch = Patch {
+            range: Range {
+                start: Position { line: 0, character: 2 },
+                end: Position { line: 0, character: 99 },
+            },
+            new_text: "simp [incr]".into(),
+            rationale: "test".into(),
+        };
+        // Expected: only the content of line 0 (after col 2) is
+        // replaced; the \n and "next line" are untouched.
+        assert_eq!(patch.apply(source), "  simp [incr]\nnext line\n");
+    }
+
+    #[test]
+    fn patch_apply_clamps_character_to_line_length_crlf() {
+        let source = "  simp [Nat.mul_comm]\r\nnext line\r\n";
+        let patch = Patch {
+            range: Range {
+                start: Position { line: 0, character: 2 },
+                end: Position { line: 0, character: 99 },
+            },
+            new_text: "simp [incr]".into(),
+            rationale: "test".into(),
+        };
+        assert_eq!(patch.apply(source), "  simp [incr]\r\nnext line\r\n");
+    }
+
+    #[test]
+    fn patch_apply_multi_line_replacement_preserves_following_line() {
+        let source = "line a\nline b\nline c\nline d\n";
+        // Replace lines 0..2 with new text; line c and beyond must remain.
+        let patch = Patch {
+            range: Range {
+                start: Position { line: 0, character: 0 },
+                end: Position { line: 1, character: 99 },
+            },
+            new_text: "NEW".into(),
+            rationale: "test".into(),
+        };
+        // After clamp: end of line 1 content (char 6 = "line b"), so
+        // we replace "line a\nline b" with "NEW".
+        assert_eq!(patch.apply(source), "NEW\nline c\nline d\n");
     }
 
     #[test]
