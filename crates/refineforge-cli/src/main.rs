@@ -11,6 +11,7 @@ mod sorry_gate;
 mod bundle;
 mod scaffold;
 mod scan;
+mod repair;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -57,6 +58,24 @@ enum Cmd {
     Scan {
         #[command(subcommand)]
         cmd: ScanCmd,
+    },
+    /// SKELETON: bounded LLM repair loop. Spawns `lake env lean
+    /// --server`, collects diagnostics, asks the strategy for
+    /// patches, applies them, re-checks. The shipped `mock`
+    /// strategy declines every diagnostic — swap it for an LLM
+    /// strategy to make this useful. See docs/llm-repair-design.md.
+    Repair {
+        /// Claim id to repair
+        claim_id: String,
+        /// Maximum loop iterations
+        #[arg(long, default_value_t = 5)]
+        max_iterations: usize,
+        /// Strategy name (built-in: "mock")
+        #[arg(long, default_value = "mock")]
+        strategy: String,
+        /// Don't write changes to disk
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Scaffold a new claim from a template
     New {
@@ -132,6 +151,12 @@ fn main() -> Result<()> {
             ScanCmd::Check { claim_id } => scan::scan_one(&cli.root, &claim_id),
             ScanCmd::CheckAll => scan::scan_all(&cli.root),
         },
+        Cmd::Repair {
+            claim_id,
+            max_iterations,
+            strategy,
+            dry_run,
+        } => repair::run_cli(&cli.root, &claim_id, max_iterations, &strategy, dry_run),
         Cmd::New {
             template,
             claim_id,

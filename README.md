@@ -132,6 +132,7 @@ cargo build --release
 | `refine scan check-all`                | Same, for every claim                                                   |
 | `refine bundle export <id>`            | Bundle the sources + manifest + report                                  |
 | `refine bundle verify <bundle-dir>`    | Re-hash every file in a bundle and confirm the manifest matches         |
+| `refine repair <id>` (SKELETON)        | Bounded LLM repair loop against Lean's LSP server. Default strategy is `mock` (declines every proposal) — swap in an LLM strategy per [`docs/llm-repair-design.md`](docs/llm-repair-design.md) |
 | `refine templates`                     | List scaffolding templates                                              |
 | `refine new --template <t> --module <M> <ID>` | Scaffold a new claim from a template                             |
 
@@ -169,7 +170,7 @@ Where each thing currently lives:
 | Proof template generator (`refine new`)    | ✅ implemented      |
 | Rust source scan (name-presence check)     | ✅ implemented      |
 | Refinement-argument template               | ✅ `docs/refinement-template.md` |
-| LLM repair loop (LSP client)               | not yet             |
+| LLM repair loop (LSP client)               | ⚠️ skeleton landed; `mock` strategy only — wire your own LLM per [`docs/llm-repair-design.md`](docs/llm-repair-design.md) |
 | Syn-based scan (parse, not regex)          | not yet             |
 
 ## License
