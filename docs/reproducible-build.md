@@ -8,9 +8,19 @@ commit produce byte-identical `manifest.json`, byte-identical
 Owned by the **Infrastructure / DevOps** section
 ([ARCHITECTURE.md](../ARCHITECTURE.md) §3).
 
-> **Status (0.1.0):** This is the *design* doc. The current build
-> is not hermetic. The Nix flake (or Bazel) work that delivers this
-> is Section 3 phase 2 in the architecture's sequencing.
+> **Status (Unreleased):** Nix flake **authored** (`flake.nix` at
+> repo root). The structure follows the standard lean4-nix + crane
+> + rust-overlay pattern. Targets shipped: `nix build .#refine`,
+> `nix build .#refine-eval`, `nix build .#bundle-EXAMPLE-001`,
+> `nix build .#bundle-EXAMPLE-002`, `nix develop`, `nix flake check`.
+>
+> **First-build verification PENDING.** The flake was authored on
+> a Windows dev machine without a Nix install. First green run on a
+> Linux/macOS machine (or via the `nix-flake-check` CI job that
+> ships in the same commit) will surface any drift from
+> `lean4-nix`'s documented API or `crane`'s evolving conventions.
+> Until that first green run lands, treat this doc as describing
+> the **intended state**, not the **proven state**.
 
 ## 1. Why bit-identical matters
 
@@ -48,34 +58,60 @@ Every reproducibility problem comes from one of these:
 | **Locale** | Lean's elaborator can emit locale-dependent error messages in `stdout` | Set `LC_ALL=C.UTF-8` in CI; document in the Nix flake |
 | **Cargo build caching** | sccache + `target/` may inject build-host info into binaries | Use `--locked` and a clean target dir for release builds |
 
-## 3. The Nix flake approach (planned)
+## 3. The Nix flake approach (skeleton shipped; first-build pending)
 
-The intended end state is a `flake.nix` at repo root that pins:
+The flake at repo root pins:
 
-- **The Lean toolchain** by content hash, not by version string.
-  (`leanprover/lean4:v4.29.1` is pinned-by-version; the Nix
-  derivation pins by SHA-256 of the binary distribution tarball.)
-- **The Rust toolchain** (cargo, rustc, the standard library) by
-  content hash via `rust-overlay`.
-- **Every Cargo dependency** by content hash via `crane` or
-  `cargo2nix`.
-- **System tools** invoked by build scripts: `git`, `bash`, `coreutils`.
+- **The Lean toolchain** via `lean4-nix.readToolchainFile
+  ./lean/lean-toolchain`. The toolchain file format is
+  `leanprover/lean4:vX.Y.Z`; lean4-nix translates that into a
+  content-addressed Nix derivation.
+- **The Rust toolchain** via `rust-overlay` (`pkgs.rust-bin.stable.latest.default`).
+- **Every Cargo dependency** via `crane` (`cargoArtifacts` cached
+  separately from `buildPackage`).
+- **System tools** in `devShells.default`: cargo-nextest, lean-all,
+  cosign, git, jq, python3.
 
 With the flake in place:
 
 ```bash
 # Reproducer A (any machine with Nix):
-nix build .#refine-bundle-EXAMPLE-002
+nix build .#bundle-EXAMPLE-002
 
 # Reproducer B (different machine, hours/days later):
-nix build .#refine-bundle-EXAMPLE-002
+nix build .#bundle-EXAMPLE-002
 
-# Diff the two — should be empty:
+# Diff the two — should be empty (modulo manifest.created_at):
 diff -r result-A result-B
 ```
 
-If the diff is non-empty, that's a reproducibility regression.
-File a bug; treat it as a P1.
+If the diff is non-empty (excluding `created_at`), that's a
+reproducibility regression. File a bug; treat it as a P1.
+
+### Targets
+
+| `nix build` invocation | What it produces | Status |
+|---|---|---|
+| `nix build .#refine` | the `refine` binary | high confidence — straight crane |
+| `nix build .#refine-eval` | the `refine-eval` binary | high confidence — same pattern |
+| `nix build .#bundle-EXAMPLE-001` | hermetic bundle for the Lean-only tutorial | medium confidence — lake build sandbox interaction is the unknown |
+| `nix build .#bundle-EXAMPLE-002` | hermetic bundle for the refined tutorial | medium confidence — same as above |
+| `nix develop` | shell with refine, lean-all, cosign, cargo, etc. | high confidence |
+| `nix flake check` | `cargo test`, `cargo fmt --check`, `cargo clippy -D warnings` | high confidence |
+
+### Known unknowns
+
+1. **Lake's `.lake/` cache writes inside `src`.** Nix sandboxes
+   typically deny writes to the source dir. The bundle derivation
+   copies src to `$TMPDIR` via crane's standard pattern, so this
+   *should* work — first build will confirm.
+2. **`lake build` on first run may want network access** to fetch
+   the Lean toolchain — but `pkgs.lean-all` provides it, so Lake
+   should use the local copy. If we ever add a Mathlib-using claim,
+   that claim's `bundleFor` derivation will need `__noChroot = true`
+   (impure) or a pre-built Mathlib package.
+3. **The `crane` API has drifted over versions.** Pinning a specific
+   `crane` rev once `nix flake lock` runs will stabilise this.
 
 ## 4. Alternatives considered
 
@@ -119,20 +155,36 @@ discipline to a Lean+Rust artifact pipeline.
   treat reproducibility as best-effort. The discipline above
   documents the *intended* state, not the current state.
 
-## 7. Sequencing
+## 7. Sequencing — current state
 
-Per [ARCHITECTURE.md](../ARCHITECTURE.md):
-
-| Step | Owner | When |
+| Step | Owner | Status |
 |---|---|---|
-| Multi-arch CI matrix | DevOps | Section 3 phase 1 |
-| Dockerfile.verifier (usability, not reproducibility) | DevOps | Section 3 phase 1 |
-| Sigstore signing | DevOps | Section 3 phase 2 |
-| **Nix flake (this doc)** | **DevOps** | **Section 3 phase 2** |
-| Hardware-backed release signing | DevOps | Section 3 phase 3+ |
+| Multi-arch CI matrix | DevOps | ✅ shipped (.github/workflows/ci.yml) |
+| Dockerfile.verifier (usability, not reproducibility) | DevOps | ✅ shipped (containers/Dockerfile.verifier) |
+| Sigstore signing | DevOps | ✅ shipped (CI workflow + --verify-signature) |
+| **Nix flake (this doc)** | **DevOps** | ⚠️ **authored; first build pending** |
+| Hardware-backed release signing | DevOps | not yet (Section 3 phase 3) |
+| Bit-identical bundle audit (verification protocol §5) | DevOps | not yet — gated on first green nix-flake-check CI run |
 
-Until the Nix flake lands, bundles are reproducible to the extent
-that the maintainer's local environment matches the next
-reviewer's. The `lean-toolchain` pin + `Cargo.lock` + `--locked`
-get you most of the way; the last mile is what this doc
-eventually delivers.
+Until the first green `nix-flake-check` CI run lands, bundles are
+reproducible to the extent that the maintainer's local environment
+matches the next reviewer's. The `lean-toolchain` pin + `Cargo.lock`
++ `--locked` get you most of the way; the Nix flake's first green
+build is the proof.
+
+## 8. How to verify the flake yourself (if you have Nix)
+
+The honest first action a Nix-on-Linux/macOS user can take:
+
+```bash
+git clone <this-repo> refineforge
+cd refineforge
+nix flake check --no-update-lock-file --print-build-logs
+nix build .#refine --no-update-lock-file --print-build-logs
+nix build .#bundle-EXAMPLE-002 --no-update-lock-file --print-build-logs
+```
+
+If any of those error: that's exactly the information the maintainer
+needs. Open an issue with the full `--print-build-logs` output. The
+flake was authored without a way to exercise it locally; the first
+real user run is the verification.

@@ -18,3 +18,8 @@ lean/build/
 
 # eval run outputs — produced by refine-eval, not committed
 /eval/runs/
+
+# Nix
+result
+result-*
+.direnv/

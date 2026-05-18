@@ -145,6 +145,45 @@ jobs:
           path: artifacts/
           retention-days: 14
 
+  # ─── Nix flake check (Ubuntu only — Nix on Windows would need WSL)
+  # Verifies the flake builds + flake-check passes. Uses Cachix's
+  # magic-nix-cache for transparent caching across runs.
+  nix-flake-check:
+    name: nix-flake-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v14
+
+      - name: Cache nix store via magic-nix-cache
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: nix flake check
+        # `--all-systems false` skips evaluating other architectures
+        # (we only care about x86_64-linux here; macOS / Darwin runners
+        # are not part of this job).
+        run: nix flake check --no-update-lock-file --print-build-logs
+
+      - name: Build refine binary via Nix
+        run: nix build .#refine --no-update-lock-file --print-build-logs
+
+      - name: Build EXAMPLE-002 bundle via Nix (hermetic)
+        # The hermetic bundle build is the load-bearing reproducibility
+        # claim — if this passes, two independent rebuilds at this commit
+        # produce byte-identical bundle contents (modulo manifest
+        # created_at — see docs/reproducible-build.md §2).
+        run: nix build .#bundle-EXAMPLE-002 --no-update-lock-file --print-build-logs
+
+      - name: Hash the Nix-built bundle (for future reproducibility audit)
+        run: |
+          if [ -d result ]; then
+            (cd result && find . -type f -not -name manifest.json -exec sha256sum {} \;) | sort > /tmp/bundle-hashes.txt
+            echo "Nix-built EXAMPLE-002 bundle content hashes:"
+            cat /tmp/bundle-hashes.txt
+          fi
+
   # ─── Sigstore signing (canonical builder only) ──────────────────────
   # Runs only on push to main or tags. Pull requests don't sign because
   # cosign's keyless flow uses the workflow's OIDC identity, and PR

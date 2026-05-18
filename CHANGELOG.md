@@ -10,6 +10,98 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Section 3 phase 2: Nix flake (authored; first-build pending)
+
+- **`flake.nix` at repo root** — real lean4-nix + crane + rust-overlay
+  composition. Inputs pinned via `inputs.<x>.url`; `flake.lock` will
+  be generated on first `nix flake lock`. Outputs:
+  - `packages.refine`, `packages.refine-eval`, `packages.default = refine`
+  - `packages.bundle-EXAMPLE-001`, `packages.bundle-EXAMPLE-002` —
+    hermetic bundle derivations that run `lake build` + `refine
+    bundle export <CLAIM>` in the Nix sandbox.
+  - `devShells.default` — rustc, cargo-nextest, lean-all, cosign,
+    git, jq, python3 with a `shellHook` that prints versions.
+  - `checks.cargoTest`, `checks.cargoFmt`, `checks.cargoClippy` (the
+    last with `-D warnings`).
+  - `formatter = pkgs.nixpkgs-fmt`.
+- **Lean toolchain pinned by content hash** via
+  `lean4-nix.readToolchainFile ./lean/lean-toolchain` — so a Lean
+  version bump in the toolchain file invalidates the Nix-derived
+  Lean too, without a separate flake edit.
+- **Rust dep build artifacts cached separately** via crane's
+  `cargoArtifacts` pattern — source-only changes don't rebuild the
+  dep graph.
+- **Source filter** keeps cargo sources (via crane's
+  `filterCargoSources`) plus `lean/`, `claims/`, `templates/`,
+  `docs/refinement/` (needed by the bundle derivations); excludes
+  `lean/.lake/` (build cache).
+- **CI job `nix-flake-check`** added to `.github/workflows/ci.yml`,
+  Ubuntu only (Nix on Windows would need WSL). Uses
+  `DeterminateSystems/nix-installer-action@v14` +
+  `magic-nix-cache-action@v8` for transparent caching. Runs:
+  - `nix flake check --no-update-lock-file`
+  - `nix build .#refine`
+  - `nix build .#bundle-EXAMPLE-002` (the load-bearing reproducibility
+    test — succeeds = bit-identical bundle build via Nix)
+  - SHA-256 dump of the Nix-built bundle for future audit baseline.
+- **`docs/reproducible-build.md` promoted** from "design doc" to
+  "skeleton shipped, first-build pending." New §3 documents per-
+  target confidence (refine/refine-eval/devShell high; bundle
+  derivations medium); §7 status table updated; §8 added with the
+  exact `nix flake check` + `nix build` invocation a Nix user
+  should run first.
+- **`.gitignore`** adds `result`, `result-*`, `.direnv/` —
+  standard Nix-build symlinks + direnv cache.
+- **STRUCTURE.md** lists `flake.nix` in the top-level tree.
+
+### Honest disclosures — this WAS NOT TESTED LOCALLY
+
+- **`flake.nix` was authored on a Windows dev machine without a
+  Nix install.** I cannot `nix build` here. The flake follows the
+  documented `lean4-nix` API (`readToolchainFile` overlay → `pkgs.lean-all`)
+  and the documented `crane` patterns (`buildDepsOnly` +
+  `buildPackage`), confirmed by reading the upstream READMEs. First
+  green run on the `nix-flake-check` CI job (or a local
+  Linux/macOS Nix user) is the verification.
+- **The bundle derivations may need first-build adjustment.**
+  Specifically: `lake build` writes its cache into `lean/.lake/`
+  which is inside the build sandbox's `src` copy — should work
+  per Nix idiom, but if the sandbox denies writes, the derivation
+  will need `cd $TMPDIR && cp -r $src/* . && chmod -R +w .` style
+  prep. Will surface on first run.
+- **`crane`'s API has drifted across versions.** I pinned via
+  `inputs.crane.url = "github:ipetkov/crane"` (HEAD); a flake.lock
+  freeze on first run will stabilise this. If crane's API changed
+  meaningfully, the `craneLib.buildPackage` / `cargoArtifacts` /
+  `cargoTest` / `cargoFmt` / `cargoClippy` calls may need flag
+  renaming.
+- **Mathlib-using claims won't work in the current bundle derivation**
+  (network would be needed during build, which Nix sandbox denies).
+  Our EXAMPLE-* claims don't use Mathlib, so this is OK today.
+  When that becomes a real need: either `__noChroot = true` (impure)
+  or pre-built Mathlib package in pkgs.
+- **No `flake.lock` is committed in this commit.** Standard Nix
+  workflow: first user runs `nix flake lock` to generate it; the
+  resulting lock file should then be committed. Doing this without
+  Nix locally would produce a wrong lockfile.
+
+### What this means for the project's reproducibility story
+
+Before this commit: bundles were SHA-256-self-attesting + Sigstore-
+signed, but not reproducible. Two maintainers building the same git
+commit would produce bundles with different hashes (timestamp +
+build-host paths in compiled artifacts).
+
+After this commit (subject to first-green CI run):
+- `refine` binary built via Nix is bit-identical across machines
+  (rust-overlay pins rustc; crane caches deps deterministically).
+- `bundle-EXAMPLE-*` produced via Nix is bit-identical
+  except for `manifest.created_at` (which intentionally records
+  the build time). A future revision could accept `SOURCE_DATE_EPOCH`
+  to make even that field deterministic.
+- The reproducibility-builds.org protocol from
+  `docs/reproducible-build.md` §5 is now actually runnable.
+
 ### Added — Section 3 deep: production-grade CI + Sigstore + release scripting
 
 This is the "go deep on Section 3" pass. Multi-arch CI matrix,

@@ -200,7 +200,7 @@ Where each thing currently lives:
 | Multi-arch CI matrix                       | ✅ Ubuntu + macOS + Windows with elan / lake / cargo caches |
 | Sigstore signing in CI + `--verify-signature` | ✅ keyless cosign sign-blob on main + tags; verifier-side `refine bundle verify --verify-signature` (cosign subprocess) |
 | Release scripting (`release/release.{sh,ps1}`) | ✅ semver check, CHANGELOG check, version bump, test run, tag + optional cosign tag-commit sig |
-| Nix flake for hermetic builds              | not yet (Lean toolchain via Nix is multi-day work) |
+| Nix flake for hermetic builds              | ⚠️ authored (`flake.nix`); first-build verification pending (see [docs/reproducible-build.md](docs/reproducible-build.md) §8) |
 | Mathlib mutation pipeline (corpus at N≥1000) | not yet             |
 | Fine-tuned proof-repair model              | not yet (6+ month research commitment) |
 | Syn-based scan (parse, not regex)          | not yet             |

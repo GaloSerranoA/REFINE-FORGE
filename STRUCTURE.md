@@ -18,6 +18,7 @@ refineforge/
 ├── SECURITY.md                 # vuln reporting + how to verify a signed bundle
 ├── STRUCTURE.md                # this file
 ├── Cargo.toml                  # Rust workspace manifest
+├── flake.nix                   # Section 3: Nix flake (lean4-nix + crane + rust-overlay)
 ├── .gitignore
 ├── .github/
 │   ├── CODEOWNERS              # path → section mapping (advisory until remote)
