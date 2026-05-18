@@ -1,0 +1,14 @@
+{
+  "claim_id": "EXAMPLE-001",
+  "created_at": "2026-05-18T13:53:30.938934700Z",
+  "lean_toolchain": "leanprover/lean4:v4.29.1",
+  "files": {
+    "claims/example.yaml": "9e21019e127f54e72da759b4cecc7087335d6da630d2ca08c39107f4d1ce7632",
+    "lean/Refineforge.lean": "4fb0d3f217b4a9260666271732fd81a37a05a18ec1653ed0fbb9d938a2607333",
+    "lean/Refineforge/Example.lean": "5c1ea46029bc96b8f6edc97313a4f1f15f47c30ce558abe1e56b890e3ca95b17",
+    "lean/lakefile.toml": "7cb8ca5099c850288731f77eee6ae594e58c576b34b59f7d5bebc3598c5ea3b5",
+    "lean/lean-toolchain": "7dc000621e0046d1aada809e2b7177e64454645cf4c741e9daaf79c99ec2e7a2"
+  },
+  "report_sha256": "489b3036e7908b30d5252f1a77d8978d2f5d1b63c2aaeed8e964c1c9ea7761d7",
+  "bundle_schema": 1
+}

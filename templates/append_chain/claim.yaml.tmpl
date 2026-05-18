@@ -1,0 +1,40 @@
+claim_id: {{CLAIM_ID}}
+title: "{{TITLE}}"
+description: |
+  TODO: describe the trust property in plain English.
+
+  Scaffolded from `append_chain` template. The Lean side proves
+  append-preserves-validity for a linked, append-only sequence.
+
+scope: model-only
+status: drafted
+authors:
+  - TODO
+
+rust_source:
+  - path: TODO
+    types:
+      - Entry
+      - Chain
+    functions:
+      - append
+      - validate
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: {{MODULE}}
+  file: {{LEAN_FILE}}
+  theorems:
+    - empty_valid
+    - append_preserves_validity
+    - tipHash_after_append
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: null

@@ -1,0 +1,152 @@
+# refineforge
+
+A Lean 4 proof engineering + refinement-bundle framework for trust-critical Rust.
+
+> **Doctrine:** LLM may propose. Lean must verify. Human operator must approve.
+
+## What this is
+
+refineforge is a **project template + CLI** for teams that want
+formally-verified mathematical models linked to a running Rust
+codebase. You write a Lean model, prove your theorems, write a
+human-reviewed refinement argument bridging the model to the Rust
+code, and refineforge bundles everything into a SHA-256-sealed
+artifact a third party can independently re-verify.
+
+Fork this repo, replace the example claim with your own, and you have
+a verification pipeline.
+
+## What this is *not*
+
+It is **not** "AI that proves your code automatically." It does not
+verify the Rust binary, the Rust compiler, the OS, or the hardware.
+It proves properties of **mathematical models** of trust-critical
+behaviour and links those models to specific Rust source files via
+**a refinement argument that a human operator writes and reviews**.
+
+The refinement argument — not the proof — is the trust-critical
+artifact. See [`docs/methodology.md`](docs/methodology.md).
+
+## Worked example
+
+The HELYX trust-claim project ([helyx-proofforge](https://github.com/) — see
+[`docs/HELYX-CASE-STUDY.md`](docs/HELYX-CASE-STUDY.md)) was the
+original consumer of this framework. It demonstrates the full
+pattern: Lean model (audit chain), Rust crate that refines it,
+refinement-argument doc, and a `Verified` scan + verified bundle.
+
+## Repository layout
+
+```
+refineforge/
+├── lean/                      # Lake project — your formal models
+│   ├── lakefile.toml
+│   ├── lean-toolchain         # pinned: leanprover/lean4:v4.29.1
+│   ├── Refineforge.lean       # library root (rename to your project)
+│   └── Refineforge/
+│       └── Example.lean       # hello-world theorem (delete and replace)
+├── claims/                    # claim registry (YAML, one file per claim)
+│   └── example.yaml           # EXAMPLE-001 wired to the hello-world
+├── crates/
+│   └── refineforge-cli/       # Rust CLI: `refine`
+├── templates/                 # scaffolding for new claims
+│   ├── append_chain/          # append-only linked chain with hash check
+│   ├── capability/            # capability-based authorization
+│   └── state_machine/         # state-machine transitions
+├── artifacts/                 # exported verification bundles
+├── docs/
+│   ├── methodology.md         # how refineforge thinks about trust
+│   ├── no-sorry-policy.md     # what the policy gate enforces
+│   ├── refinement-template.md # generic template for refinement-argument docs
+│   └── HELYX-CASE-STUDY.md    # link to the worked example
+└── .github/workflows/ci.yml   # builds Lean + Rust on every push
+```
+
+## Quick start
+
+```bash
+# 1. Install elan (Lean toolchain manager) — one time
+curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh
+
+# 2. Build the CLI
+cargo build --release
+
+# 3. Build the Lean library (downloads pinned Lean 4.29.1 on first run)
+(cd lean && lake build)
+
+# 4. List claims
+./target/release/refine claims list
+
+# 5. Verify every claim end-to-end (policy gate + lake build)
+./target/release/refine lean check-all
+
+# 6. Export an independently verifiable bundle
+./target/release/refine bundle export EXAMPLE-001
+
+# 7. Re-verify the bundle (re-hashes everything; does not re-run Lean)
+./target/release/refine bundle verify artifacts/EXAMPLE-001
+
+# 8. Scaffold your first real claim from a template
+./target/release/refine templates
+./target/release/refine new \
+    --template state_machine \
+    --module Refineforge.OrderState \
+    --title "Order state machine respects allowed transitions" \
+    MYPROJ-STATE-001
+```
+
+## Subcommand reference
+
+| Command                                | What it does                                                            |
+|----------------------------------------|-------------------------------------------------------------------------|
+| `refine claims list`                   | List every claim in `claims/`                                           |
+| `refine claims show <id>`              | Print a claim's YAML                                                    |
+| `refine lean check <id>`               | Verify one claim (policy gate + `lake build`)                           |
+| `refine lean check-all`                | Verify every claim                                                      |
+| `refine scan check <id>`               | Confirm a claim's `rust_source` entities exist in the cited Rust file   |
+| `refine scan check-all`                | Same, for every claim                                                   |
+| `refine bundle export <id>`            | Bundle the sources + manifest + report                                  |
+| `refine bundle verify <bundle-dir>`    | Re-hash every file in a bundle and confirm the manifest matches         |
+| `refine templates`                     | List scaffolding templates                                              |
+| `refine new --template <t> --module <M> <ID>` | Scaffold a new claim from a template                             |
+
+## Status enum (CLI output)
+
+| status              | meaning                                                          |
+|---------------------|------------------------------------------------------------------|
+| `verified`          | policy gate passed AND `lake build` succeeded                    |
+| `build_failed`      | Lean rejected the source                                         |
+| `policy_violation`  | `sorry` / `admit` / non-core `axiom` found; build was not run    |
+| `tooling_error`     | `lake` not installed or filesystem error                         |
+
+Scan additionally reports `Verified` / `Partial` / `FileMissing` / `NoRustSource`.
+
+## Customising for your project
+
+1. Rename `lean/Refineforge.lean` → `lean/<YourLib>.lean` and the
+   directory `lean/Refineforge/` → `lean/<YourLib>/`.
+2. Update `lean/lakefile.toml`: change `defaultTargets` and
+   `[[lean_lib]] name`. The scaffolder auto-detects the new library
+   name from `defaultTargets`, so `refine new` keeps working.
+3. Delete `claims/example.yaml` and `lean/<YourLib>/Example.lean`.
+4. Use `refine new` to scaffold your real claims.
+
+## Framework build plan
+
+Where each thing currently lives:
+
+| Component                                  | Status              |
+|--------------------------------------------|---------------------|
+| Lean runner CLI                            | ✅ implemented      |
+| No-sorry policy gate                       | ✅ implemented      |
+| Claim registry (YAML schema)               | ✅ implemented      |
+| Verification bundle exporter + verifier    | ✅ implemented      |
+| Proof template generator (`refine new`)    | ✅ implemented      |
+| Rust source scan (name-presence check)     | ✅ implemented      |
+| Refinement-argument template               | ✅ `docs/refinement-template.md` |
+| LLM repair loop (LSP client)               | not yet             |
+| Syn-based scan (parse, not regex)          | not yet             |
+
+## License
+
+Dual-licensed under Apache-2.0 or MIT, at your option.

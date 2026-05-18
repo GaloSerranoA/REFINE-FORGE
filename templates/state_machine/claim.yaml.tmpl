@@ -1,0 +1,39 @@
+claim_id: {{CLAIM_ID}}
+title: "{{TITLE}}"
+description: |
+  TODO: describe the trust property in plain English.
+
+  Scaffolded from `state_machine` template. The Lean side proves
+  that any state reached via the transition function is reachable
+  by definition (i.e. the transition function is sound w.r.t. the
+  reachable predicate).
+
+scope: model-only
+status: drafted
+authors:
+  - TODO
+
+rust_source:
+  - path: TODO
+    types:
+      - State
+    functions:
+      - transition
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: {{MODULE}}
+  file: {{LEAN_FILE}}
+  theorems:
+    - start_reachable
+    - step_preserves_reachable
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: null

@@ -1,0 +1,34 @@
+claim_id: EXAMPLE-001
+title: "Hello world: addition is commutative on Nat"
+description: |
+  Tutorial claim shipped with refineforge. Demonstrates the pipeline
+  end-to-end: no-sorry gate → lake build → bundle export/verify.
+
+  Scope: tutorial only. There is no Rust refinement (no `rust_source`
+  block). Replace this with your own claim once you've confirmed
+  `refine lean check-all` returns green.
+
+scope: tutorial
+# status values: unformalized | drafted | builds | proven | broken
+status: proven
+authors:
+  - refineforge
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.Example
+  file: lean/Refineforge/Example.lean
+  theorems:
+    - add_comm_demo
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: |
+    Tutorial example. No human review required; intended to be
+    deleted once the operator scaffolds a real claim.

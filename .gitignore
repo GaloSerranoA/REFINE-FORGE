@@ -1,0 +1,17 @@
+# Rust
+/target/
+Cargo.lock
+
+# Lean
+lean/.lake/
+lean/lake-packages/
+lean/build/
+
+# editor
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# generated artifacts are committed selectively; ignore by default
+/artifacts/*/manifest.json.tmp

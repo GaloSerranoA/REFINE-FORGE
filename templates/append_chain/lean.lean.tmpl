@@ -1,0 +1,61 @@
+/-
+{{CLAIM_ID}}: {{TITLE}}
+
+Template: append_chain
+----------------------
+A linked, append-only sequence where each entry references the hash
+of the previous. The model proves that append preserves validity.
+This is the standard shape for audit logs, event streams, and
+message-bus histories.
+
+This template is the same SHAPE as HELYX-AUDIT-001 with a different
+domain. Edit `Entry` and `hashEntry` to match your domain; keep
+`Valid` and `tipHash` as-is.
+
+Policy: no sorry, no admit, no axioms.
+-/
+
+namespace {{MODULE}}
+
+abbrev Hash := Nat
+
+/-- TODO: replace the payload field with whatever you actually log. -/
+structure Entry where
+  prevHash    : Hash
+  payloadHash : Hash
+  deriving Repr, DecidableEq
+
+/-- TODO: replace with the real hash function (cryptographic strength
+    is out of scope for the chain-integrity claim; it lives in
+    HELYX-CRYPTO-*). -/
+def hashEntry (e : Entry) : Hash :=
+  e.prevHash * 1000003 + e.payloadHash + 7
+
+def tipHash : List Entry → Hash
+  | []             => 0
+  | [e]            => hashEntry e
+  | _ :: b :: rest => tipHash (b :: rest)
+
+inductive Valid : List Entry → Prop
+  | empty  : Valid []
+  | extend : ∀ (chain : List Entry) (e : Entry),
+      Valid chain → e.prevHash = tipHash chain → Valid (chain ++ [e])
+
+theorem empty_valid : Valid [] := Valid.empty
+
+theorem append_preserves_validity
+    (chain : List Entry) (e : Entry)
+    (h_valid : Valid chain) (h_link : e.prevHash = tipHash chain) :
+    Valid (chain ++ [e]) :=
+  Valid.extend chain e h_valid h_link
+
+theorem tipHash_after_append (chain : List Entry) (e : Entry) :
+    tipHash (chain ++ [e]) = hashEntry e := by
+  induction chain with
+  | nil => rfl
+  | cons _ as ih =>
+    cases as with
+    | nil       => rfl
+    | cons _ _  => exact ih
+
+end {{MODULE}}

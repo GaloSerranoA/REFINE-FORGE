@@ -1,0 +1,56 @@
+/-
+{{CLAIM_ID}}: {{TITLE}}
+
+Template: state_machine
+-----------------------
+A state machine has a fixed set of states and a transition relation.
+The model proves that the transition function only produces
+reachable states. This is the standard shape for order lifecycles,
+session protocols, and any "draft → submitted → approved → ..."
+flow.
+
+The user MUST customize:
+  * `State` — add the actual states
+  * `transitions` — list legal transitions as pairs
+
+Fill in the TODOs. Then run:
+  helyx-proof lean check {{CLAIM_ID}}
+
+Policy: no sorry, no admit, no axioms.
+-/
+
+namespace {{MODULE}}
+
+/-- TODO: replace with the real states of the machine. -/
+inductive State
+  | start
+  | finish
+  deriving Repr, DecidableEq
+
+/-- TODO: list every legal transition as a pair (from, to). -/
+def transitions : List (State × State) :=
+  [(State.start, State.finish)]
+
+/-- `s₁` may transition to `s₂` iff the pair is in `transitions`. -/
+def canTransition (s₁ s₂ : State) : Prop :=
+  (s₁, s₂) ∈ transitions
+
+/-- A state is **reachable** if it is the start state, or it is the
+    target of a transition from a reachable state. -/
+inductive Reachable : State → Prop
+  | start : Reachable State.start
+  | step  : ∀ s₁ s₂, Reachable s₁ → canTransition s₁ s₂ → Reachable s₂
+
+/-! ## {{CLAIM_ID}} theorems -/
+
+/-- T1. The start state is reachable. -/
+theorem start_reachable : Reachable State.start := Reachable.start
+
+/-- T2. A single legal transition from a reachable state lands in a
+    reachable state. -/
+theorem step_preserves_reachable
+    (s₁ s₂ : State) (h_r : Reachable s₁) (h_t : canTransition s₁ s₂) :
+    Reachable s₂ :=
+  Reachable.step s₁ s₂ h_r h_t
+
+end {{MODULE}}

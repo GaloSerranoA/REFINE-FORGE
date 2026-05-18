@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan (Lean toolchain manager)
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o elan-init.sh
+          sh elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Show Lean version (resolves from lean-toolchain)
+        working-directory: lean
+        run: |
+          lean --version
+          lake --version
+
+      - name: Build Lean library
+        working-directory: lean
+        run: lake build
+
+      - name: Build CLI
+        run: cargo build --release --locked || cargo build --release
+
+      - name: Run unit tests
+        run: cargo test --release
+
+      - name: Verify all claims
+        run: ./target/release/refine lean check-all
+
+      - name: Scan rust_source for all claims
+        run: ./target/release/refine scan check-all || echo "(scan failures are non-fatal at framework level; tighten in your fork)"
+
+      - name: Export example bundle
+        run: ./target/release/refine bundle export EXAMPLE-001
+
+      - name: Re-verify example bundle
+        run: ./target/release/refine bundle verify artifacts/EXAMPLE-001
+
+      - name: Upload bundle artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: refineforge-bundles
+          path: artifacts/

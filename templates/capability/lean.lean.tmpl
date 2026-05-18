@@ -1,0 +1,56 @@
+/-
+{{CLAIM_ID}}: {{TITLE}}
+
+Template: capability
+--------------------
+A capability is a set of rights. The model proves monotonicity of
+authorization: a larger capability authorizes everything a smaller
+one does. This is the standard shape for claims about access tokens,
+permission bits, and feature flags.
+
+Fill in the TODOs below. Then run:
+  helyx-proof lean check {{CLAIM_ID}}
+
+Policy: no sorry, no admit, no axioms.
+-/
+
+namespace {{MODULE}}
+
+/-- A single right. In production this is typically an enum or a
+    string interned against a fixed table. For the model we keep
+    it abstract. -/
+abbrev Right := String
+
+/-- A capability is a set of rights. We model it as a list with
+    membership equality. -/
+structure Capability where
+  rights : List Right
+  deriving Repr
+
+/-- A capability `c` authorizes action `r` iff `r` is in its rights. -/
+def authorizes (c : Capability) (r : Right) : Prop :=
+  r ∈ c.rights
+
+/-- Capability `a` is subsumed by `b` iff every right in `a` is in `b`. -/
+def subsumes (a b : Capability) : Prop :=
+  ∀ r, r ∈ a.rights → r ∈ b.rights
+
+/-! ## {{CLAIM_ID}} theorems -/
+
+/-- T1. Subsumption preserves authorization. -/
+theorem subsumes_preserves_authorization
+    (a b : Capability) (r : Right)
+    (h_sub : subsumes a b) (h_auth : authorizes a r) :
+    authorizes b r :=
+  h_sub r h_auth
+
+/-- T2. Subsumption is reflexive. -/
+theorem subsumes_refl (a : Capability) : subsumes a a :=
+  fun _ h => h
+
+/-- T3. Subsumption is transitive. -/
+theorem subsumes_trans (a b c : Capability)
+    (h_ab : subsumes a b) (h_bc : subsumes b c) : subsumes a c :=
+  fun r h => h_bc r (h_ab r h)
+
+end {{MODULE}}

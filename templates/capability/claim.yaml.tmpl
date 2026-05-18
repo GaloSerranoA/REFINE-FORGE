@@ -1,0 +1,39 @@
+claim_id: {{CLAIM_ID}}
+title: "{{TITLE}}"
+description: |
+  TODO: describe the trust property in plain English.
+
+  This claim was scaffolded from the `capability` template. The Lean
+  side proves monotonicity of authorization under subsumption.
+
+scope: model-only
+status: drafted
+authors:
+  - TODO
+
+rust_source:
+  - path: TODO  # e.g. crates/helyx-cap/src/token.rs
+    types:
+      - Capability
+    functions:
+      - authorizes
+      - subsumes
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: {{MODULE}}
+  file: {{LEAN_FILE}}
+  theorems:
+    - subsumes_preserves_authorization
+    - subsumes_refl
+    - subsumes_trans
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: null
