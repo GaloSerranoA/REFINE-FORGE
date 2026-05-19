@@ -76,7 +76,7 @@ enum Cmd {
     /// MVP autonomous driver: plans + executes a baseline
     /// workflow against the claim, escalating per the
     /// refineforge-escalation engine. See
-    /// docs/autonomous-driver-plan.md.
+    /// docs/plans/autonomous-driver-plan.md.
     Autonomous {
         claim_id: String,
         /// Strategy (built-in: "mock"; "anthropic-mock"; "anthropic"

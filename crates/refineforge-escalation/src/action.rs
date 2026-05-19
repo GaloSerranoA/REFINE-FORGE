@@ -186,7 +186,7 @@ pub enum Action {
 
     // ===== Catch-all =====
     /// Any action shape the engine doesn't recognise.
-    /// Per `autonomous-driver-plan.md` §6 risk mitigation, this
+    /// Per `plans/autonomous-driver-plan.md` §6 risk mitigation, this
     /// defaults to Category 1 (Scope) — never silently proceeds.
     Unknown { description: String },
 }

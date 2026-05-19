@@ -487,7 +487,8 @@ the bundle exporter once had is documented in `CHANGELOG.md`).
 | `reproducible-build.md` | DevOps (Section 3) | Bit-identical-rebuild methodology, Nix flake (**authored — first-build pending**), verification protocol |
 | `bit-exact-reproducibility.md` | CUDA engineer (Section 4) | Sources of CUDA non-determinism + per-source mitigations + gate primitive |
 | `escalation-criteria.md` | **all sections** | **CONTRACT v0.3** — 9 categories that always escalate to the human during `refine autonomous` runs. Operator-signed |
-| `autonomous-driver-plan.md` | maintainers, operators | 5-phase enterprise build plan for `refine autonomous`. Phases 1-3.7 shipped; Phase 4 (live-LLM dogfood) is the operator's invocation |
+| `plans/autonomous-driver-plan.md` | maintainers, operators | 5-phase enterprise build plan for `refine autonomous`. All plan phases + 3.5-3.8 shipped; Phase 4 acceptance-gate exercised against real Anthropic ($0.35 spend); v0.2.0 + v0.2.1 released |
+| `plans/gui-plan.md` | maintainers, operators | 9-phase enterprise plan for `refineforge-studio` production GUI (Tauri 2.x + Solid). PLAN ONLY — no code; 6 open questions to resolve before Phase 0 |
 | `HELYX-CASE-STUDY.md` | adopters | Pointer to the external worked example (`helyx-proofforge`) |
 
 ## Workspace test counts (current)

@@ -7,7 +7,7 @@
 > and human judgment for the `refine autonomous` driver
 > (`crates/refineforge-escalation/` ships in this revision; the
 > wrapping driver in `crates/refineforge-autonomous/` is still
-> pending — see [`autonomous-driver-plan.md`](autonomous-driver-plan.md)).
+> pending — see [`plans/autonomous-driver-plan.md`](plans/autonomous-driver-plan.md)).
 >
 > Every escalation packet records the **version** of this doc the
 > AI was operating under. Changes to this doc are themselves

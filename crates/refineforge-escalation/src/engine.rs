@@ -359,7 +359,7 @@ fn classify_scope(action: &Action, ctx: &ProjectContext) -> Option<Evidence> {
             smallest_in_scope_alternative: None,
         }),
 
-        // Per autonomous-driver-plan.md §6: "treat unknown action
+        // Per plans/autonomous-driver-plan.md §6: "treat unknown action
         // shapes as Category-1 (Scope) by default; never silently
         // auto-proceed."
         Action::Unknown { description } => Some(Evidence::UnknownActionShape {

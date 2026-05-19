@@ -568,7 +568,7 @@ These must be resolved before the project starts:
    EV cert (~$500/year), OR Sigstore-signed FOSS distribution
    (free; operator accepts SmartScreen warning on first run)?
 
-Decisions go into a v0 of `docs/gui-plan.md` (this doc)
+Decisions go into a v0 of `docs/plans/gui-plan.md` (this doc)
 BEFORE Phase 0.
 
 ## 10. Failure-mode rehearsal (red team)

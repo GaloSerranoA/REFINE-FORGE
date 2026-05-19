@@ -209,7 +209,7 @@ pub fn run_worklist<G: GitOps>(
 
 /// Top-level entry point invoked by `refine autonomous <CLAIM-ID>`.
 ///
-/// MVP scope (per `docs/autonomous-driver-plan.md` Phase 3):
+/// MVP scope (per `docs/plans/autonomous-driver-plan.md` Phase 3):
 /// plans + executes the baseline workflow against `claim_id`,
 /// honouring the cost gate, writing a `RunReport` JSON when the
 /// run finishes, and respecting `--dry-run` (no commits, no

@@ -4,7 +4,7 @@
 //!
 //! File-loaders that build a `ProjectContext` from claim YAMLs,
 //! `lean/lake-manifest.json`, and `Cargo.lock` are deferred to
-//! Phase 2 of `docs/autonomous-driver-plan.md` — the driver
+//! Phase 2 of `docs/plans/autonomous-driver-plan.md` — the driver
 //! crate will own them. Phase 1 ships the struct + a
 //! [`ProjectContext::test_default`] constructor for unit tests.
 

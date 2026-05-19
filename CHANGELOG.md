@@ -10,7 +10,7 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
-### Added — `docs/gui-plan.md` enterprise plan for refineforge-studio (plan only, no code)
+### Added — `docs/plans/gui-plan.md` enterprise plan for refineforge-studio (plan only, no code)
 
 Pure docs commit. Lays the contract for an eventual
 **`refineforge-studio`** desktop GUI exposing the four
@@ -20,7 +20,7 @@ is explicitly NOT in this commit** — the plan is intended to be
 costed, scoped, and reviewed BEFORE any implementation begins.
 
 The plan mirrors the structure of
-`docs/autonomous-driver-plan.md`:
+`docs/plans/autonomous-driver-plan.md`:
 - **9 phases** (0 design → 8 a11y + packaging) totaling
   **~15 weeks** with one focused engineer (~3.5 months wall
   clock).
@@ -74,7 +74,7 @@ on every screen makes this contract operator-visible.
 #### Build gate before any Phase-0 code
 
 The plan's §9 lists 6 open questions the operator must
-resolve. Decisions go into a v0 of `docs/gui-plan.md`
+resolve. Decisions go into a v0 of `docs/plans/gui-plan.md`
 BEFORE Phase 0. **No `refineforge-studio` crate is created
 until those decisions land.**
 
@@ -1538,7 +1538,7 @@ Modules:
 - **No CLI wiring.** `refine autonomous <CLAIM-ID>` doesn't exist
   yet. The engine is a library that Phase 3 will import.
 - **No decision-packet renderer.** Phase 2 (per
-  `docs/autonomous-driver-plan.md`) is the markdown templates +
+  `docs/plans/autonomous-driver-plan.md`) is the markdown templates +
   git-checkpoint loop. The engine produces structured `Evidence`
   the renderer will consume.
 - **No real LLM strategy integration.** The engine doesn't talk
@@ -1585,7 +1585,7 @@ before any code enforces it.
   Category-1 escalation. Version-history table; 4 named open
   questions for the first operator review.
 
-- **`docs/autonomous-driver-plan.md`** — enterprise project
+- **`docs/plans/autonomous-driver-plan.md`** — enterprise project
   plan for the 5-phase build:
    Phase 0 (this commit): criteria doc
    Phase 1: refineforge-escalation pure engine    (2 days)

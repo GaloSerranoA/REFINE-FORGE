@@ -10,7 +10,7 @@
 //! `tokio`, no network. The caller is responsible for populating
 //! the `ProjectContext` from claim YAMLs, Cargo.lock, and
 //! lake-manifest.json — file loaders are deferred to Phase 2 of
-//! `docs/autonomous-driver-plan.md` (the driver crate will need
+//! `docs/plans/autonomous-driver-plan.md` (the driver crate will need
 //! them; the engine itself doesn't).
 //!
 //! See `docs/escalation-criteria.md` v0.2 for the categorical
