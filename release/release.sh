@@ -138,7 +138,7 @@ if new == s:
     sys.exit(1)
 with open('Cargo.toml', 'w') as f:
     f.write(new)
-print(f"bumped version → {v}")
+print(f"bumped version -> {v}")
 PY
 fi
 
