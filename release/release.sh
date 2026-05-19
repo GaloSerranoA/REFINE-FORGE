@@ -152,10 +152,21 @@ run "cargo nextest run --workspace"
 
 # 9. lean check-all.
 step "9. refine lean check-all"
-if ! command -v refine >/dev/null 2>&1 && [ ! -x ./target/release/refine ] && [ -z "${REFINE_BIN:-}" ]; then
+# Discover the cargo target directory (respects CARGO_TARGET_DIR
+# env override + workspace-shared target dirs) instead of
+# assuming ./target/release/.
+TARGET_DIR="$(cargo metadata --no-deps --format-version 1 2>/dev/null \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])' \
+  2>/dev/null || echo ./target)"
+BIN_EXT=""
+case "$(uname -s)" in
+  CYGWIN*|MINGW*|MSYS*|Windows_NT) BIN_EXT=".exe" ;;
+esac
+DEFAULT_REFINE_BIN="$TARGET_DIR/release/refine${BIN_EXT}"
+if ! command -v refine >/dev/null 2>&1 && [ ! -x "$DEFAULT_REFINE_BIN" ] && [ -z "${REFINE_BIN:-}" ]; then
   run "cargo build --release --bin refine"
 fi
-REFINE_BIN="${REFINE_BIN:-./target/release/refine}"
+REFINE_BIN="${REFINE_BIN:-$DEFAULT_REFINE_BIN}"
 run "$REFINE_BIN lean check-all"
 
 # 10. Commit.
