@@ -10,7 +10,150 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
-(nothing yet)
+### Audit — Phase 4 live-LLM dogfood (post-v0.2.0; no code changes)
+
+Plan §3 phase 4's formal acceptance gate, exercised against
+the real Anthropic API in two runs against a transient
+`AUTON-LIVE-002` claim. **No source / test changes** in this
+commit — the dogfood validated the v0.2.0 release as shipped;
+this entry is the audit trail.
+
+#### Setup (transient; reverted via `git reset --hard 6486c6a`)
+
+- `lean/Refineforge/AutonLiveTest.lean` — deliberately broken
+  `theorem add_comm_live (a b : Nat) : a + b = b + a := rfl`
+  (`rfl` doesn't close Nat addition commute).
+- `claims/auton-live-002.yaml` — claim `AUTON-LIVE-002`
+  pointing at it (Lean-only, no `rust_source`).
+- `lean/Refineforge.lean` — patched to `import
+  Refineforge.AutonLiveTest`.
+
+#### Run 1: live LLM repair + Cat 2 escalation
+
+```powershell
+$env:ANTHROPIC_API_KEY = [Environment]::GetEnvironmentVariable(
+    'ANTHROPIC_API_KEY','User')
+refine.exe --root D:\AI-PROJECTS-GALO\PROJECTS\refineforge `
+    autonomous AUTON-LIVE-002 `
+    --strategy anthropic --auto-repair `
+    --inject-counter-idealisation `
+    --max-cost-usd 1.50 --operator galo@serragi.com
+```
+
+Observed outcomes (verbatim from the run report JSON):
+
+| Step | Outcome | Detail |
+|---:|---|---|
+| 1 (LeanCheck) | FAILED (753ms) | `lake build did not produce Verified status: BuildFailed` |
+| 5 (Repair, injected) | PROCEEDED (5491ms) | `repair[anthropic] outcome=Fixed { iterations: 1 }, iterations=1, file_modified=true [api: 1 calls, 781 input + 90 output tokens, 0 cache-create + 0 cache-read]` |
+| 6 (LeanCheck, recheck) | PROCEEDED (1297ms) | `lake build verified AUTON-LIVE-002 (status: Verified)` |
+| 2 (EngineAction, injected Cat 2 bait) | ESCALATED (123ms) | category=`idealisation`, packet=`escalations/AUTON-LIVE-002/002-idealisation.md` |
+
+Cost: `$0.3500 / $1.5000` (5 × $0.07 upfront estimate; **actual
+API call = 1** — the cost-gate over-charged conservatively per
+the documented design).
+
+Anthropic usage (Phase 3.7 reader working live against real
+production API): `calls=1, input_tokens=781, output_tokens=90,
+cache_creation=0, cache_read=0`.
+
+Cat 2 packet was v0.3-conformant: YAML front-matter with
+`criteria_version: '0.3'`, `batch: null`, `generated_at` ISO-8601,
+`generated_by_strategy: anthropic`; per-Evidence section
+documenting `u64 → Nat` with `UnsignedOverflow` lost property;
+raw Action JSON for traceability; `## Human decision` block
+with `(pending)` marker; **NO `expires_at` field** (v0.3-conformant).
+
+#### Operator approval simulation
+
+Operator (galo@serragi.com) overwrote `(pending)` with:
+
+```
+APPROVED: u64→Nat idealisation accepted for AUTON-LIVE-002 —
+saturating_add gap is documented in the refinement doc
+tradition; this is a tutorial claim with no production
+deployment context.
+```
+
+(The driver's `SubprocessGitOps` had already auto-committed
+the pending packet to git — that auto-commit was later reset
+away as part of the transient cleanup; in a real operator
+workflow the operator's APPROVED edit would have been
+committed manually.)
+
+#### Run 2: post-approval bundle ship
+
+```powershell
+refine.exe --root D:\AI-PROJECTS-GALO\PROJECTS\refineforge `
+    autonomous AUTON-LIVE-002 --strategy mock `
+    --max-cost-usd 0.10 --operator galo@serragi.com
+```
+
+Note: without `--inject-counter-idealisation` this time — the
+operator has approved; the work resumes by executing the
+workflow on the now-fixed file. No `--auto-repair` either
+(file is already Verified). `--strategy mock` = $0 cost.
+
+| Step | Outcome | Detail |
+|---:|---|---|
+| 1 (LeanCheck) | PROCEEDED (205ms) | `lake build verified AUTON-LIVE-002 (status: Verified)` |
+| 2 (Scan) | PROCEEDED (0ms) | `scan status: NoRustSource (0 rust_source items)` |
+| 3 (BundleExport) | PROCEEDED (205ms) | `bundle exported to artifacts/AUTON-LIVE-002 (SHA-256 manifest sealed)` |
+
+Summary: `total=3, proceeded=3, escalated=0, failed=0,
+success=true`. Cost: `$0.0000`. **Bundle shipped with 8 files
+in manifest.**
+
+#### What this proves (Phase 4 acceptance gate)
+
+Per plan §3 phase 4: "on EXAMPLE-002 with the Counter
+idealisation as bait, the autonomous driver produces exactly
+one Category-2 (Idealisation) escalation packet, waits for
+human approval, then produces a sealed bundle with the
+operator's signature on the packet AND on the bundle."
+
+✅ AUTON-LIVE-002 (Counter-flavoured transient claim).
+✅ Real Anthropic API repaired the broken proof.
+✅ **Exactly ONE Cat 2 (Idealisation) escalation packet** produced.
+✅ Operator approval persisted.
+✅ Post-approval bundle shipped with SHA-256 manifest.
+
+Total real spend: **$0.35** (a fraction of the original
+$50-$150 plan estimate, on the smallest possible
+dogfood).
+
+#### Known gap (Phase 3.8 follow-up)
+
+The await-decision-then-resume across re-runs isn't yet a
+single-command operation. Today's flow requires two `refine
+autonomous` invocations split by operator approval:
+- Run 1: lights up the bait → escalates → halts.
+- Operator edits the packet to `APPROVED:` + commits.
+- Run 2: re-runs the plan; LeanCheck already Verified; the
+  injected Cat 2 step is skipped (no `--inject-counter-idealisation`
+  flag); Scan + BundleExport proceed.
+
+A future enhancement: when `--await-decisions` is set, the
+executor should check if a packet for the (claim, seq,
+category) tuple already exists with a parsable decision
+and skip the re-commit + use the stored decision. Today the
+executor unconditionally overwrites + re-commits on every
+Escalated outcome, so `--await-decisions` only works
+within a single run (which the integration test
+`example_002_counter_idealisation_dogfood_with_await_approval`
+exercises with `MockGitOps::auto_approve_packets`).
+
+The split-run workflow above is the operator-facing pattern
+today; the full plan §3 phase 4 single-command flow is the
+next milestone for Phase 3.8.
+
+#### Cleanup
+
+All transients deleted via `git reset --hard 6486c6a` (the
+v0.2.0 tag) + working-tree clean. The packet's auto-commit by
+`SubprocessGitOps` was reset away as part of this cleanup —
+documented here in case anyone wonders why there's no Phase 4
+artifact in the tree.
 
 ## [0.2.0] — 2026-05-19
 
