@@ -10,7 +10,73 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
-(nothing yet)
+### Added — `docs/gui-plan.md` enterprise plan for refineforge-studio (plan only, no code)
+
+Pure docs commit. Lays the contract for an eventual
+**`refineforge-studio`** desktop GUI exposing the four
+refineforge sections (Lean Specialist / ML Engineer / DevOps /
+CUDA Engineer) + the cross-cutting operator console. **Code
+is explicitly NOT in this commit** — the plan is intended to be
+costed, scoped, and reviewed BEFORE any implementation begins.
+
+The plan mirrors the structure of
+`docs/autonomous-driver-plan.md`:
+- **9 phases** (0 design → 8 a11y + packaging) totaling
+  **~15 weeks** with one focused engineer (~3.5 months wall
+  clock).
+- Per-phase scope + acceptance + risks + mitigations.
+- 8 named project-level risks (scope creep, trust drift,
+  Tauri churn, etc.) with mitigations.
+- 14-point definition-of-done.
+- Explicit out-of-scope list (SaaS, built-in proof editor,
+  plugin marketplace, mobile, real-time collaboration,
+  AI-tuned criteria via GUI, autonomous training with real
+  GPU spend).
+- **6 open questions** the operator must resolve BEFORE Phase 0
+  starts (Tauri vs Iced; English-only vs en+es from v1; OS
+  priority; cost-spend integration depth; same-repo vs
+  separate-repo crate placement; code-signing strategy).
+- Red-team failure-mode rehearsal (feature parity, trust
+  drift, abandoned operator, supply-chain compromise).
+
+Headline design choice (recommended): **Tauri 2.x** backend
+(new workspace crate `crates/refineforge-studio`) + **Solid +
+Vite + Tailwind + Radix UI** frontend. Solid chosen for
+reactivity-without-VDOM + smaller bundle vs React. Radix
+chosen for accessibility primitives + RTL support out of the
+box.
+
+Acceptance gate for the GUI as a whole: **three operators new
+to refineforge complete a 5-step task flow end-to-end without
+help and without the CLI, in <5 minutes average** (excluding
+Lake build time). Recorded UX session; not self-reported.
+
+The CLI remains **canonical**. The GUI is an opinionated
+productivity surface. Every GUI action maps to a documented
+CLI sequence + git operations; a "View as CLI command" toggle
+on every screen makes this contract operator-visible.
+
+#### Honest disclosures
+
+- The ~$500/year code-signing cost (Apple Developer + Windows
+  EV) is in scope; Sigstore-signed FOSS distribution is the
+  free alternative.
+- New attack surface — the GUI binary becomes a Cat 8
+  (trust-base) artifact. Threat model is Phase 0's first
+  deliverable; criteria v0.4 will document the GUI's trust
+  footprint before Phase 1 ships any code.
+- No telemetry by default. Operator-action analytics is
+  explicitly out of scope ("operator decides" doctrine).
+- All UX-test claims are operator-verifiable. The 5-step
+  task flow is documented in §1; the success criterion is
+  measurable, not self-reported.
+
+#### Build gate before any Phase-0 code
+
+The plan's §9 lists 6 open questions the operator must
+resolve. Decisions go into a v0 of `docs/gui-plan.md`
+BEFORE Phase 0. **No `refineforge-studio` crate is created
+until those decisions land.**
 
 ## [0.2.1] — 2026-05-19
 

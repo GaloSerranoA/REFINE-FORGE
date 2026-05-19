@@ -29,7 +29,8 @@ Read in this order — each doc is short and points at the next.
 | [docs/reproducible-build.md](docs/reproducible-build.md) | Bit-identical-rebuild methodology — Nix flake (authored), verification protocol |
 | [docs/bit-exact-reproducibility.md](docs/bit-exact-reproducibility.md) | GPU kernel bit-exact reproducibility: non-determinism sources + mitigations + gate primitive |
 | [docs/escalation-criteria.md](docs/escalation-criteria.md) | **CONTRACT v0.3** (operator-signed; v0.2 superseded same-day with Q1/Q3/Q4 revisions). 9 categories that always escalate to the human during `refine autonomous` runs. Enforced by `crates/refineforge-escalation` |
-| [docs/autonomous-driver-plan.md](docs/autonomous-driver-plan.md) | Enterprise build plan for `refine autonomous`: 5 phases, ~2 weeks, $50-150 API budget, risks + mitigations. **All plan phases 0-5 + 3.5 + 3.6 + 3.7 + 3.8 closed** under criteria v0.3. Phase 4 acceptance gate exercised against real Anthropic ($0.35 spend); v0.2.0 released and tagged; only Nix-flake first-build verification remains (needs a Nix-capable runner) |
+| [docs/autonomous-driver-plan.md](docs/autonomous-driver-plan.md) | Enterprise build plan for `refine autonomous`: 5 phases, ~2 weeks, $50-150 API budget, risks + mitigations. **All plan phases 0-5 + 3.5 + 3.6 + 3.7 + 3.8 closed** under criteria v0.3. Phase 4 acceptance gate exercised against real Anthropic ($0.35 spend); v0.2.0 + v0.2.1 released and tagged; only Nix-flake first-build verification remains (needs a Nix-capable runner) |
+| [docs/gui-plan.md](docs/gui-plan.md) | **PLAN ONLY (no code yet).** Enterprise build plan for `refineforge-studio`, a professional Tauri-based production GUI exposing the four sections + operator console + autonomous driver. 9 phases, ~15 weeks, 6 named open questions to resolve before Phase 0 |
 | [docs/HELYX-CASE-STUDY.md](docs/HELYX-CASE-STUDY.md) | Pointer to the external worked example (helyx-proofforge) |
 
 ## What this is
