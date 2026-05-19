@@ -224,11 +224,19 @@ pub fn run_cli(
     auto_repair: bool,
     await_decisions: bool,
     inject_counter_idealisation: bool,
+    inject_training: &[String],
+    inject_bitexact: &[String],
 ) -> Result<()> {
     println!("refine autonomous {} (strategy={}, dry_run={}, max-cost-usd=${:.2}, auto_repair={}, await_decisions={})",
         claim_id, strategy, dry_run, max_cost_usd, auto_repair, await_decisions);
     if inject_counter_idealisation {
         println!("**INJECTED BAIT**: Cat 2 counter-idealisation Action (u64→Nat, UnsignedOverflow)");
+    }
+    for p in inject_training {
+        println!("**INJECTED TRAINING**: refine-train run {} --dry-run", p);
+    }
+    for p in inject_bitexact {
+        println!("**INJECTED BITEXACT**: refine-bitexact run {}", p);
     }
     if let Some(op) = operator {
         println!("operator: {}", op);
@@ -295,6 +303,12 @@ pub fn run_cli(
                 lossy_kinds: vec![refineforge_escalation::LossKind::UnsignedOverflow],
             },
         );
+    }
+    for p in inject_training {
+        planner = planner.with_training_step(p);
+    }
+    for p in inject_bitexact {
+        planner = planner.with_bitexact_step(p);
     }
     let plan = planner.plan(claim_id);
     println!("plan ({} steps):", plan.len());

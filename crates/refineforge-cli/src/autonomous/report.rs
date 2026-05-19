@@ -156,6 +156,12 @@ mod tests {
                 output_tokens: 400,
                 cache_creation_input_tokens: 100,
                 cache_read_input_tokens: 1500,
+                stop_reasons: vec![
+                    Some("end_turn".into()),
+                    Some("end_turn".into()),
+                    Some("max_tokens".into()),
+                    Some("end_turn".into()),
+                ],
             }),
         };
         let j = serde_json::to_string(&r).expect("ser");

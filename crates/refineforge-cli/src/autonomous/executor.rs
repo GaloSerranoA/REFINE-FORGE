@@ -199,24 +199,54 @@ impl<G: GitOps> Executor<G> {
                         let category_slug = category.slug().to_string();
                         let packet_path_str = packet_rel.display().to_string();
                         if !self.dry_run || self.commit_packets_in_dry_run {
-                            let msg = format!(
-                                "escalation: {} for {}",
-                                category.slug(),
-                                self.claim_id
-                            );
-                            if let Err(e) = commit_packet(
-                                &self.git,
-                                &self.repo_root,
-                                &packet_rel,
-                                &packet.to_markdown(),
-                                &msg,
-                            ) {
-                                return StepOutcome::Failed {
-                                    seq: step.seq,
-                                    kind: "EngineAction".into(),
-                                    error: format!("commit_packet: {}", e),
-                                    elapsed_ms: started.elapsed().as_millis() as u64,
-                                };
+                            // Phase 3.8: if a packet already exists at this
+                            // path AND it has a parsable operator decision,
+                            // skip the rewrite. This is what enables
+                            // cross-run await-resume: the first run writes
+                            // (pending), the operator commits APPROVED,
+                            // the second run sees APPROVED + leaves it
+                            // alone, await_decision returns the existing
+                            // outcome. A still-pending existing file IS
+                            // overwritten (harmless — content's identical
+                            // modulo timestamp) so a re-run with updated
+                            // evidence isn't masked by a stale packet.
+                            let preserve = match self
+                                .git
+                                .read_file(&self.repo_root, &packet_rel)
+                            {
+                                Ok(existing) => {
+                                    use refineforge_escalation::decision_outcome::{
+                                        parse_decision, DecisionParseError,
+                                    };
+                                    match parse_decision(&existing) {
+                                        Ok(_) => true, // existing decision; keep it
+                                        Err(DecisionParseError::Pending)
+                                        | Err(DecisionParseError::MissingSection) => false,
+                                        Err(_) => false, // malformed; re-write
+                                    }
+                                }
+                                Err(_) => false, // file missing → write fresh
+                            };
+                            if !preserve {
+                                let msg = format!(
+                                    "escalation: {} for {}",
+                                    category.slug(),
+                                    self.claim_id
+                                );
+                                if let Err(e) = commit_packet(
+                                    &self.git,
+                                    &self.repo_root,
+                                    &packet_rel,
+                                    &packet.to_markdown(),
+                                    &msg,
+                                ) {
+                                    return StepOutcome::Failed {
+                                        seq: step.seq,
+                                        kind: "EngineAction".into(),
+                                        error: format!("commit_packet: {}", e),
+                                        elapsed_ms: started.elapsed().as_millis() as u64,
+                                    };
+                                }
                             }
                         }
                         StepOutcome::Escalated {
@@ -458,13 +488,19 @@ impl<G: GitOps> Executor<G> {
                     .map(|s| s.clone())
                     .unwrap_or_default();
                 let usage_str = if usage.calls > 0 {
+                    let stops: Vec<String> = usage
+                        .stop_reasons
+                        .iter()
+                        .map(|s| s.as_deref().unwrap_or("<none>").to_string())
+                        .collect();
                     format!(
-                        " [api: {} calls, {} input + {} output tokens, {} cache-create + {} cache-read]",
+                        " [api: {} calls, {} input + {} output tokens, {} cache-create + {} cache-read, stop_reasons: [{}]]",
                         usage.calls,
                         usage.input_tokens,
                         usage.output_tokens,
                         usage.cache_creation_input_tokens,
-                        usage.cache_read_input_tokens
+                        usage.cache_read_input_tokens,
+                        stops.join(", ")
                     )
                 } else {
                     String::new()
@@ -661,6 +697,88 @@ mod tests {
         let _ = ex.run_step(&plan[1]);
         // dry_run = true → no commits should have landed
         assert!(ex.git.commits().is_empty(), "dry-run leaked a commit");
+    }
+
+    #[test]
+    fn phase_3_8_preexisting_approved_packet_is_not_overwritten() {
+        // First run: write a fresh packet (pending). Second run:
+        // the operator's APPROVED edit must survive — executor
+        // must NOT re-commit over it.
+        let mut ex = mock_executor();
+        ex.dry_run = false;
+        ex.claim_id = "EXAMPLE-002".into();
+        ex.project_ctx.claim = Some(ClaimSummary::test_default("EXAMPLE-002"));
+        let action = Action::MapRustToLean {
+            rust_type: "u64".into(),
+            lean_type: "Nat".into(),
+            lossy_kinds: vec![LossKind::UnsignedOverflow],
+        };
+        let plan = Planner::new()
+            .with_engine_action(action.clone())
+            .plan(&ex.claim_id);
+
+        // Run 1: writes the pending packet.
+        let _ = ex.run_step(&plan[1]);
+        let commits_after_run1 = ex.git.commits().len();
+        assert_eq!(commits_after_run1, 1, "run 1 should commit the fresh packet");
+
+        // Operator approves: overwrite the packet content directly
+        // in MockGitOps (simulating their git commit).
+        let pkt_path = packet_path_for(
+            &ex.claim_id,
+            refineforge_escalation::Category::Idealisation,
+            plan[1].seq,
+        );
+        let approved_content = format!(
+            "---\ncriteria_version: '0.3'\nclaim_id: EXAMPLE-002\n---\n## Human decision\n\nAPPROVED: looks fine to me\n"
+        );
+        ex.git.set_file_content(&pkt_path, approved_content.clone());
+
+        // Run 2: executor must see the APPROVED packet and NOT re-commit.
+        let _ = ex.run_step(&plan[1]);
+        let commits_after_run2 = ex.git.commits().len();
+        assert_eq!(
+            commits_after_run2, commits_after_run1,
+            "run 2 should NOT add a commit when APPROVED packet exists"
+        );
+        // And the APPROVED content must be intact.
+        let stored = ex
+            .git
+            .read_file(std::path::Path::new(""), &pkt_path)
+            .expect("packet exists");
+        assert!(
+            stored.contains("APPROVED:"),
+            "APPROVED state was overwritten: {}",
+            stored
+        );
+    }
+
+    #[test]
+    fn phase_3_8_preexisting_pending_packet_is_still_rewritten() {
+        // If the existing packet is still (pending), re-running
+        // should re-commit (refreshes evidence). This is harmless
+        // and matches the prior MVP behaviour for the
+        // un-decided case.
+        let mut ex = mock_executor();
+        ex.dry_run = false;
+        ex.claim_id = "EXAMPLE-002".into();
+        ex.project_ctx.claim = Some(ClaimSummary::test_default("EXAMPLE-002"));
+        let action = Action::MapRustToLean {
+            rust_type: "u64".into(),
+            lean_type: "Nat".into(),
+            lossy_kinds: vec![LossKind::UnsignedOverflow],
+        };
+        let plan = Planner::new()
+            .with_engine_action(action)
+            .plan(&ex.claim_id);
+        let _ = ex.run_step(&plan[1]);
+        let after_first = ex.git.commits().len();
+        let _ = ex.run_step(&plan[1]);
+        assert_eq!(
+            ex.git.commits().len(),
+            after_first + 1,
+            "pending packets should be re-committed on re-run"
+        );
     }
 
     #[test]

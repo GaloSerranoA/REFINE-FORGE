@@ -115,6 +115,18 @@ enum Cmd {
         /// without requiring a live LLM to produce it.
         #[arg(long)]
         inject_counter_idealisation: bool,
+        /// Append a Section 2 training step after BundleExport.
+        /// Subprocess-shells to `refine-train run <path> --dry-run`
+        /// (binary path overridable via `REFINEFORGE_REFINE_TRAIN_BIN`).
+        /// Repeatable: each occurrence adds another step.
+        #[arg(long = "inject-training")]
+        inject_training: Vec<String>,
+        /// Append a Section 4 bit-exact gate step after BundleExport
+        /// (and after any training steps). Subprocess-shells to
+        /// `refine-bitexact run <path>` (binary path overridable via
+        /// `REFINEFORGE_REFINE_BITEXACT_BIN`). Repeatable.
+        #[arg(long = "inject-bitexact")]
+        inject_bitexact: Vec<String>,
     },
     /// `refine escalations list` — operator queue dashboard.
     /// Per criteria v0.3 the autonomous driver never
@@ -257,6 +269,8 @@ fn main() -> Result<()> {
             auto_repair,
             await_decisions,
             inject_counter_idealisation,
+            inject_training,
+            inject_bitexact,
         } => autonomous::run_cli(
             &cli.root,
             &claim_id,
@@ -267,6 +281,8 @@ fn main() -> Result<()> {
             auto_repair,
             await_decisions,
             inject_counter_idealisation,
+            &inject_training,
+            &inject_bitexact,
         ),
         Cmd::Escalations { cmd } => match cmd {
             EscalationsCmd::List { claim, age_gt } => {

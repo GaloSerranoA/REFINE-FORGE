@@ -10,6 +10,152 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Phase 3.8: cross-run await-resume + inject-training/bitexact flags + Anthropic stop_reason
+
+Three of the four "smaller follow-ups" listed in the v0.2.0
+honest-leftovers. The fourth — Nix flake first-build
+verification — remains deferred because it needs a Nix-capable
+machine (this Windows commit machine has none; WSL would work
+but is a separate operator-side setup).
+
+#### 1. Cross-run await-resume (Phase 3.8)
+
+The executor's Escalated branch now reads the existing packet
+file (if any) BEFORE committing. If the existing file already
+contains a parsable operator decision, the executor preserves
+it instead of overwriting. This is what enables the operator
+flow:
+1. Run 1: driver writes `(pending)` packet → halts.
+2. Operator edits the packet to `APPROVED:` + commits.
+3. Run 2: driver reads existing APPROVED packet, **preserves
+   it** (no re-commit), the Escalated outcome bubbles up to
+   `run_worklist`, `--await-decisions` polls and immediately
+   finds APPROVED → continues to Scan + BundleExport.
+
+Still-pending packets are still re-committed (refreshes
+evidence on iteration; harmless because the content's
+identical modulo timestamp). Malformed packets are rewritten
+defensively.
+
+`crates/refineforge-cli/src/autonomous/executor.rs`:
+- New preserve-vs-rewrite check in the Escalated branch.
+- Two new inline tests:
+  - `phase_3_8_preexisting_approved_packet_is_not_overwritten`
+    — runs an escalation twice, simulates operator APPROVED
+    between runs, asserts the second run does NOT add a
+    commit AND the APPROVED content survives.
+  - `phase_3_8_preexisting_pending_packet_is_still_rewritten`
+    — pending packets re-commit on re-run, matching the
+    pre-Phase-3.8 behaviour for the un-decided case.
+
+This is the fix for the "Phase 3.8 follow-up" gap surfaced in
+the Phase 4 dogfood CHANGELOG entry. The full
+single-driver-invocation flow now works:
+
+```
+$env:ANTHROPIC_API_KEY = ...
+# Run 1 (halts at Escalated):
+refine.exe autonomous CLAIM --strategy anthropic
+    --inject-counter-idealisation --max-cost-usd 1.50
+
+# Operator approves the packet, commits, then:
+
+# Run 2 (consumes APPROVED, ships bundle):
+refine.exe autonomous CLAIM --strategy anthropic
+    --inject-counter-idealisation --await-decisions --max-cost-usd 0.50
+```
+
+(The Phase 4 audit's two-run split — without
+`--inject-counter-idealisation` on the second — is no longer
+required; both runs can carry the same flag set.)
+
+#### 2. `--inject-training` / `--inject-bitexact` CLI flags
+
+`refine autonomous` gains two repeatable string-list flags
+that thread directly into `Planner::with_training_step` /
+`with_bitexact_step` (the library-API builders shipped in
+Phase 3.7).
+
+```
+refine autonomous CLAIM \
+    --inject-training training/configs/example-qwen-1.5b.yaml \
+    --inject-bitexact kernels/configs/matmul_fp32.yaml \
+    [...other flags...]
+```
+
+Plan order with both injected: LeanCheck → (any
+EngineActions) → Scan → BundleExport → RunTrainingExperiment
+(per `--inject-training`) → RunBitExactGate (per
+`--inject-bitexact`).
+
+`crates/refineforge-cli/src/main.rs`:
+- Two new `Vec<String>` clap fields on the `Autonomous`
+  subcommand.
+
+`crates/refineforge-cli/src/autonomous/mod.rs`:
+- `run_cli` signature gains `inject_training: &[String]` and
+  `inject_bitexact: &[String]`.
+- For each entry, the planner is appended via the existing
+  builders.
+- Header banner prints `**INJECTED TRAINING**: refine-train run
+  <path> --dry-run` / `**INJECTED BITEXACT**: refine-bitexact
+  run <path>` so the operator sees what's being scheduled.
+
+No new tests for the clap parsing itself (clap is
+well-tested); the underlying `Planner` builder methods +
+`Executor` subprocess dispatch already had tests in Phase 3.7.
+
+#### 3. Anthropic `stop_reason` surfacing
+
+`MessagesResponse` already deserialized `stop_reason: Option<String>`
+but the executor discarded it. Phase 3.8 records it per-call.
+
+`crates/refineforge-strategies/src/anthropic.rs`:
+- `UsageStats` gains `stop_reasons: Vec<Option<String>>` —
+  one entry per call. Common values per Anthropic's docs:
+  `"end_turn"` (model finished), `"max_tokens"` (truncated;
+  budget bumping might unblock), `"stop_sequence"`,
+  `"tool_use"`.
+- New method `UsageStats::record_stop_reason(reason)`.
+- `AnthropicStrategy::propose_patch` now records the
+  response's `stop_reason` (independent of whether the response
+  carried a `usage` block).
+- Three new inline tests:
+  - `propose_patch_records_stop_reason_in_usage_handle` —
+    single-call records `Some("end_turn")` (MockTransport's
+    canned value).
+  - `propose_patch_accumulates_stop_reasons_across_calls` —
+    3 calls → 3 entries.
+  - `usage_stats_record_stop_reason_handles_none` — Some +
+    None + Some preserved in order.
+
+`crates/refineforge-cli/src/autonomous/executor.rs`:
+- Repair-step `detail` string's `[api: ...]` suffix now
+  includes `stop_reasons: [end_turn, ...]` for the run's API
+  calls. Visible in CLI output AND in the persisted
+  `RunReport.anthropic_usage.stop_reasons` field.
+
+`crates/refineforge-cli/src/autonomous/report.rs`:
+- `report_with_anthropic_usage_round_trips` test extended to
+  include `stop_reasons: vec![Some("end_turn"), ..., Some("max_tokens"), ...]`
+  so the JSON serialization is exercised end-to-end.
+
+#### Tests
+
+- `cargo nextest run --workspace`: **383/383 pass** (was 378
+  in v0.2.0; +5 from this commit: 2 cross-run-await + 3
+  stop_reason).
+
+#### What still defers
+
+- **Nix flake first-build** — needs a Nix install or WSL
+  environment; this Windows commit machine has neither, and
+  installing Nix isn't a documentation-commit kind of step.
+  The flake.nix is authored + ready; `docs/reproducible-build.md`
+  §8 has the operator-facing invocation. First green CI run on
+  Ubuntu (the `.github/workflows/ci.yml` `nix-flake-check` job)
+  is the verification.
+
 ### Audit — Phase 4 live-LLM dogfood (post-v0.2.0; no code changes)
 
 Plan §3 phase 4's formal acceptance gate, exercised against

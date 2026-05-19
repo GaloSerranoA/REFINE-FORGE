@@ -163,6 +163,14 @@ pub struct UsageStats {
     pub output_tokens: u64,
     pub cache_creation_input_tokens: u64,
     pub cache_read_input_tokens: u64,
+    /// One entry per API call: the value of `stop_reason` from
+    /// the response. Common values per Anthropic's API docs:
+    /// `"end_turn"` (model finished), `"max_tokens"` (truncated;
+    /// budget bumping might unblock), `"stop_sequence"` (hit a
+    /// configured stop), `"tool_use"` (not used by refineforge).
+    /// `None` if the response omitted the field.
+    #[serde(default)]
+    pub stop_reasons: Vec<Option<String>>,
 }
 
 impl UsageStats {
@@ -172,6 +180,13 @@ impl UsageStats {
         self.output_tokens += u.output_tokens as u64;
         self.cache_creation_input_tokens += u.cache_creation_input_tokens as u64;
         self.cache_read_input_tokens += u.cache_read_input_tokens as u64;
+    }
+
+    /// Append the response's `stop_reason` to the per-call log.
+    /// Called alongside (or separately from) `merge` to keep the
+    /// two concerns independent.
+    pub fn record_stop_reason(&mut self, reason: Option<String>) {
+        self.stop_reasons.push(reason);
     }
 }
 
@@ -287,10 +302,11 @@ impl<T: AnthropicTransport> RepairStrategy for AnthropicStrategy<T> {
     ) -> Result<Option<Patch>> {
         let request = self.build_request(diagnostic, file_content);
         let response = self.transport.send(&request)?;
-        if let Some(u) = &response.usage {
-            if let Ok(mut stats) = self.usage_stats.lock() {
+        if let Ok(mut stats) = self.usage_stats.lock() {
+            if let Some(u) = &response.usage {
                 stats.merge(u);
             }
+            stats.record_stop_reason(response.stop_reason.clone());
         }
         Ok(parse_response_into_patch(&response))
     }
@@ -522,6 +538,55 @@ mod tests {
         let s = anthropic_mock_strategy();
         assert_eq!(s.propose_patch(&d(), "anything").unwrap(), None);
         assert_eq!(s.name(), "anthropic");
+    }
+
+    #[test]
+    fn propose_patch_records_stop_reason_in_usage_handle() {
+        // MockTransport's response always carries
+        // `stop_reason: Some("end_turn")`. Verify the shared
+        // usage accumulator captures it.
+        let handle = std::sync::Arc::new(std::sync::Mutex::new(UsageStats::default()));
+        let s = AnthropicStrategy::with_usage_stats(
+            "k".into(),
+            "claude-opus-4-7",
+            MockTransport::declines(),
+            handle.clone(),
+        );
+        let _ = s.propose_patch(&d(), "file").unwrap();
+        let stats = handle.lock().unwrap().clone();
+        assert_eq!(stats.stop_reasons.len(), 1, "one call → one stop_reason entry");
+        assert_eq!(stats.stop_reasons[0].as_deref(), Some("end_turn"));
+    }
+
+    #[test]
+    fn propose_patch_accumulates_stop_reasons_across_calls() {
+        let handle = std::sync::Arc::new(std::sync::Mutex::new(UsageStats::default()));
+        let s = AnthropicStrategy::with_usage_stats(
+            "k".into(),
+            "claude-opus-4-7",
+            MockTransport::declines(),
+            handle.clone(),
+        );
+        for _ in 0..3 {
+            let _ = s.propose_patch(&d(), "file").unwrap();
+        }
+        let stats = handle.lock().unwrap().clone();
+        assert_eq!(stats.stop_reasons.len(), 3);
+        for r in &stats.stop_reasons {
+            assert_eq!(r.as_deref(), Some("end_turn"));
+        }
+    }
+
+    #[test]
+    fn usage_stats_record_stop_reason_handles_none() {
+        let mut s = UsageStats::default();
+        s.record_stop_reason(Some("max_tokens".into()));
+        s.record_stop_reason(None);
+        s.record_stop_reason(Some("end_turn".into()));
+        assert_eq!(s.stop_reasons.len(), 3);
+        assert_eq!(s.stop_reasons[0].as_deref(), Some("max_tokens"));
+        assert!(s.stop_reasons[1].is_none());
+        assert_eq!(s.stop_reasons[2].as_deref(), Some("end_turn"));
     }
 
     #[test]
