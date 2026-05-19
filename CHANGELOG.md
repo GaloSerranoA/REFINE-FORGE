@@ -10,6 +10,91 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Highlights (read first)
+
+Everything below in `[Unreleased]` accumulated across the
+supervised-autonomy build arc: Phase 1 (engine) → criteria
+v0.2 → v0.3 same-day correction → Phase 2 (packet + git
+checkpoint) → Phase 3 MVP → 3.5 (real library calls + loaders)
+→ 3.6 (live Anthropic auto-repair) → 3.7 (await + dogfood +
+trainer/bitexact + usage). When ready to cut v0.2.0, run
+`release/release.sh 0.2.0` — it'll rename this section to
+`[0.2.0] — <today>` and seed a fresh `[Unreleased]` above.
+
+**The escalation contract** (`docs/escalation-criteria.md`)
+went from unsigned v0.1 → operator-signed v0.2 → same-day
+revised v0.3 with three substantive resolutions:
+- **Mathlib first-use → Cat 8 (Trust-base)**, not Cat 1 (Scope) —
+  trust-footprint concern, not scope-expansion.
+- **Auto-expiry rejected**. Visible failure beats silent
+  failure in a trust system; operators run `refine escalations
+  list` to inspect the queue.
+- **Batching opt-in under three conditions** (same category,
+  identical analysis, undifferentiated evidence); default is
+  still one-packet-per-item; partial-approval form
+  `APPROVED: 1-5,7; REJECTED: 6,8 [reason]` recognised.
+
+**The autonomous driver** (`refine autonomous <CLAIM-ID>`)
+went from nothing → orchestration scaffold → real library
+calls → live LLM auto-repair → full Phase 3.7. **Live
+Anthropic API call confirmed end-to-end** ([commit 60d2a81](#)
+transcript): broken `rfl` proof of `a + b = b + a` repaired
+in 4 LLM iterations (23.3s wall-clock, $0.35 real spend);
+re-LeanCheck Verified; SHA-256 bundle exported. EXAMPLE-002
+forced-Counter dogfood passes as an integration test with
+simulated operator approval.
+
+**Workspace at the end of the arc:**
+
+| Crate | Tests | Status |
+|---|---:|---|
+| `refineforge-escalation` | 170 | Phases 1 + 2 + 3.5 (engine + packet + git + loaders) |
+| `refineforge-trainer` | 74 | Section 2 orchestration scaffold (no real training in-session) |
+| `refineforge-cli` | 60 | includes Phase 3.7 `autonomous/` driver |
+| `refineforge-bitexact` | 32 | Section 4 gate primitive |
+| `refineforge-strategies` | 18 | real `AnthropicStrategy` + `UsageStats` token reader |
+| `refineforge-repair-api` | 11 | stable cross-section trait surface |
+| `example-counter` | 9 | EXAMPLE-002 Rust side (+ `#[derive(LeanModel)]` demo) |
+| `refineforge-eval` | 4 | `refine-eval` benchmark harness |
+| **workspace total** | **378/378 pass** | — |
+
+`cargo nextest run --workspace` is the single source of truth
+for these numbers; per-crate counts include lib + bin targets
+counted separately per nextest convention.
+
+**Plan §3 phase status:**
+- Phase 0 (criteria doc) — ✅ shipped, revised to v0.3
+- Phase 1 (engine) — ✅ shipped
+- Phase 2 (packet + git checkpoint) — ✅ shipped
+- Phase 3 MVP / 3.5 / 3.6 / 3.7 (driver) — ✅ all shipped
+- Phase 3.5 (trainer + bitexact integration) — ✅ step kinds +
+  subprocess wiring shipped; CLI flags `--inject-training` /
+  `--inject-bitexact` are a one-file follow-up
+- Phase 4 (EXAMPLE-002 dogfood + criteria v0.4) — ⏳ integration
+  test ships in 3.7; live-LLM operator run is the next milestone
+- Phase 5 (docs + integration + release ritual) — ⏳ docs are
+  this commit; `release/release.sh 0.2.0` is the next step
+
+**Honest carry-forward disclosures:**
+- `lake` is operator-environment dependent. The Windows commit
+  machine's Bash session doesn't have `lake` on PATH, but a
+  PowerShell session does — which is how the live Anthropic
+  auto-repair test in Phase 3.6 succeeded.
+- No USD-conversion table for Anthropic token counts ever
+  shipped (deliberate). Pricing drifts; embedded constants
+  would silently misreport. The cost-gate's `$0.07/attempt`
+  upfront estimate stays authoritative for budget control.
+- `await_decision` has no timeout (per criteria v0.3).
+  Operators run `refine escalations list` to see what's
+  blocking. CI uses `--dry-run` or `--strategy mock` so
+  unattended pipelines don't block.
+- Phase 4's "exactly one Cat 2 packet" acceptance criterion
+  is exercised by
+  `example_002_counter_idealisation_dogfood_with_await_approval`
+  in `crates/refineforge-cli/tests/autonomous_e2e.rs` using
+  the synthetic bait flag. The live-LLM equivalent is the
+  operator's first invocation.
+
 ### Added — Phase 3.7: close the remaining Phase-3 leftovers (await + dogfood + trainer/bitexact + usage)
 
 Four items at once. Per-item honest scope below.

@@ -29,7 +29,7 @@ Read in this order — each doc is short and points at the next.
 | [docs/reproducible-build.md](docs/reproducible-build.md) | Bit-identical-rebuild methodology — Nix flake (authored), verification protocol |
 | [docs/bit-exact-reproducibility.md](docs/bit-exact-reproducibility.md) | GPU kernel bit-exact reproducibility: non-determinism sources + mitigations + gate primitive |
 | [docs/escalation-criteria.md](docs/escalation-criteria.md) | **CONTRACT v0.3** (operator-signed; v0.2 superseded same-day with Q1/Q3/Q4 revisions). 9 categories that always escalate to the human during `refine autonomous` runs. Enforced by `crates/refineforge-escalation` |
-| [docs/autonomous-driver-plan.md](docs/autonomous-driver-plan.md) | Enterprise build plan for `refine autonomous`: 5 phases, ~2 weeks, $50-150 API budget, risks + mitigations. **Phase 1 shipped** (the escalation engine); Phases 2-5 pending |
+| [docs/autonomous-driver-plan.md](docs/autonomous-driver-plan.md) | Enterprise build plan for `refine autonomous`: 5 phases, ~2 weeks, $50-150 API budget, risks + mitigations. **Phases 1 + 2 + 3 MVP + 3.5 + 3.6 + 3.7 shipped** under criteria v0.3 — engine, packet renderer, git checkpoint, driver, real library calls, ProjectContext loaders, live Anthropic auto-repair, await-resumption, EXAMPLE-002 dogfood test, trainer/bitexact step kinds, Anthropic UsageStats. Phase 4 (live-LLM dogfood) is the operator's invocation away |
 | [docs/HELYX-CASE-STUDY.md](docs/HELYX-CASE-STUDY.md) | Pointer to the external worked example (helyx-proofforge) |
 
 ## What this is
@@ -131,6 +131,8 @@ refineforge/
 │   ├── src/                    # actual .cu source (empty; CUDA engineer fills)
 │   └── runs/                   # refine-bitexact per-gate output (gitignored)
 ├── artifacts/                  # exported verification bundles
+├── escalations/                # `refine autonomous` writes decision packets here (one dir per CLAIM-ID)
+├── autonomous/                 # `refine autonomous` per-run RunReport JSONs (gitignored)
 ├── containers/
 │   └── Dockerfile.verifier     # elan + Lean preinstalled for reviewers
 ├── release/
@@ -145,6 +147,9 @@ refineforge/
     ├── repair-evaluation.md    # benchmark methodology
     ├── security.md             # threat model + signing chain
     ├── reproducible-build.md   # Nix flake + bit-identical methodology
+    ├── bit-exact-reproducibility.md  # GPU kernel determinism + gate primitive
+    ├── escalation-criteria.md  # CONTRACT v0.3 — 9 categories `refine autonomous` escalates on
+    ├── autonomous-driver-plan.md  # 5-phase build plan; Phases 1-3.7 shipped
     └── HELYX-CASE-STUDY.md     # link to external worked example
 ```
 
@@ -195,8 +200,8 @@ cargo build --release
 | `refine bundle verify <bundle-dir>`    | Re-hash every file in a bundle and confirm the manifest matches         |
 | `refine bundle verify <bundle-dir> --verify-signature` | Hashes + Sigstore signature (via cosign). See [SECURITY.md](SECURITY.md) |
 | `refine repair <id>`                   | Bounded LLM repair loop against Lean's LSP server. Strategies: `mock` (declines all), `anthropic-mock` (canned), `anthropic` (real HTTP, needs `ANTHROPIC_API_KEY`). See [`docs/llm-repair-design.md`](docs/llm-repair-design.md) |
-| `refine autonomous <id> [--strategy mock\|anthropic-mock\|anthropic] [--max-cost-usd 10] [--operator EMAIL] [--dry-run] [--auto-repair] [--await-decisions] [--inject-counter-idealisation]` | Phase 3.7 of the [autonomous-driver-plan](docs/autonomous-driver-plan.md). Plans + executes the baseline workflow against a real claim YAML; system steps shell to `runner::run` / `scan::scan_claim` / `bundle::export`. `Planner::with_training_step`/`with_bitexact_step` append Section 2 + Section 4 steps (subprocess to `refine-train` / `refine-bitexact`; binary paths overridable via `REFINEFORGE_REFINE_TRAIN_BIN` / `REFINEFORGE_REFINE_BITEXACT_BIN`). `--await-decisions` block-polls operator packet decisions; `--inject-counter-idealisation` injects the EXAMPLE-002 Cat 2 bait. RunReport surfaces Anthropic `UsageStats` (token counts; no USD invented — cost-gate's $0.07/attempt upfront estimate stays authoritative). |
-| `refine escalations list [--claim X] [--age-gt N]` | Operator queue dashboard: walks `escalations/<CLAIM-ID>/*.md`, shows PENDING vs DECIDED for every packet sorted by age. Per criteria v0.3 the driver never auto-rejects; this is how operators see what's blocking. |
+| `refine autonomous <id> [flags]` | Drives a claim end-to-end (lean check → scan → bundle), escalating per criteria v0.3 via `crates/refineforge-escalation`. Flags: `--strategy mock\|anthropic-mock\|anthropic`, `--max-cost-usd N`, `--operator EMAIL`, `--dry-run`, `--auto-repair` (inject Repair after failed LeanCheck), `--await-decisions` (block-poll operator packet decisions), `--inject-counter-idealisation` (EXAMPLE-002 Cat 2 bait). Anthropic `UsageStats` (token counts) in the RunReport. Plan §3 phases 1-3.7 shipped; see [docs/autonomous-driver-plan.md](docs/autonomous-driver-plan.md) |
+| `refine escalations list [--claim X] [--age-gt N]` | Operator queue dashboard for `escalations/<CLAIM-ID>/*.md`; PENDING vs DECIDED sorted by age. Per criteria v0.3 the driver never auto-rejects |
 | `refine-eval --corpus … --strategy …`  | Drive `refine repair` against a JSONL corpus; emit JSON report. See [`docs/repair-evaluation.md`](docs/repair-evaluation.md) |
 | `refine-train run <exp.yaml>`          | Run one training experiment (axolotl / HF Trainer / custom backend). See [`training/README.md`](training/README.md). Always start with `--dry-run`. |
 | `refine-train sweep <sweep.yaml>`      | Grid or random hyperparameter sweep |
@@ -245,7 +250,8 @@ Where each thing currently lives:
 | `refineforge-eval` (`refine-eval` binary)  | ✅ corpus-driven evaluation harness with JSON output; ships a 3-entry tutorial corpus under [`eval/corpus/`](eval/corpus) |
 | `refineforge-trainer` (`refine-train` binary) | ✅ training-experiment orchestration (axolotl / HF Trainer / custom); run tracking, checkpoint resume, failure recovery, JSON reports. Does NOT perform training itself — backend does. See [`training/README.md`](training/README.md) |
 | `refineforge-bitexact` (`refine-bitexact` binary) | ✅ bit-exact reproducibility gate: runs kernel N times, hashes outputs, fails if any disagree. Stub scripts prove the gate catches non-determinism. Real CUDA kernels are the CUDA engineer's domain. See [`kernels/README.md`](kernels/README.md). |
-| `refineforge-escalation` (library) | ✅ Phases 1+2 of [`docs/autonomous-driver-plan.md`](docs/autonomous-driver-plan.md) under criteria v0.3. Phase 1: pure-functional engine — `Action` + `ProjectContext` → `Decision::Proceed` or `Decision::Escalate(reason)`. Phase 2: `Packet` markdown renderer (with v0.3 `batch:` support) + `DecisionOutcome` parser (recognises `APPROVED:` / `REJECTED:` / `EDIT_AND_RESUBMIT:` / partial form `APPROVED: 1-5,7; REJECTED: 6,8 [reason]`) + `GitOps` trait (subprocess `git` + mock for tests) + `commit_packet` + indefinite `await_decision` (no auto-reject, per v0.3). 156 tests pass; 2 POSIX-only end-to-end git tests gated `#[cfg(unix)]`. File loaders + driver-CLI deferred to Phase 3. |
+| `refineforge-escalation` (library) | ✅ Phases 1 + 2 + 3.5 of [`docs/autonomous-driver-plan.md`](docs/autonomous-driver-plan.md) under criteria v0.3. Pure-functional engine (`Action` + `ProjectContext` → `Decision::Proceed`/`Escalate`); `Packet` markdown renderer with v0.3 `batch:` support; `DecisionOutcome` parser (`APPROVED:`/`REJECTED:`/`EDIT_AND_RESUBMIT:`/partial form); `GitOps` trait (subprocess `git` + `MockGitOps`); indefinite `await_decision` (no auto-reject); ProjectContext loaders (claim YAML + lake-manifest.json + Cargo.lock). 170 tests; 2 POSIX-only e2e git tests gated `#[cfg(unix)]` |
+| `refine autonomous` driver (in `refineforge-cli`) | ✅ Phases 3 MVP + 3.5 + 3.6 + 3.7. `Planner` + `Executor<G: GitOps>` + `WorkRunConfig` + `run_worklist`; real `runner::run`/`scan::scan_claim`/`bundle::export` library calls; `Repair` step with `resolve_strategy` (mock / anthropic-mock / **anthropic** real HTTP) + cost-gate ($0.07/attempt upfront); `RunTrainingExperiment`/`RunBitExactGate` subprocess-shell to the respective binaries; `--auto-repair` + `--await-decisions` + `--inject-counter-idealisation` flags. Live LLM auto-repair confirmed end-to-end ([commit 60d2a81](#)). EXAMPLE-002 forced-Counter dogfood passes as integration test |
 | Verifier Docker image                      | ✅ `containers/Dockerfile.verifier` — multi-stage build, elan + Lean v4.29.1 preinstalled |
 | Multi-arch CI matrix                       | ✅ Ubuntu + macOS + Windows with elan / lake / cargo caches |
 | Sigstore signing in CI + `--verify-signature` | ✅ keyless cosign sign-blob on main + tags; verifier-side `refine bundle verify --verify-signature` (cosign subprocess) |
@@ -254,6 +260,12 @@ Where each thing currently lives:
 | Mathlib mutation pipeline (corpus at N≥1000) | not yet             |
 | Fine-tuned proof-repair model              | not yet (6+ month research commitment) |
 | Syn-based scan (parse, not regex)          | not yet             |
+
+**Workspace test count (current):** `cargo nextest run --workspace` → **378/378 pass**. Per-crate
+breakdown (lib + bin tests counted separately per nextest convention): refineforge-escalation 170,
+refineforge-trainer 74, refineforge-cli 60, refineforge-bitexact 32, refineforge-strategies 18,
+refineforge-repair-api 11, example-counter 9, refineforge-eval 4. (refineforge-derive ships as a
+proc-macro consumed by example-counter's `#[derive(LeanModel)]` test.)
 
 ## License
 

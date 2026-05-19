@@ -49,7 +49,9 @@ refineforge/
 │   ├── corpus/                 # broken-proof entries + ground truth
 │   └── runs/                   # refine-eval JSON outputs (gitignored)
 ├── templates/                  # scaffolding for `refine new`
-├── artifacts/                  # exported verification bundles
+├── artifacts/                  # exported verification bundles (committed for EXAMPLE-001)
+├── escalations/                # `refine autonomous` decision packets, one dir per CLAIM-ID
+├── autonomous/                 # `refine autonomous` per-run RunReport JSONs (gitignored)
 ├── containers/                 # Section 3: Dockerfile.verifier and friends
 ├── release/                    # Section 3: release.sh / release.ps1 + signed-tag artifacts
 └── docs/                       # methodology, policies, refinement docs
@@ -174,7 +176,7 @@ retry / header / error-mapping tests).
 ### `crates/refineforge-escalation/` — AI-to-human escalation engine (cross-section)
 
 Pure-functional engine implementing the contract in
-[`docs/escalation-criteria.md`](docs/escalation-criteria.md) v0.2.
+[`docs/escalation-criteria.md`](docs/escalation-criteria.md) **v0.3**.
 Library only — no binary, no I/O inside `Engine::decide`, no
 `unsafe`, no `tokio`, no network.
 
@@ -185,52 +187,44 @@ Public API:
 - `Action` (~30 variants: Lean / refinement / claim YAML / external-fact
   / 8 trust-base sub-actions / scope additions / 5 bit-exact sub-actions
   / 3 trivially-OK actions / `Unknown` catch-all)
-- `Category` (9 variants matching criteria-doc §3)
-- `ProjectContext` (claim summary + sets of existing
-  Mathlib imports / Lake packages / bundle-chain crates /
-  approved Anthropic models / kernels with baselines / etc.)
-- `CRITERIA_VERSION` constant (currently `"0.2"`); mismatch
+- `Category` (9 variants matching criteria-doc §3 + Cat 9 bit-exact)
+- `ProjectContext` (claim summary + sets of existing Mathlib
+  imports / Lake packages / bundle-chain crates / approved
+  Anthropic models / kernels with baselines / etc.)
+- `Packet` markdown renderer + `BatchBlock` for v0.3-conformant
+  batched packets + per-Evidence section dispatch
+- `DecisionOutcome::{Approved, Rejected, EditAndResubmit,
+  Partial(PartialDecision)}` + `parse_decision(markdown)` that
+  walks the `## Human decision` section; partial form recognises
+  `APPROVED: 1-5,7; REJECTED: 6,8 [reason]`
+- `GitOps` trait + `SubprocessGitOps` (production, shells to
+  `git`) + `MockGitOps` (in-memory, unit-test;
+  `auto_approve_packets(reason)` test mode rewrites `(pending)`
+  → `APPROVED: <reason>`) + `commit_packet` +
+  `poll_decision_once` + indefinite `await_decision` (no
+  auto-reject per v0.3)
+- File loaders: `load_claim_summary` / `load_lake_manifest_packages`
+  / `load_cargo_lock_bundle_chain` / `load_project_context`
+  (Phase 3.5 — replaces the Phase-1 honest deferral)
+- `CRITERIA_VERSION` constant (currently `"0.3"`); mismatch
   between this and `ctx.criteria_version` is a hard
-  `EngineError`.
+  `EngineError`
 
-Modules: `category.rs` · `action.rs` · `decision.rs` · `context.rs` · `engine.rs`.
+Source modules: `category.rs` · `action.rs` · `decision.rs` ·
+`context.rs` · `engine.rs` · `packet.rs` · `decision_outcome.rs`
+· `git_checkpoint.rs` · `loaders.rs`.
 
-Tests: **156 total** under criteria v0.3 (118 from Phase 1 +
-38 from Phase 2). Inline tests in each src module + integration
-tests under `tests/` (one file per category + `multi_category.rs`
-+ `edge_cases.rs` + POSIX-only `packet_e2e.rs`). Every positive
+Tests: **170** per `cargo nextest list` (Phase 1 category
+coverage + Phase 2 packet/decision/git + Phase 3.5 loaders).
+Inline tests in each src module + integration tests under
+`tests/` (one file per category + `multi_category.rs` +
+`edge_cases.rs` + POSIX-only `packet_e2e.rs`). Every positive
 and negative example from criteria-doc §3 has a named test.
 
-**Phase 1 + Phase 2 scope.** Phase 1 shipped the engine
-(category classifier, multi-category resolver, ProjectContext);
-Phase 2 (this revision) ships the packet renderer, decision
-parser, and git-checkpoint primitives. Phase 3 (driver: CLI
-subcommand `refine autonomous`, real-LLM-strategy wiring, file
-loaders building `ProjectContext` from claim YAMLs +
-lake-manifest.json + Cargo.lock) is pending.
-
-Phase 2 modules:
-- `src/packet.rs` — `Packet` + `BatchBlock` + per-Evidence
-  markdown renderer. `Packet::to_markdown` produces the file
-  the driver commits to `escalations/<CLAIM-ID>/`. No
-  `expires_at` field per v0.3.
-- `src/decision_outcome.rs` — `DecisionOutcome::{Approved,
-  Rejected, EditAndResubmit, Partial(PartialDecision)}` +
-  `parse_decision(markdown)` that walks the `## Human decision`
-  section. Partial form recognises `APPROVED: 1-5,7; REJECTED:
-  6,8 [reason]` for batched packets.
-- `src/git_checkpoint.rs` — `GitOps` trait + `SubprocessGitOps`
-  (production, shells to `git`) + `MockGitOps` (in-memory,
-  unit-test) + `commit_packet` + `poll_decision_once` +
-  `await_decision` (**indefinite poll, no auto-reject** per
-  v0.3).
-
-Phase 3.5 modules:
-- `src/loaders.rs` — `load_claim_summary` (YAML walk +
-  `claim_id` match) + `load_lake_manifest_packages` +
-  `load_cargo_lock_bundle_chain` (hand-parsed, no toml dep) +
-  `load_project_context` (top-level combiner). Replaces the
-  Phase-1 honest deferral.
+Phase 1 (engine), Phase 2 (packet + decision parser + git
+checkpoint), and Phase 3.5 (file loaders) have all landed; the
+driver lives in `crates/refineforge-cli/src/autonomous/` (next
+section).
 
 ### `crates/refineforge-bitexact/` — bit-exact gate (Section 4)
 
@@ -293,7 +287,7 @@ swapping in the broken file. Without pre-warm, cold lake
 elaboration exceeds the LSP diagnostic timeout and breaks
 register as false `AlreadyClean`.
 
-### `crates/refineforge-cli/src/autonomous/` — Phase 3.5 driver
+### `crates/refineforge-cli/src/autonomous/` — `refine autonomous` driver (Phase 3-3.7)
 
 Lives inside `refineforge-cli` (not a separate crate) to avoid
 a circular dep with the existing `runner` / `bundle` / `scan`
@@ -301,49 +295,77 @@ modules. Provides `refine autonomous <CLAIM-ID>` + `refine
 escalations list`.
 
 Submodules:
-- `planner.rs` — sequences a baseline workflow (LeanCheck →
-  Scan → BundleExport) + injection point for AI-proposed
-  categorised `Action`s via `Planner::with_engine_action`.
-- `executor.rs` — runs each step. **Phase 3.5: system steps
-  call real `runner::run` / `scan::scan_claim` /
-  `bundle::export` library functions when not in `--dry-run`.**
-  **Phase 3.6: `StepKind::Repair` invokes
-  `crate::repair::repair` with `resolve_strategy(name)`
-  (`mock` / `anthropic-mock` / `anthropic`); cost-gate
-  charges $0.07 × max_iterations upfront for `anthropic`.**
-  **Phase 3.7: `StepKind::RunTrainingExperiment` /
-  `RunBitExactGate` subprocess-shell to `refine-train` /
-  `refine-bitexact` (binary path overridable via env vars).
-  `resolve_strategy` now returns the
-  `(Box<dyn RepairStrategy>, Arc<Mutex<UsageStats>>)` tuple;
-  Repair step records Anthropic token usage on the Executor.**
-  Engine actions go through `Engine::decide`; escalations
-  commit a packet unless `--dry-run` (override:
-  `Executor::commit_packets_in_dry_run = true` for tests).
-- `cost.rs` — `CostGate` with fail-closed `charge(amount)`;
-  honours `--max-cost-usd`.
-- `report.rs` — `RunReport` JSON with per-step outcomes +
-  cost + summary.
-- `mod.rs` — `run_cli` (Phase 3.5: loads `ProjectContext` +
-  `Claim` from disk via `refineforge_escalation::load_project_context`
-  before constructing the `Executor`) + `escalations_list`
-  (queue dashboard). **Phase 3.7: extracted
-  `run_worklist<G: GitOps>(ex, plan, cfg: &WorkRunConfig)`
-  helper. `WorkRunConfig` carries `auto_repair`,
-  `await_decisions`, repair/poll knobs. Handles the four
-  `DecisionOutcome` variants after Escalated when
-  `--await-decisions` is set.**
+- `planner.rs` — sequences the baseline workflow (LeanCheck →
+  Scan → BundleExport) + builder injection points:
+  `Planner::with_engine_action(Action)`,
+  `with_training_step(path)`, `with_bitexact_step(path)`.
+  StepKinds: `LeanCheck`, `Scan`, `BundleExport`,
+  `EngineAction(Action)`, `Repair { strategy, max_iterations }`,
+  `RunTrainingExperiment { config_path }`,
+  `RunBitExactGate { config_path }`.
+- `executor.rs` — runs each step. System steps call real
+  `runner::run` / `scan::scan_claim` / `bundle::export` library
+  functions when not in `--dry-run` (Phase 3.5). `Repair` step
+  calls `crate::repair::repair` with `resolve_strategy(name)`
+  (`mock` / `anthropic-mock` / `anthropic`); cost-gate charges
+  $0.07 × max_iterations upfront for `anthropic` (Phase 3.6).
+  Training / bit-exact steps subprocess-shell to `refine-train`
+  / `refine-bitexact` (binary path overridable via
+  `REFINEFORGE_REFINE_TRAIN_BIN` / `REFINEFORGE_REFINE_BITEXACT_BIN`,
+  Phase 3.7). Repair step reads `Arc<Mutex<UsageStats>>` after
+  the strategy is consumed and surfaces token counts on the
+  `Executor.anthropic_usage_observed` field. Engine actions go
+  through `Engine::decide`; escalations commit a packet unless
+  `--dry-run` (override: `commit_packets_in_dry_run = true` for
+  tests).
+- `cost.rs` — `CostGate { max_usd, spent_usd }` with
+  fail-closed `charge(amount)`. Failed charges DO NOT debit
+  the gate.
+- `report.rs` — `RunReport` JSON: per-step outcomes + cost +
+  summary + optional `anthropic_usage: UsageStats`. **No USD
+  conversion** of token counts (Anthropic pricing drifts;
+  documented design decision).
+- `mod.rs` — `run_cli` is the top-level entry: loads `Claim`
+  via `crate::claim::load`, loads `ProjectContext` via
+  `refineforge_escalation::load_project_context`, constructs
+  `Executor`, calls `run_worklist`. `escalations_list` is the
+  queue-dashboard implementation. **`run_worklist<G: GitOps>(
+  ex, plan, cfg: &WorkRunConfig)` is generic over the git
+  backend** so tests can drive with `MockGitOps`.
+  `WorkRunConfig` carries `auto_repair`, `await_decisions`,
+  repair/poll knobs; handles all four `DecisionOutcome`
+  variants after Escalated when `--await-decisions` is set.
 
-Tests: 23 inline + 4 in `tests/autonomous_e2e.rs` (2 loader
-tests against real repo claims, 1 dry-run end-to-end against
-EXAMPLE-001, 1 `live_lean_check_on_example_001` that gates on
-`lake` being on PATH and PASSED via SKIP on the Windows
-commit machine).
+CLI flags on `refine autonomous`: `--strategy`,
+`--max-cost-usd`, `--operator`, `--dry-run`, `--auto-repair`,
+`--await-decisions`, `--inject-counter-idealisation`.
 
-Honest deferrals (in CHANGELOG): no live Anthropic call
-end-to-end yet; `await_decision` not yet called from `run_cli`
-(MVP halts at first escalation); `refine-train` /
-`refine-bitexact` integration still pending.
+Tests: **60 total** (~26 inline across submodules + 5
+integration tests in `tests/autonomous_e2e.rs`):
+- `loader_parses_real_example_001_yaml`,
+  `loader_parses_real_example_002_yaml` — real-repo claim load.
+- `dry_run_plans_and_loads_real_claim` — full dry-run pipeline.
+- `live_lean_check_on_example_001` — gated on `lake` on PATH;
+  PASSED via SKIP on the Windows commit machine.
+- `example_002_counter_idealisation_dogfood_with_await_approval`
+  — Plan §3 phase 4 acceptance test in mock-LLM form: exactly
+  one Cat 2 escalation → simulated APPROVED via
+  `MockGitOps::auto_approve_packets` → Scan + BundleExport
+  resume → success. Live-LLM equivalent is the operator's
+  PowerShell one-liner (in CHANGELOG).
+
+Shipped end-to-end against the real Anthropic API in
+[commit 60d2a81](#) — broken `rfl` proof of `a + b = b + a`
+was repaired in 4 LLM iterations (23.3s, $0.35 real spend);
+bundle exported.
+
+Honest leftovers:
+- CLI flags `--inject-training` / `--inject-bitexact` not
+  wired (library-API path ships via `Planner::with_training_step`
+  / `with_bitexact_step`).
+- Per-call USD conversion intentionally absent (operator-side).
+- Anthropic `stop_reason` not yet surfaced in RunReport
+  (one-line addition).
 
 ### `crates/refineforge-cli/` — the `refine` binary
 
@@ -450,7 +472,28 @@ the bundle exporter once had is documented in `CHANGELOG.md`).
 | `repair-evaluation.md` | ML engineer (Section 2) | Benchmark methodology, mutation taxonomy, training/eval separation rules |
 | `security.md` | DevOps (Section 3) | Threat model, supply chain, **shipped** signing chain, vuln reporting |
 | `reproducible-build.md` | DevOps (Section 3) | Bit-identical-rebuild methodology, Nix flake (**authored — first-build pending**), verification protocol |
+| `bit-exact-reproducibility.md` | CUDA engineer (Section 4) | Sources of CUDA non-determinism + per-source mitigations + gate primitive |
+| `escalation-criteria.md` | **all sections** | **CONTRACT v0.3** — 9 categories that always escalate to the human during `refine autonomous` runs. Operator-signed |
+| `autonomous-driver-plan.md` | maintainers, operators | 5-phase enterprise build plan for `refine autonomous`. Phases 1-3.7 shipped; Phase 4 (live-LLM dogfood) is the operator's invocation |
 | `HELYX-CASE-STUDY.md` | adopters | Pointer to the external worked example (`helyx-proofforge`) |
+
+## Workspace test counts (current)
+
+`cargo nextest run --workspace` → **378/378 pass**. Per-crate
+breakdown via `cargo nextest list --workspace` (each crate's
+lib + bin targets counted separately per nextest convention):
+
+| Crate | Tests |
+|---|---:|
+| `refineforge-escalation` | 170 |
+| `refineforge-trainer` | 74 |
+| `refineforge-cli` | 60 |
+| `refineforge-bitexact` | 32 |
+| `refineforge-strategies` | 18 |
+| `refineforge-repair-api` | 11 |
+| `example-counter` | 9 |
+| `refineforge-eval` | 4 |
+| `refineforge-derive` | (proc-macro, consumed via example-counter) |
 
 ## How the pieces connect
 
