@@ -1,0 +1,58 @@
+claim_id: HELYX-AUDIT-001
+title: "Audit chain append increments length by one"
+description: |
+  First refineforge claim against HELYX, the operator's
+  production substrate (C:\HELYX). This claim verifies a
+  representative SLICE of HELYX's audit-chain invariant:
+  appending to a chain produces a new chain whose length is
+  one greater than the original.
+
+  The HELYX source-of-truth lives at
+  C:\HELYX\verified\lean\HELYX\Audit\Chain.lean +
+  C:\HELYX\verified\lean\HELYX\Audit\Append.lean. The slice
+  imported here under Refineforge.Helyx.Audit is verbatim
+  modulo namespace rename (HELYX.Audit → Refineforge.Helyx.Audit)
+  so refineforge's own lake project can verify + bundle it.
+
+  Rust side: HELYX ships the verified-claim REGISTRY at
+  C:\HELYX\verified\checked\helyx-audit-verified\src\lib.rs
+  (exporting `audit_append_claim()`); the working impl is at
+  C:\HELYX\crates\helyx-audit\. Neither is in refineforge's
+  workspace, so this claim's `rust_source` block is omitted —
+  the refinement doc at docs/refinement/HELYX-AUDIT-001.md
+  documents the bridge.
+
+  Honest scope: this is a case-study slice. Full cross-repo
+  integration (refineforge verifying HELYX claims against
+  HELYX's own lake project + scanning HELYX's Rust crates) is
+  a separate Phase 2 engineering effort.
+
+scope: model-only
+status: proven
+authors:
+  - galo@serragi.com
+  - refineforge
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.Helyx.Audit
+  file: lean/Refineforge/Helyx/Audit.lean
+  theorems:
+    - append_increments_length
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: |
+    First HELYX-namespace claim. The refinement doc
+    documents what's machine-checked (the Lean theorem in
+    refineforge's lake) vs what's human-asserted (that the
+    slice faithfully represents HELYX's verified/lean/HELYX/
+    spec; that helyx-audit-verified's audit_append_claim()
+    points at the right Lean module; that helyx-audit's
+    working impl agrees with the slice). Sign on review.

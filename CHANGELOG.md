@@ -10,6 +10,102 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — HELYX-AUDIT-001: the first refineforge claim against HELYX (production substrate)
+
+**Refineforge's first signed artifact in the HELYX namespace.**
+The strategic clarification this commit reflects: refineforge
+isn't a generic framework looking for a customer; it's the
+verification framework for HELYX (the operator's separate
+production substrate at `C:\HELYX`, a 53-crate Rust + Lean 4
+project with 4643 tests passing as of HELYX HEAD `341c6263`).
+
+#### What ships
+
+- **`lean/Refineforge/Helyx.lean`** — namespace hub for HELYX-
+  related slices. Docstring documents the bridge to HELYX's
+  separate `verified/lean/HELYX/` tree.
+- **`lean/Refineforge/Helyx/Audit.lean`** — verbatim-modulo-
+  namespace copy of HELYX's `Chain.lean` + `Append.lean`.
+  Carries the `Chain` structure + the load-bearing theorem
+  `append_increments_length`. Namespace renamed from
+  `HELYX.Audit` to `Refineforge.Helyx.Audit` so refineforge's
+  own lake project compiles it.
+- **`claims/helyx-audit-001.yaml`** — claim YAML, `model-only`
+  scope (no `rust_source` block; the HELYX Rust impl lives in
+  a separate repo so refineforge's scan doesn't reach it; the
+  refinement doc names the paths instead).
+- **`docs/refinement/HELYX-AUDIT-001.md`** — the trust-critical
+  refinement argument. Documents the four-link trust chain:
+  Lean source (machine-checked) → slice ↔ HELYX source-of-truth
+  (human-asserted verbatim-modulo-namespace) → HELYX verified-
+  claim registry (`helyx-audit-verified::audit_append_claim()`,
+  human-asserted Lean-module-string match) → HELYX working
+  impl (`crates/helyx-audit/`, machine-checked by HELYX's own
+  41-step CI, not by refineforge). Honestly carves out what
+  refineforge cannot yet verify cross-repo.
+- **`lean/Refineforge.lean`** — library root now imports
+  `Refineforge.Helyx`.
+
+#### Verified end-to-end this session
+
+- `refine lean check HELYX-AUDIT-001` → `status: verified`;
+  sorry / admit / axiom counts all zero; `lake build` succeeds
+  for `Refineforge.Helyx.Audit`.
+- `refine bundle export HELYX-AUDIT-001` →
+  `artifacts/HELYX-AUDIT-001/` with **10 files in SHA-256
+  manifest**.
+- `refine bundle verify` round-trip → "verified OK".
+- `cargo nextest run --workspace` → **383/383 pass** (the new
+  Lean module doesn't touch Rust source).
+
+#### Honest scope of "first claim"
+
+This is a **representative slice**, not full HELYX-lake
+integration. The HELYX source-of-truth at
+`C:\HELYX\verified\lean\HELYX\Audit\` stays canonical;
+refineforge bundles a byte-identical copy under its own
+namespace. Drift between the two is a **Cat 8 escalation**
+per criteria v0.3 (the slice itself is part of refineforge's
+trust footprint).
+
+What's deferred to a later phase:
+- **Cross-repo scan**: refineforge can't yet verify that
+  `helyx-audit::append` exists at the cited path in HELYX's
+  separate repo. The operator manually inspected; the
+  refinement doc cites the inspection date.
+- **Full HELYX-lake integration**: refineforge invoking
+  `lake build` against `C:\HELYX/verified/lean/` directly,
+  no copy needed. Requires per-claim lake-root config in
+  refineforge's runner. Phase 2 work.
+- **Drift detection**: an automation that watches the HELYX
+  source-of-truth + flags slice divergence as a Cat-8
+  escalation packet. Could be a `refine sync` subcommand
+  that compares the two trees.
+- **The other four HELYX audit theorems**:
+  Causality, Replay, TamperDetection, and the
+  `tampered`-correctness invariant — each warrants its own
+  HELYX-AUDIT-NNN refineforge claim. Same slice pattern.
+- **HELYX-NAL-001**: the differentiable-NAL claim (HELYX's
+  second verified-claim registry). Pending operator review
+  of the NAL Lean spec.
+
+#### Why this matters strategically
+
+The Phase 4 audit ($0.35 Anthropic-repair end-to-end) proved
+refineforge works on synthetic broken claims. This commit
+proves refineforge works on a **real HELYX trust claim**.
+The signed bundle at `artifacts/HELYX-AUDIT-001/` is the
+artifact a third party can re-hash + re-verify against the
+operator's signature — exactly the shape the
+`docs/methodology.md` four-link trust chain promises.
+
+That artifact + the refinement doc + the verifiable Lean
+source is the **case-study deliverable** the operator's
+strategic next-move conversation referenced. No GUI, no
+four-engineer team, no $1M annual burn required — just
+refineforge, HELYX as the first design partner (in-house),
+and the rest is repetition for the remaining HELYX claims.
+
 ### Changed — `docs/plans/resourcing-plan.md` rewritten (v0.1 had the framing inverted)
 
 The v0.1 of the resourcing plan (shipped earlier in this

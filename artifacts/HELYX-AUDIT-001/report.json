@@ -1,0 +1,13 @@
+{
+  "claim_id": "HELYX-AUDIT-001",
+  "status": "verified",
+  "sorry_count": 0,
+  "admit_count": 0,
+  "axiom_count": 0,
+  "lean_toolchain": "leanprover/lean4:v4.29.1",
+  "lean_module": "Refineforge.Helyx.Audit",
+  "stdout": "Build completed successfully (7 jobs).\n",
+  "stderr": "",
+  "policy_notes": [],
+  "checked_at": "2026-05-19T04:01:41.485269300Z"
+}
