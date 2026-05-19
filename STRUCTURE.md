@@ -225,6 +225,13 @@ Phase 2 modules:
   `await_decision` (**indefinite poll, no auto-reject** per
   v0.3).
 
+Phase 3.5 modules:
+- `src/loaders.rs` — `load_claim_summary` (YAML walk +
+  `claim_id` match) + `load_lake_manifest_packages` +
+  `load_cargo_lock_bundle_chain` (hand-parsed, no toml dep) +
+  `load_project_context` (top-level combiner). Replaces the
+  Phase-1 honest deferral.
+
 ### `crates/refineforge-bitexact/` — bit-exact gate (Section 4)
 
 Binary `refine-bitexact`. Runs a kernel N times, hashes each
@@ -286,7 +293,7 @@ swapping in the broken file. Without pre-warm, cold lake
 elaboration exceeds the LSP diagnostic timeout and breaks
 register as false `AlreadyClean`.
 
-### `crates/refineforge-cli/src/autonomous/` — Phase 3 MVP driver
+### `crates/refineforge-cli/src/autonomous/` — Phase 3.5 driver
 
 Lives inside `refineforge-cli` (not a separate crate) to avoid
 a circular dep with the existing `runner` / `bundle` / `scan`
@@ -297,21 +304,30 @@ Submodules:
 - `planner.rs` — sequences a baseline workflow (LeanCheck →
   Scan → BundleExport) + injection point for AI-proposed
   categorised `Action`s via `Planner::with_engine_action`.
-- `executor.rs` — runs each step. System steps are MVP scaffold
-  stubs (Phase 3.5 wires real library calls). Engine actions
-  go through `Engine::decide`; escalations commit a packet
-  unless `--dry-run`.
+- `executor.rs` — runs each step. **Phase 3.5: system steps
+  call real `runner::run` / `scan::scan_claim` /
+  `bundle::export` library functions when not in `--dry-run`.**
+  Engine actions go through `Engine::decide`; escalations
+  commit a packet unless `--dry-run`.
 - `cost.rs` — `CostGate` with fail-closed `charge(amount)`;
   honours `--max-cost-usd`.
 - `report.rs` — `RunReport` JSON with per-step outcomes +
   cost + summary.
-- `mod.rs` — `run_cli` (entry point) + `escalations_list`
+- `mod.rs` — `run_cli` (Phase 3.5: loads `ProjectContext` +
+  `Claim` from disk via `refineforge_escalation::load_project_context`
+  before constructing the `Executor`) + `escalations_list`
   (queue dashboard).
 
-23 tests; honest deferrals documented in CHANGELOG (real
-Anthropic call, real library-call wiring for system steps,
-file loaders for ProjectContext, EXAMPLE-002 dogfood, await
-resumption).
+Tests: 23 inline + 4 in `tests/autonomous_e2e.rs` (2 loader
+tests against real repo claims, 1 dry-run end-to-end against
+EXAMPLE-001, 1 `live_lean_check_on_example_001` that gates on
+`lake` being on PATH and PASSED via SKIP on the Windows
+commit machine).
+
+Honest deferrals (in CHANGELOG): no live Anthropic call
+end-to-end yet; `await_decision` not yet called from `run_cli`
+(MVP halts at first escalation); `refine-train` /
+`refine-bitexact` integration still pending.
 
 ### `crates/refineforge-cli/` — the `refine` binary
 

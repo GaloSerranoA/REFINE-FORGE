@@ -23,6 +23,7 @@ pub mod decision;
 pub mod decision_outcome;
 pub mod engine;
 pub mod git_checkpoint;
+pub mod loaders;
 pub mod packet;
 
 pub use action::{
@@ -33,6 +34,10 @@ pub use context::{ClaimSummary, ProjectContext};
 pub use decision::{Decision, EscalationReason, Evidence};
 pub use decision_outcome::{DecisionOutcome, DecisionParseError, PartialDecision};
 pub use engine::{Engine, EngineError};
+pub use loaders::{
+    load_cargo_lock_bundle_chain, load_claim_summary, load_lake_manifest_packages,
+    load_project_context, LoaderError,
+};
 pub use git_checkpoint::{
     await_decision, commit_packet, poll_decision_once, AwaitConfig, CommitSha,
     GitCheckpointError, GitOps, MockGitOps, SubprocessGitOps,

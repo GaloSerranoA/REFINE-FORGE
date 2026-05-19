@@ -39,7 +39,8 @@ pub use report::{RunReport, RunSummary};
 
 use anyhow::{Context, Result};
 use refineforge_escalation::{
-    ClaimSummary, Engine, ProjectContext, SubprocessGitOps, CRITERIA_VERSION,
+    load_project_context, ClaimSummary, Engine, ProjectContext, SubprocessGitOps,
+    CRITERIA_VERSION,
 };
 use std::path::Path;
 
@@ -66,8 +67,36 @@ pub fn run_cli(
     println!("criteria version: v{}", CRITERIA_VERSION);
     println!();
 
-    let mut ctx = ProjectContext::test_default();
-    ctx.claim = Some(ClaimSummary::test_default(claim_id));
+    // Try to load the real claim + project context from disk.
+    // On failure, fall back to a test_default context so the
+    // run can still proceed in dry-run / smoke modes.
+    let project_ctx = match load_project_context(root, Some(claim_id)) {
+        Ok(ctx) => {
+            println!("loaded ProjectContext: {} lake packages, {} bundle-chain crates, claim={}",
+                ctx.lake_packages_existing.len(),
+                ctx.bundle_chain_crates.len(),
+                ctx.claim.as_ref().map(|c| c.id.as_str()).unwrap_or("(none)"));
+            ctx
+        }
+        Err(e) => {
+            eprintln!("WARNING: load_project_context failed: {} — falling back to test_default", e);
+            let mut ctx = ProjectContext::test_default();
+            ctx.claim = Some(ClaimSummary::test_default(claim_id));
+            ctx
+        }
+    };
+    // Load the underlying Claim YAML for runner/scan/bundle calls.
+    let claim = match crate::claim::load(root, claim_id) {
+        Ok((_, c)) => Some(c),
+        Err(e) => {
+            eprintln!(
+                "WARNING: claim::load failed: {} — system steps will fail in non-dry-run mode",
+                e
+            );
+            None
+        }
+    };
+
     let cost_gate = CostGate::new(max_cost_usd);
     let generated_at = chrono::Utc::now().to_rfc3339();
     let git = SubprocessGitOps::new();
@@ -77,10 +106,11 @@ pub fn run_cli(
         git,
         repo_root: root.to_path_buf(),
         claim_id: claim_id.to_string(),
+        claim,
         strategy: strategy.to_string(),
         operator: operator.map(|s| s.to_string()),
         dry_run,
-        project_ctx: ctx,
+        project_ctx,
         cost_gate,
         generated_at: generated_at.clone(),
     };

@@ -10,6 +10,145 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Changed — Phase 3.5: real library calls + ProjectContext loaders (replaces Phase-3-MVP scaffold stubs)
+
+Phase 3 MVP shipped the orchestration shell with system steps
+as scaffold stubs and a manually-constructed `ProjectContext`.
+Phase 3.5 fills those gaps so `refine autonomous` actually
+drives Lean check / scan / bundle export against the real
+project, not a placeholder.
+
+#### `crates/refineforge-escalation/src/loaders.rs` — new module
+
+- `load_claim_summary(root, claim_id)` — walks
+  `<root>/claims/**/<*.yaml>`, parses the first file whose
+  `claim_id:` matches, projects the fields the engine queries
+  into a [`ClaimSummary`]. Includes a free-text-to-enum
+  status mapper (`"verified"` → `ProvenModelOnly`, `"broken"`
+  → `Broken`, etc., default `Drafted`).
+- `load_lake_manifest_packages(root)` — reads
+  `<root>/lean/lake-manifest.json` and returns the set of
+  Lake-package names. Missing file → empty set (graceful,
+  per Phase 1 design).
+- `load_cargo_lock_bundle_chain(root)` — hand-parses
+  `<root>/Cargo.lock` (no `toml` crate dep — just `[[package]]`
+  block scanning) and returns every pinned crate name.
+  **Conservative choice**: every pinned crate is treated as
+  in-chain, on the criteria-doc doctrine "conservative by
+  default" — over-escalating beats under-escalating.
+- `load_project_context(root, claim_id)` — combines all three
+  loaders + sets `criteria_version` to the engine's compiled-in
+  `CRITERIA_VERSION`. Returns a populated [`ProjectContext`]
+  the driver can hand to `Engine::decide` directly.
+- 13 inline tests against tempdir fixtures + 1 integration
+  test against the repo's actual claims (caught real schema
+  drift before it'd reach a user).
+
+#### Executor real library calls (replaces Phase-3 stubs)
+
+`run_system_step` no longer returns "(MVP scaffold) X
+invocation deferred to Phase 3.5". Real wiring:
+
+- **LeanCheck** → `crate::runner::run(repo_root, &claim)` →
+  `ProofReport`. `Verified` → Proceeded; anything else
+  (`BuildFailed`, `PolicyViolation`, `ToolingError`) → Failed
+  with the variant name in the error string.
+- **Scan** → `crate::scan::scan_claim(repo_root, &claim)` →
+  `ScanReport`. `Verified` or `NoRustSource` → Proceeded;
+  `Partial` / `FileMissing` → Failed.
+- **BundleExport** → `crate::bundle::export(repo_root,
+  claim_id, None)` → writes `artifacts/<CLAIM-ID>/` with the
+  SHA-256-sealed manifest.
+
+The executor's struct gains a `claim: Option<Claim>` field.
+Live mode without a loaded `Claim` returns `Failed` with
+"no Claim loaded into executor — call load_project_context
+first" (defence-in-depth).
+
+#### `autonomous::run_cli` updates
+
+- Calls `load_project_context(root, Some(claim_id))` at run
+  start. On success, prints "loaded ProjectContext: N lake
+  packages, M bundle-chain crates, claim=ID". On failure
+  prints a WARNING and falls back to `test_default()` so the
+  run can still proceed in dry-run / smoke modes.
+- Calls `crate::claim::load(root, claim_id)` to populate the
+  executor's `claim` field. On failure prints a WARNING and
+  proceeds with `None` (live mode then fails per-step, which
+  is the honest behaviour — every step is recorded as failed
+  with a useful error).
+- No regression on the MVP's `--dry-run` path — dry-run still
+  short-circuits to "dry-run: would run X for Y" without
+  touching the live functions.
+
+#### Integration tests (`crates/refineforge-cli/tests/autonomous_e2e.rs`)
+
+Four tests against the actual refineforge repo (via
+`CARGO_MANIFEST_DIR`):
+
+1. **`loader_parses_real_example_001_yaml`** — asserts the
+   Lean-only EXAMPLE-001 claim has at least one theorem and
+   zero rust_source types.
+2. **`loader_parses_real_example_002_yaml`** — asserts the
+   refined-tutorial EXAMPLE-002 claim has rust_source types.
+3. **`dry_run_plans_and_loads_real_claim`** — full dry-run
+   pipeline against EXAMPLE-001: planner produces 3 steps,
+   every step Proceeds with `"dry-run: "` detail, summary is
+   success.
+4. **`live_lean_check_on_example_001`** — gated on `lake`
+   being on PATH. Calls `runner::run` for real and asserts
+   the LeanCheck step's detail mentions "Verified". On the
+   commit machine (Windows, no `lake` installed), this test
+   **PASSED via the SKIP path** — printed `SKIP
+   live_lean_check_on_example_001: lake not on PATH` and
+   returned early without invoking Lake. Real validation
+   requires a runner with `lake` + the pinned
+   `leanprover/lean4:v4.29.1` toolchain installed.
+
+#### Tests (honest counts)
+
+- `cargo nextest run -p refineforge-cli`: **44/44 pass**
+  (was 40 in Phase 3 MVP; +4 from `autonomous_e2e.rs`).
+- `cargo nextest run --workspace`: **362/362 pass** (was
+  344; +18 — loaders 13 + cli integration 4 + 1 minor delta).
+- **Honest count of what was actually executed end-to-end
+  against the live system**: 3/4 of the integration tests
+  exercised the real loader paths + real executor library
+  calls (dry-run mode for the executor calls). The 4th
+  integration test (`live_lean_check_on_example_001`)
+  PASSED via the early SKIP branch — `lake` is not on PATH
+  on the commit machine. First execution against a real
+  Lean toolchain is the operator's first `refine autonomous`
+  invocation OR a CI run with elan + the pinned toolchain
+  installed; the test code path is verified to compile and
+  to dispatch correctly, but the `runner::run` → `lake
+  build` subprocess wasn't observed succeeding in this
+  commit's test runs.
+
+#### What this commit does NOT ship (honest disclosures)
+
+- **No live Anthropic call still.** Phase 3.5 wires the
+  system steps; the LLM-driven repair step injection into
+  the planner is deferred. Today `--strategy anthropic`
+  parses but the planner never inserts an LLM-driven
+  Action into the plan.
+- **No `await_decision` resumption.** Like the MVP, the
+  executor halts at the first `Escalated` step. The Phase 2
+  `await_decision` poll-loop exists and is exercised by
+  unit tests but isn't called from `run_cli` yet — the
+  resume-after-operator-approval flow control is the next
+  natural increment.
+- **`refine-train` / `refine-bitexact` integration still
+  absent.** Plan §3 phase 3.5 mentioned these; this commit
+  focuses on Sections 1 + 3 (Lean check / scan / bundle).
+  Section 2 + 4 wiring is still pending.
+- **EXAMPLE-002 dogfood not run.** The forced-Counter
+  idealisation test from plan §3 phase 4 needs the LLM
+  strategy actually invoked + the engine's
+  `MapRustToLean { lossy_kinds: ... }` action injected.
+  Loaders + executor are ready to receive it; the LLM
+  integration is the missing piece.
+
 ### Added — Phase 3 (MVP): `refine autonomous` driver + `refine escalations list` queue dashboard
 
 The autonomous-driver-plan called for a separate

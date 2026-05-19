@@ -20,6 +20,10 @@
 
 use crate::autonomous::cost::CostGate;
 use crate::autonomous::planner::{PlannedStep, StepKind};
+use crate::claim::Claim;
+use crate::report::ProofStatus;
+use crate::scan::ScanStatus;
+use crate::{bundle, runner, scan};
 use refineforge_escalation::{
     commit_packet, AwaitConfig, Decision, Engine, GitOps, Packet, ProjectContext,
 };
@@ -75,6 +79,10 @@ pub struct Executor<G: GitOps> {
     pub git: G,
     pub repo_root: PathBuf,
     pub claim_id: String,
+    /// Populated by `run_cli` from `refineforge_cli::claim::load`.
+    /// `None` for unit-test executors that don't drive real
+    /// system steps.
+    pub claim: Option<Claim>,
     pub strategy: String,
     pub operator: Option<String>,
     pub dry_run: bool,
@@ -94,6 +102,7 @@ impl<G: GitOps> Executor<G> {
             git,
             repo_root: repo_root.into(),
             claim_id: "TEST-CLAIM".into(),
+            claim: None,
             strategy: "mock".into(),
             operator: None,
             dry_run: true,
@@ -184,21 +193,106 @@ impl<G: GitOps> Executor<G> {
         kind_label: &'static str,
         started: Instant,
     ) -> StepOutcome {
-        StepOutcome::Proceeded {
-            seq: step.seq,
-            kind: kind_label.into(),
-            detail: if self.dry_run {
-                format!("dry-run: would run `{}` for {}", kind_label, self.claim_id)
-            } else {
-                // Phase 3.5 will replace this stub with real
-                // library calls into runner::lean_check_all,
-                // scan::check, bundle::export etc.
-                format!(
-                    "(MVP scaffold) `{}` invocation deferred to Phase 3.5 wiring",
-                    kind_label
-                )
+        if self.dry_run {
+            return StepOutcome::Proceeded {
+                seq: step.seq,
+                kind: kind_label.into(),
+                detail: format!("dry-run: would run `{}` for {}", kind_label, self.claim_id),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+            };
+        }
+        // Live mode requires a loaded Claim.
+        let Some(claim) = self.claim.as_ref() else {
+            return StepOutcome::Failed {
+                seq: step.seq,
+                kind: kind_label.into(),
+                error: "no Claim loaded into executor — call load_project_context first".into(),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+            };
+        };
+        match kind_label {
+            "LeanCheck" => match runner::run(&self.repo_root, claim) {
+                Ok(report) => match report.status {
+                    ProofStatus::Verified => StepOutcome::Proceeded {
+                        seq: step.seq,
+                        kind: kind_label.into(),
+                        detail: format!(
+                            "lake build verified {} (status: Verified)",
+                            self.claim_id
+                        ),
+                        elapsed_ms: started.elapsed().as_millis() as u64,
+                    },
+                    other => StepOutcome::Failed {
+                        seq: step.seq,
+                        kind: kind_label.into(),
+                        error: format!(
+                            "lake build did not produce Verified status: {:?}",
+                            other
+                        ),
+                        elapsed_ms: started.elapsed().as_millis() as u64,
+                    },
+                },
+                Err(e) => StepOutcome::Failed {
+                    seq: step.seq,
+                    kind: kind_label.into(),
+                    error: format!("runner::run: {:#}", e),
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                },
             },
-            elapsed_ms: started.elapsed().as_millis() as u64,
+            "Scan" => match scan::scan_claim(&self.repo_root, claim) {
+                Ok(report) => match report.status {
+                    ScanStatus::Verified | ScanStatus::NoRustSource => {
+                        StepOutcome::Proceeded {
+                            seq: step.seq,
+                            kind: kind_label.into(),
+                            detail: format!(
+                                "scan status: {} ({} rust_source items)",
+                                report.status,
+                                report.items.len()
+                            ),
+                            elapsed_ms: started.elapsed().as_millis() as u64,
+                        }
+                    }
+                    other => StepOutcome::Failed {
+                        seq: step.seq,
+                        kind: kind_label.into(),
+                        error: format!(
+                            "scan reported {} — missing entities in rust_source",
+                            other
+                        ),
+                        elapsed_ms: started.elapsed().as_millis() as u64,
+                    },
+                },
+                Err(e) => StepOutcome::Failed {
+                    seq: step.seq,
+                    kind: kind_label.into(),
+                    error: format!("scan::scan_claim: {:#}", e),
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                },
+            },
+            "BundleExport" => match bundle::export(&self.repo_root, &self.claim_id, None) {
+                Ok(()) => StepOutcome::Proceeded {
+                    seq: step.seq,
+                    kind: kind_label.into(),
+                    detail: format!(
+                        "bundle exported to artifacts/{} (SHA-256 manifest sealed)",
+                        self.claim_id
+                    ),
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                },
+                Err(e) => StepOutcome::Failed {
+                    seq: step.seq,
+                    kind: kind_label.into(),
+                    error: format!("bundle::export: {:#}", e),
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                },
+            },
+            other => StepOutcome::Failed {
+                seq: step.seq,
+                kind: other.into(),
+                error: format!("unknown system step kind: {}", other),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+            },
         }
     }
 
