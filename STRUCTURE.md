@@ -307,6 +307,10 @@ Submodules:
 - `executor.rs` — runs each step. **Phase 3.5: system steps
   call real `runner::run` / `scan::scan_claim` /
   `bundle::export` library functions when not in `--dry-run`.**
+  **Phase 3.6: `StepKind::Repair` invokes
+  `crate::repair::repair` with `resolve_strategy(name)`
+  (`mock` / `anthropic-mock` / `anthropic`); cost-gate
+  charges $0.07 × max_iterations upfront for `anthropic`.**
   Engine actions go through `Engine::decide`; escalations
   commit a packet unless `--dry-run`.
 - `cost.rs` — `CostGate` with fail-closed `charge(amount)`;

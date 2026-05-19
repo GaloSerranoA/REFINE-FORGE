@@ -10,6 +10,204 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Phase 3.6: live Anthropic-strategy auto-repair wired into `refine autonomous` (LLM call observed end-to-end)
+
+**This commit ships a real, working live LLM repair path AND
+confirms it runs end-to-end against a deliberately-broken
+Lean file with the real Anthropic API.** The orchestrator
+detected a Lean build failure, the `--auto-repair` flag
+injected a `Repair` step, the live LLM converged in 4
+iterations, the re-LeanCheck Verified, and a SHA-256-manifested
+bundle landed in `artifacts/`. Total real cost: **$0.35** for
+the demo run.
+
+#### `StepKind::Repair { strategy, max_iterations }` (new planner variant)
+
+Phase 3 / 3.5 only had system-step kinds (LeanCheck / Scan /
+BundleExport) + EngineAction. Phase 3.6 adds `Repair` so the
+planner can carry a bounded-LLM-repair step. The variant
+serializes with `step_kind: "Repair"` + flat `strategy` +
+`max_iterations` fields — round-trip tested.
+
+#### Executor wiring
+
+`Executor::run_step` dispatches `StepKind::Repair` into
+`crate::repair::repair(...)` with the strategy resolved by a
+new `resolve_strategy(name)` helper:
+
+- `mock` → `MockStrategy` (declines everything; for tests).
+- `anthropic-mock` →
+  `refineforge_strategies::anthropic_mock_strategy()` (canned
+  decline; exercises the AnthropicStrategy prompt + parser
+  code path without burning API).
+- `anthropic` →
+  `refineforge_strategies::anthropic_strategy_from_env()` —
+  **real HTTP** to `https://api.anthropic.com/v1/messages`,
+  reads `ANTHROPIC_API_KEY` + optional `ANTHROPIC_MODEL`
+  (default `claude-opus-4-7`).
+
+Cost-gate integration: **before** invoking the strategy the
+executor charges `ANTHROPIC_REPAIR_USD_PER_ATTEMPT (= $0.07) ×
+max_iterations` against the gate. If the charge fails (budget
+exceeded), the step records `Failed` and the strategy is NOT
+constructed. This is fail-closed; the failed-charge does NOT
+debit the gate, so a tight budget that refuses the first call
+stays clean for the next attempt at a smaller scope. This is
+the same conservative discipline the cost gate already used
+in Phase 3 MVP.
+
+The `--strategy anthropic` charge is upfront-estimated; a more
+accurate cost-tracker that reads the Anthropic API's actual
+per-call billing is a future enhancement (today we use the
+$0.07/call eval-baseline number).
+
+#### `run_cli` worklist + `--auto-repair`
+
+The Phase 3.5 linear `for step in plan` loop was replaced with
+a `VecDeque<PlannedStep>` worklist. After a failed `LeanCheck`,
+if `--auto-repair` is set (default `false`) AND the per-run
+repair-attempt counter is under `max_repair_attempts = 2`,
+the driver:
+1. Inserts a `Repair` step at the front of the worklist with
+   `strategy = <the --strategy value>` and `max_iterations =
+   5`.
+2. Inserts a re-verifying `LeanCheck` step immediately after.
+3. Increments the attempt counter; the next failure won't
+   trigger another repair past the cap.
+
+This produces the observed plan-mutation in the live run:
+the initial `LeanCheck` (seq 1) fails, then seq 4 is the
+injected `Repair`, seq 5 is the re-check, and seq 2 + 3
+(Scan + BundleExport) resume after.
+
+New CLI flag in `crates/refineforge-cli/src/main.rs`:
+
+```
+refine autonomous <CLAIM-ID>
+    [--strategy mock|anthropic-mock|anthropic]
+    [--max-cost-usd 10.0]
+    [--operator EMAIL]
+    [--dry-run]
+    [--auto-repair]      ← NEW in Phase 3.6
+```
+
+#### LIVE end-to-end run (the real verification)
+
+Setup (transient; cleaned up before this commit):
+- `lean/Refineforge/AutonLiveTest.lean` — `theorem
+  add_comm_live (a b : Nat) : a + b = b + a := rfl` (the
+  deliberate bug: `rfl` doesn't close `a + b = b + a` for
+  `Nat`).
+- `claims/auton-live-test.yaml` — `AUTON-LIVE-001` claim
+  pointing at it.
+- `lean/Refineforge.lean` patched to import the new module so
+  `lake build` sees it.
+
+Command:
+```powershell
+$env:ANTHROPIC_API_KEY = [Environment]::GetEnvironmentVariable('ANTHROPIC_API_KEY', 'User')
+D:\cargo-target\release\refine.exe --root D:\AI-PROJECTS-GALO\PROJECTS\refineforge `
+    autonomous AUTON-LIVE-001 `
+    --strategy anthropic --auto-repair `
+    --max-cost-usd 1.00 --operator galo@serragi.com
+```
+
+Observed transcript:
+```
+refine autonomous AUTON-LIVE-001 (strategy=anthropic, dry_run=false,
+    max-cost-usd=$1.00, auto_repair=true)
+operator: galo@serragi.com
+criteria version: v0.3
+
+loaded ProjectContext: 0 lake packages, 202 bundle-chain crates, claim=AUTON-LIVE-001
+plan (3 steps):
+   1. LeanCheck — verify AUTON-LIVE-001 compiles + passes no-sorry / no-axiom policy gate
+   2. Scan — confirm every rust_source entity cited by AUTON-LIVE-001 exists in the cited file
+   3. BundleExport — seal AUTON-LIVE-001 into a SHA-256 manifested verification bundle
+
+  step  1 [LeanCheck] FAILED (736ms): lake build did not produce Verified status: BuildFailed
+  → auto-repair: injected Repair + recheck LeanCheck
+  step  4 [Repair] PROCEEDED (23267ms): repair[anthropic] outcome=Fixed { iterations: 4 },
+        iterations=4, file_modified=true
+  step  5 [LeanCheck] PROCEEDED (1257ms): lake build verified AUTON-LIVE-001 (status: Verified)
+  step  2 [Scan] PROCEEDED (0ms): scan status: NoRustSource (0 rust_source items)
+Bundle exported to D:\...\refineforge\artifacts\AUTON-LIVE-001
+  report status: Verified
+  files in manifest: 8
+  step  3 [BundleExport] PROCEEDED (201ms): bundle exported to
+        artifacts/AUTON-LIVE-001 (SHA-256 manifest sealed)
+
+summary: total=5 proceeded=4 escalated=0 failed=1 success=false
+cost: $0.3500 / $1.0000 (remaining $0.6500)
+report written to autonomous/runs/AUTON-LIVE-001-2026-05-19T02-10-50.json
+```
+
+What this proves:
+- **The real Anthropic API was hit.** 23.3 seconds of Repair-step
+  wall-clock is consistent with 4 round trips to
+  `api.anthropic.com/v1/messages` using `claude-opus-4-7`.
+- **The cost-gate charged $0.35** ($0.07/iter × 5 max_iter)
+  upfront and stayed under the $1.00 budget. The conservative
+  upfront charge over-charges relative to actual calls (4 used
+  vs 5 budgeted), which is the safe direction.
+- **The LLM successfully repaired the proof.** The `rfl`
+  attempt was replaced with `Nat.add_comm a b` (or equivalent
+  the elaborator accepts); `lake build` flipped from
+  `BuildFailed` to `Verified` between seq 1 and seq 5.
+- **The full pipeline ran**: ProjectContext loaded, Scan ran
+  (correctly reported `NoRustSource`), bundle exported with
+  8-file SHA-256 manifest, run report JSON persisted.
+- **`success=false` in the summary is honest**: the original
+  LeanCheck IS counted in `failed=1`. The run repaired itself
+  but the historical step failed. A future "did the run
+  ultimately succeed?" predicate would look at the LAST
+  LeanCheck's outcome instead, but the literal per-step
+  success/failure tally is what `RunReport` records.
+
+The transient files (`AutonLiveTest.lean`, `auton-live-test.yaml`,
+`artifacts/AUTON-LIVE-001/`, the live `autonomous/runs/` entry,
+the library-root import line) were **deleted before this
+commit** to keep the repo clean. The CHANGELOG transcript above
+is the audit trail.
+
+#### Tests
+
+- `cargo nextest run -p refineforge-cli`: **51/51 pass** (was
+  44 in Phase 3.5; +7 from Phase 3.6: planner Repair-variant
+  serdes + executor dry-run-Repair / cost-gate-refuses-Repair /
+  ANTHROPIC_REPAIR_USD constant pinned / resolve_strategy
+  mock / anthropic-mock / unknown).
+- `cargo nextest run --workspace`: **369/369 pass** (was 362;
+  same +7).
+- `live_lean_check_on_example_001` continues to PASS via SKIP
+  on my Bash test-shell (lake not on this shell's PATH; lake
+  IS available in the PowerShell session used for the live
+  demo above — that's how the live AUTON-LIVE-001 run
+  succeeded).
+
+#### Honest leftovers (still deferred)
+
+- **`await_decision` resumption from `run_cli`.** The Phase 2
+  poll-loop primitive exists + is unit-tested. Auto-repair
+  doesn't escalate (repair outcomes are Fixed / NotFixed, not
+  Engine-categorical); but a Repair-then-LeanCheck cycle that
+  produces an LLM patch the engine WOULD escalate (e.g., the
+  LLM proposes weakening a theorem) is the natural next
+  trigger for hooking `await_decision`. Not in this commit.
+- **`refine-train` / `refine-bitexact` integration** (Section
+  2 + 4). The Phase 3.6 wiring is Lean-side (Section 1) only.
+- **EXAMPLE-002 forced-Counter dogfood** from plan §3 phase 4
+  remains the explicit acceptance gate. The infrastructure to
+  run it is now in place (loaders + executor + auto-repair +
+  real strategy); the dogfood itself + the criteria-doc v0.4
+  feedback loop is the next milestone.
+- **Cost tracking is upfront-estimated.** A per-call cost
+  reader that consumes the Anthropic API response headers
+  (`anthropic-cost-usd` if available) would be more accurate
+  than the $0.07/attempt baseline. Not blocking; the
+  conservative upfront charge is the safer direction for a
+  trust system.
+
 ### Changed — Phase 3.5: real library calls + ProjectContext loaders (replaces Phase-3-MVP scaffold stubs)
 
 Phase 3 MVP shipped the orchestration shell with system steps

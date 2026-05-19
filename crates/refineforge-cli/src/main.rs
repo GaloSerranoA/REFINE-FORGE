@@ -79,11 +79,12 @@ enum Cmd {
     /// docs/autonomous-driver-plan.md.
     Autonomous {
         claim_id: String,
-        /// Strategy (built-in: "mock"; "anthropic" requires
-        /// ANTHROPIC_API_KEY)
+        /// Strategy (built-in: "mock"; "anthropic-mock"; "anthropic"
+        /// — the last requires ANTHROPIC_API_KEY in the env)
         #[arg(long, default_value = "mock")]
         strategy: String,
         /// Cap cumulative API spend; fails closed when exceeded.
+        /// Estimated $0.07/repair-attempt for `--strategy anthropic`.
         #[arg(long, default_value_t = 10.0)]
         max_cost_usd: f64,
         /// Operator identity (recorded in the run report's
@@ -94,6 +95,13 @@ enum Cmd {
         /// or the final RunReport JSON.
         #[arg(long)]
         dry_run: bool,
+        /// If a LeanCheck step fails, dynamically inject a
+        /// bounded Repair step (using `--strategy`) followed by
+        /// a re-verifying LeanCheck. Capped at 2 attempts per
+        /// run at the driver level. With `--strategy anthropic`
+        /// this is where live LLM cost is incurred.
+        #[arg(long)]
+        auto_repair: bool,
     },
     /// `refine escalations list` — operator queue dashboard.
     /// Per criteria v0.3 the autonomous driver never
@@ -233,6 +241,7 @@ fn main() -> Result<()> {
             max_cost_usd,
             operator,
             dry_run,
+            auto_repair,
         } => autonomous::run_cli(
             &cli.root,
             &claim_id,
@@ -240,6 +249,7 @@ fn main() -> Result<()> {
             max_cost_usd,
             operator.as_deref(),
             dry_run,
+            auto_repair,
         ),
         Cmd::Escalations { cmd } => match cmd {
             EscalationsCmd::List { claim, age_gt } => {

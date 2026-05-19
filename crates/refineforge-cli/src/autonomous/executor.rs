@@ -21,16 +21,26 @@
 use crate::autonomous::cost::CostGate;
 use crate::autonomous::planner::{PlannedStep, StepKind};
 use crate::claim::Claim;
+use crate::repair::{self, RepairConfig, RepairOutcome};
 use crate::report::ProofStatus;
 use crate::scan::ScanStatus;
 use crate::{bundle, runner, scan};
 use refineforge_escalation::{
     commit_packet, AwaitConfig, Decision, Engine, GitOps, Packet, ProjectContext,
 };
+use refineforge_repair_api::{MockStrategy, RepairStrategy};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use thiserror::Error;
+
+/// Estimated USD cost per repair-loop attempt with the live
+/// Anthropic strategy. Drawn from the eval-run numbers in
+/// CHANGELOG (the v0.1 baseline cited `~$0.07/call` for
+/// `claude-opus-4-7` against the 3-entry tutorial corpus).
+/// Used by the cost gate to fail-closed before invoking
+/// `--strategy anthropic`.
+pub const ANTHROPIC_REPAIR_USD_PER_ATTEMPT: f64 = 0.07;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "outcome")]
@@ -122,6 +132,10 @@ impl<G: GitOps> Executor<G> {
             StepKind::LeanCheck => self.run_system_step(step, "LeanCheck", started),
             StepKind::Scan => self.run_system_step(step, "Scan", started),
             StepKind::BundleExport => self.run_system_step(step, "BundleExport", started),
+            StepKind::Repair {
+                strategy,
+                max_iterations,
+            } => self.run_repair_step(step, strategy, *max_iterations, started),
             StepKind::EngineAction(action) => {
                 let decision = match self.engine.decide(action, &self.project_ctx) {
                     Ok(d) => d,
@@ -296,6 +310,92 @@ impl<G: GitOps> Executor<G> {
         }
     }
 
+    fn run_repair_step(
+        &mut self,
+        step: &PlannedStep,
+        strategy_name: &str,
+        max_iterations: usize,
+        started: Instant,
+    ) -> StepOutcome {
+        if self.dry_run {
+            return StepOutcome::Proceeded {
+                seq: step.seq,
+                kind: "Repair".into(),
+                detail: format!(
+                    "dry-run: would invoke repair loop for {} (strategy={}, max_iter={})",
+                    self.claim_id, strategy_name, max_iterations
+                ),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+            };
+        }
+        // Cost-gate: charge before invoking, so a runaway loop
+        // can't burn budget past the cap.
+        let est_cost = if strategy_name == "anthropic" {
+            ANTHROPIC_REPAIR_USD_PER_ATTEMPT * max_iterations as f64
+        } else {
+            0.0
+        };
+        if let Err(e) = self.cost_gate.charge(est_cost) {
+            return StepOutcome::Failed {
+                seq: step.seq,
+                kind: "Repair".into(),
+                error: format!("cost gate refused repair charge: {}", e),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+            };
+        }
+        let strategy: Box<dyn RepairStrategy> = match resolve_strategy(strategy_name) {
+            Ok(s) => s,
+            Err(e) => {
+                return StepOutcome::Failed {
+                    seq: step.seq,
+                    kind: "Repair".into(),
+                    error: format!("strategy resolution failed: {}", e),
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                }
+            }
+        };
+        let config = RepairConfig {
+            max_iterations,
+            strategy,
+            dry_run: false,
+        };
+        match repair::repair(&self.repo_root, &self.claim_id, config) {
+            Ok(report) => {
+                let detail = format!(
+                    "repair[{}] outcome={:?}, iterations={}, file_modified={}",
+                    strategy_name,
+                    report.outcome,
+                    report.iterations.len(),
+                    report.file_modified
+                );
+                match report.outcome {
+                    RepairOutcome::AlreadyClean | RepairOutcome::Fixed { .. } => {
+                        StepOutcome::Proceeded {
+                            seq: step.seq,
+                            kind: "Repair".into(),
+                            detail,
+                            elapsed_ms: started.elapsed().as_millis() as u64,
+                        }
+                    }
+                    RepairOutcome::MaxIterationsReached
+                    | RepairOutcome::NoProposal
+                    | RepairOutcome::UnrecoverableError(_) => StepOutcome::Failed {
+                        seq: step.seq,
+                        kind: "Repair".into(),
+                        error: detail,
+                        elapsed_ms: started.elapsed().as_millis() as u64,
+                    },
+                }
+            }
+            Err(e) => StepOutcome::Failed {
+                seq: step.seq,
+                kind: "Repair".into(),
+                error: format!("repair::repair: {:#}", e),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+            },
+        }
+    }
+
     /// Block until the operator's decision on `packet_path` is
     /// parsable, polling every `config.poll_interval`. **No
     /// timeout** — per criteria v0.3, visible failure beats
@@ -307,6 +407,23 @@ impl<G: GitOps> Executor<G> {
     ) -> Result<refineforge_escalation::DecisionOutcome, ExecuteError> {
         refineforge_escalation::await_decision(&self.git, &self.repo_root, packet_rel, config)
             .map_err(|e| ExecuteError::GitCheckpoint(e.to_string()))
+    }
+}
+
+/// Resolve a `--strategy` CLI value to a concrete
+/// [`RepairStrategy`]. `anthropic` reads `ANTHROPIC_API_KEY` +
+/// optional `ANTHROPIC_MODEL` from the environment.
+pub fn resolve_strategy(name: &str) -> Result<Box<dyn RepairStrategy>, String> {
+    match name {
+        "mock" => Ok(Box::new(MockStrategy)),
+        "anthropic-mock" => Ok(refineforge_strategies::anthropic_mock_strategy()),
+        "anthropic" => {
+            refineforge_strategies::anthropic_strategy_from_env().map_err(|e| e.to_string())
+        }
+        other => Err(format!(
+            "unknown strategy `{}` (known: mock, anthropic-mock, anthropic)",
+            other
+        )),
     }
 }
 
@@ -446,6 +563,88 @@ mod tests {
             p.display().to_string(),
             "escalations/EXAMPLE-002/007-idealisation.md"
         );
+    }
+
+    #[test]
+    fn dry_run_repair_step_reports_proceeded_without_invoking_loop() {
+        let mut ex = mock_executor();
+        ex.dry_run = true;
+        ex.claim_id = "EXAMPLE-001".into();
+        let step = PlannedStep {
+            seq: 99,
+            kind: StepKind::Repair {
+                strategy: "anthropic".into(),
+                max_iterations: 5,
+            },
+            rationale: "test".into(),
+        };
+        let outcome = ex.run_step(&step);
+        match outcome {
+            StepOutcome::Proceeded { detail, kind, .. } => {
+                assert_eq!(kind, "Repair");
+                assert!(detail.starts_with("dry-run: "), "got: {}", detail);
+                // dry-run must not charge the cost gate
+                assert_eq!(ex.cost_gate.spent_usd, 0.0);
+            }
+            other => panic!("expected Proceeded in dry-run, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn non_dry_run_anthropic_repair_charges_cost_gate_before_invoking() {
+        let mut ex = mock_executor();
+        ex.dry_run = false;
+        // budget too small for one anthropic repair attempt
+        // (5 iter × $0.07 = $0.35) — cost gate must refuse.
+        ex.cost_gate = CostGate::new(0.10);
+        let step = PlannedStep {
+            seq: 99,
+            kind: StepKind::Repair {
+                strategy: "anthropic".into(),
+                max_iterations: 5,
+            },
+            rationale: "test".into(),
+        };
+        let outcome = ex.run_step(&step);
+        match outcome {
+            StepOutcome::Failed { error, kind, .. } => {
+                assert_eq!(kind, "Repair");
+                assert!(
+                    error.contains("cost gate refused"),
+                    "expected cost-gate refusal, got: {}",
+                    error
+                );
+                // cost gate state untouched after a failed charge
+                assert_eq!(ex.cost_gate.spent_usd, 0.0);
+            }
+            other => panic!("expected Failed, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn anthropic_constant_matches_eval_baseline() {
+        // If this changes, audit the CHANGELOG cost rationale too.
+        assert!((ANTHROPIC_REPAIR_USD_PER_ATTEMPT - 0.07).abs() < 1e-9);
+    }
+
+    #[test]
+    fn resolve_strategy_recognises_mock() {
+        let s = resolve_strategy("mock");
+        assert!(s.is_ok());
+    }
+
+    #[test]
+    fn resolve_strategy_recognises_anthropic_mock() {
+        let s = resolve_strategy("anthropic-mock");
+        assert!(s.is_ok());
+    }
+
+    #[test]
+    fn resolve_strategy_rejects_unknown() {
+        match resolve_strategy("definitely-not-a-real-strategy") {
+            Err(e) => assert!(e.contains("unknown strategy"), "got: {}", e),
+            Ok(_) => panic!("expected Err for unknown strategy"),
+        }
     }
 
     #[test]

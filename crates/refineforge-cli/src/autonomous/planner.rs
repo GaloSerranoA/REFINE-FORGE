@@ -31,6 +31,15 @@ pub enum StepKind {
     /// engine. Phase 3 MVP doesn't generate these from a live
     /// LLM (Phase 3.5 will); tests and dry-runs inject them.
     EngineAction(Action),
+    /// Bounded LLM repair loop. Invokes
+    /// `refineforge_cli::repair::repair` with the named strategy
+    /// (`mock` / `anthropic-mock` / `anthropic`). Run_cli injects
+    /// this dynamically after a failed `LeanCheck` when
+    /// `--auto-repair` is set.
+    Repair {
+        strategy: String,
+        max_iterations: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,6 +170,27 @@ mod tests {
             assert_eq!(act, &a2);
         } else {
             panic!("expected second injected action at step 3");
+        }
+    }
+
+    #[test]
+    fn repair_step_kind_serializes_with_strategy_field() {
+        let step = PlannedStep {
+            seq: 4,
+            kind: StepKind::Repair {
+                strategy: "anthropic".into(),
+                max_iterations: 5,
+            },
+            rationale: "auto-repair".into(),
+        };
+        let j = serde_json::to_string(&step).expect("ser");
+        let back: PlannedStep = serde_json::from_str(&j).expect("de");
+        assert_eq!(back, step);
+        if let StepKind::Repair { strategy, max_iterations } = back.kind {
+            assert_eq!(strategy, "anthropic");
+            assert_eq!(max_iterations, 5);
+        } else {
+            panic!("expected Repair variant");
         }
     }
 

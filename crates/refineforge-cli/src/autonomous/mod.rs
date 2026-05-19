@@ -58,9 +58,10 @@ pub fn run_cli(
     max_cost_usd: f64,
     operator: Option<&str>,
     dry_run: bool,
+    auto_repair: bool,
 ) -> Result<()> {
-    println!("refine autonomous {} (strategy={}, dry_run={}, max-cost-usd=${:.2})",
-        claim_id, strategy, dry_run, max_cost_usd);
+    println!("refine autonomous {} (strategy={}, dry_run={}, max-cost-usd=${:.2}, auto_repair={})",
+        claim_id, strategy, dry_run, max_cost_usd, auto_repair);
     if let Some(op) = operator {
         println!("operator: {}", op);
     }
@@ -122,9 +123,20 @@ pub fn run_cli(
     }
     println!();
 
+    // Worklist execution so --auto-repair can dynamically inject
+    // a Repair step + re-run LeanCheck after a failed LeanCheck.
+    let mut work: std::collections::VecDeque<PlannedStep> = plan.into_iter().collect();
+    let mut next_seq = work.iter().map(|s| s.seq).max().unwrap_or(0) + 1;
     let mut outcomes: Vec<StepOutcome> = Vec::new();
-    for step in &plan {
-        let outcome = ex.run_step(step);
+    let mut repair_attempts = 0usize;
+    let max_repair_attempts = 2usize; // bound: avoid runaway repair loops at driver level
+
+    while let Some(step) = work.pop_front() {
+        let outcome = ex.run_step(&step);
+        let is_lean_failed = matches!(
+            &outcome,
+            StepOutcome::Failed { kind, .. } if kind == "LeanCheck"
+        );
         match &outcome {
             StepOutcome::Proceeded { seq, kind, detail, elapsed_ms } => {
                 println!("  step {:>2} [{}] PROCEEDED ({}ms): {}", seq, kind, elapsed_ms, detail);
@@ -141,6 +153,32 @@ pub fn run_cli(
             }
         }
         outcomes.push(outcome);
+
+        if is_lean_failed && auto_repair && repair_attempts < max_repair_attempts {
+            repair_attempts += 1;
+            let repair_step = PlannedStep {
+                seq: next_seq,
+                kind: StepKind::Repair {
+                    strategy: strategy.to_string(),
+                    max_iterations: 5,
+                },
+                rationale: format!(
+                    "LeanCheck failed; --auto-repair attempt {}/{} (strategy={})",
+                    repair_attempts, max_repair_attempts, strategy
+                ),
+            };
+            let recheck_step = PlannedStep {
+                seq: next_seq + 1,
+                kind: StepKind::LeanCheck,
+                rationale: "re-verify after auto-repair".into(),
+            };
+            next_seq += 2;
+            // push_front + push_front in reverse order so the
+            // recheck runs AFTER the repair.
+            work.push_front(recheck_step);
+            work.push_front(repair_step);
+            println!("  → auto-repair: injected Repair + recheck LeanCheck");
+        }
     }
 
     let report = RunReport {
