@@ -10,6 +10,74 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Changed — `docs/ecosystem.md` rewritten v0.2 (HELYX-as-LLM reframe; v0.1 had flat-peers framing)
+
+v0.1 of this doc (commit `0805430`) framed the four projects
+as **flat complementary peers** that compose together. That
+was a framing bug. The operator corrected it twice in the
+same conversation, restating that **HELYX is their LLM** and
+the other three are HELYX's *infrastructure*.
+
+Evidence from `C:\HELYX\` confirming the corrected framing:
+- Canonical project doc is named **`HELYX LLM project.txt`**.
+- README's opening question: "What would have to be true for
+  HELYX to be the **structurally best AI codebase** that has
+  ever existed?"
+- Compares itself to **PyTorch, JAX** (the LLM ecosystem),
+  not Lean/Coq.
+- States: "**A property no production LLM has today**" —
+  HELYX positions itself AS a production LLM.
+- Crates: `helyx-train`, `helyx-distill`, `helyx-planner`,
+  `helyx-reasoning`, `helyx-inference` — the full LLM stack.
+
+**Corrected framing (v0.2):**
+
+| Role | Project |
+|---|---|
+| The LLM (the product) | **HELYX** |
+| Thinking adjunct | Cogn8ty / NARS (Cogn8ty serves HELYX's reasoning) |
+| Data pipeline | Knowledge-Foundry (KF feeds HELYX's training) |
+| Verification team | refineforge (refineforge verifies HELYX's claims) |
+
+**The crucial reframe:** refineforge is not a generic framework
+looking for a design partner. **refineforge exists because the
+alternative was hiring four engineers (Lean specialist + ML
+engineer + DevOps + CUDA engineer) to verify HELYX's
+load-bearing trust claims manually.** The operator built
+refineforge to automate that team instead. See
+`docs/plans/resourcing-plan.md` v0.2.
+
+**The corrected one-liner:**
+> "HELYX is the LLM. Cogn8ty thinks for it, KF teaches it,
+> refineforge proves it. Rust binds them. No one else has
+> shipped this stack."
+
+v0.2 §1 explicitly identifies HELYX as the LLM with evidence
+from the actual HELYX repo. §2 maps the other three as
+HELYX's infrastructure. §3 captures the strict-NARS observation
+(Cogn8ty symbolic + HELYX-NAL differentiable = NARS in the
+Pei-Wang sense, both in pure Rust). §5 re-frames the
+competitor moat as "HELYX is the LLM no one else has built
+with this architecture." §7's next-step deliverables are
+reordered with **"more HELYX claims signed by refineforge"
+as the highest-value next step** (was 7.2 in v0.1; now 7.1
+in v0.2 because every HELYX claim verified is one more
+reviewer-checkable trust artifact for the LLM the operator
+is actually building).
+
+v0.1 is preserved in git history at commit `0805430` for
+audit. v0.2's §9 documents the errata explicitly + encodes
+the lesson for future plan docs ("if HELYX appears on the
+same level as Cogn8ty / KF / refineforge as a flat peer,
+that's a framing bug").
+
+Cross-references:
+- README doc-map row updated to point at v0.2 framing.
+- STRUCTURE docs table row updated.
+
+No source / test changes. cargo nextest run --workspace
+still 383/383.
+
 ### Added — `docs/ecosystem.md`: the four-project portfolio map
 
 Pure docs commit. Captures the operator's strategic
