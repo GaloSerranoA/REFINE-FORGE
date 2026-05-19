@@ -33,6 +33,7 @@ Read in this order — each doc is short and points at the next.
 | [docs/plans/autonomous-driver-plan.md](docs/plans/autonomous-driver-plan.md) | Enterprise build plan for `refine autonomous`: 5 phases, ~2 weeks, $50-150 API budget, risks + mitigations. **All plan phases 0-5 + 3.5 + 3.6 + 3.7 + 3.8 closed** under criteria v0.3. Phase 4 acceptance gate exercised against real Anthropic ($0.35 spend); v0.2.0 + v0.2.1 released and tagged; only Nix-flake first-build verification remains (needs a Nix-capable runner) |
 | [docs/plans/gui-plan.md](docs/plans/gui-plan.md) | **PLAN ONLY (no code yet).** Enterprise build plan for `refineforge-studio`, a professional Tauri-based production GUI exposing the four sections + operator console + autonomous driver. 9 phases, ~15 weeks, 6 named open questions to resolve before Phase 0 |
 | [docs/plans/resourcing-plan.md](docs/plans/resourcing-plan.md) | **PLAN ONLY (v0.2).** Operator-side resourcing: 1 human operator + 1 part-time maintainer (or operator's own time) + compute. **refineforge IS the four specialists**, not headcount. 16,000 GPU-hours for the fine-tune via Option A grants (~$5-10k cash outlay). 12-month budget: **~$12-52k LATAM mid-band; ~$35-108k US ceiling.** v0.1 (commit `2f60d9c`) had the framing inverted; superseded |
+| [docs/plans/finetuning-plan.md](docs/plans/finetuning-plan.md) | **PLAN ONLY.** End-to-end fine-tuning pipeline: Knowledge-Foundry (sft_pair mode + new `lean_proof_repair` probe set) → Mathlib mutation corpus (N≥1000) → axolotl fine-tune (Qwen2.5-Coder-1.5B → 13B via Option A grants) → `refine --strategy local-finetune` via candle. 8 phases, ~8-12 weeks elapsed, ~$5-11k cash. Acceptance gate: fine-tuned ≥ claude-opus-4-7 baseline OR documented gap. Embedded probe-set spec ready for the operator to copy into Knowledge-Foundry |
 | [docs/HELYX-CASE-STUDY.md](docs/HELYX-CASE-STUDY.md) | Pointer to the external worked example (helyx-proofforge) |
 
 ## What this is
@@ -156,7 +157,8 @@ refineforge/
     └── plans/
         ├── autonomous-driver-plan.md  # 5-phase build plan; all phases shipped + 3.5/3.6/3.7/3.8
         ├── gui-plan.md               # 9-phase plan for refineforge-studio (no code yet)
-        └── resourcing-plan.md        # people/compute/tools/funding; 12-mo budget; A/B/C options
+        ├── resourcing-plan.md        # people/compute/tools/funding; 12-mo budget; A/B/C options
+        └── finetuning-plan.md        # 8-phase fine-tune via KF + axolotl + candle (no code yet)
 ```
 
 ## Quick start

@@ -10,6 +10,84 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — `docs/plans/finetuning-plan.md` (Knowledge-Foundry → axolotl → `refine --strategy local-finetune`)
+
+Pure docs commit. Captures the end-to-end fine-tuning
+pipeline that the operator now has the ingredients for:
+**Knowledge-Foundry** (the operator's separate Python
+distillation pipeline at
+`D:\AI-PROJECTS-GALO\PROJECTS\Knowledge-Foundry`, 330 source
+files + 1115 tests passing) handles data generation;
+`refineforge-trainer` already orchestrates axolotl runs;
+`refineforge-eval` already drives `RepairStrategy`
+benchmarks; a NEW `--strategy local-finetune` consumes the
+fine-tuned weights via candle (Rust-native).
+
+The plan is ~620 lines and mirrors the autonomous-driver-plan
++ gui-plan structure:
+
+§1 Goal + scope. Lower marginal cost per repair attempt +
+operator-controlled trust base.
+§2 End-to-end data flow (ASCII diagram from Mathlib
+mutation → KF probe → axolotl → candle-served strategy →
+eval gate).
+§3 Eight phases (0 pre-work → 8 docs + criteria v0.4
+review). Each phase has scope + cost + time + acceptance.
+§4 Total estimate: **~8-12 weeks elapsed, ~$5-11k cash**
+via Option A grant stack from resourcing-plan.md v0.2.
+§5 Resource requirements: zero additional hires; same
+operator + part-time maintainer; the four AI-driven
+specialist roles already exist.
+§6 Risks: Mathlib mutation throughput #1; Anthropic
+teacher refusals on Lean math #2; fine-tuned model
+underperforming baseline #3.
+§7 Definition of done (9 items).
+§8 Out of scope (70B+ base models; DPO/RLHF; multi-language
+proof systems; real-time online learning; SaaS hosting;
+federated learning).
+§9 Seven open questions for the operator.
+§10 **Appendix: probe-set spec ready for the operator to
+copy into Knowledge-Foundry**:
+   - `kb_destiller/modes/sft_pair/probes/lean_proof_repair.yaml`
+     (2 probe templates: lean_proof_repair_v1 +
+     lean_proof_repair_with_context)
+   - `kb_destiller/modes/sft_pair/presets/lean_proof_repair.yaml`
+     (token bounds, quality floor 0.65, Apache-2.0 license
+     inherited from Mathlib)
+   - `kb_destiller/modes/sft_pair/gates/patch_well_formed.py`
+     (~50-line Python gate validating LSP-shaped patch JSON:
+     required keys, non-negative ints, end >= start, new_text
+     is a string)
+   - Test stubs + operator's first-run command sequence
+§11 What this plan does NOT cover (acceptance gate is parity
+with claude-opus-4-7, not strict improvement; AnthropicStrategy
+stays as baseline + fallback; continual Mathlib refresh is
+separate; HELYX-specific patterns deferred to v0.3.x).
+
+**Knowledge-Foundry is NOT mutated by this commit.** The
+probe-set spec in §10 is the file the operator copies into
+their separate KF repo on their schedule; refineforge's
+commit boundary stops at the spec.
+
+Honest carve-outs:
+- The plan stops at "ready to execute Phase 5"; actually
+  running the production fine-tune is a separate operator
+  commitment.
+- Mathlib mutation pipeline (Phase 2) is multi-week elapsed
+  per `docs/repair-evaluation.md` §9; it's the
+  schedule-critical bottleneck.
+- The 16,000 GPU-hour figure is the budget ceiling; the
+  smoke fine-tune (Phase 5, Qwen2.5-Coder-1.5B) uses only
+  ~50-200 hours and surfaces the architecture before the
+  production fine-tune commits the full budget.
+
+Cross-references:
+- README doc-map row + tree-structure entry added.
+- STRUCTURE docs table row added.
+
+No source / test changes. `cargo nextest run --workspace`
+still 383/383.
+
 ### Added — `docs/why-rust.md`: the load-bearing trade-off (PyTorch vs Rust at the substrate)
 
 Pure docs commit. Captures the operator's strategic
