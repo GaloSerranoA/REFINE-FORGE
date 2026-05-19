@@ -10,6 +10,73 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Highlights (read first)
+
+Everything in `[Unreleased]` accumulated **after the v0.2.0
+tag** (commit `6486c6a`). When ready to cut v0.2.1, run
+`release/release.sh 0.2.1` — it'll rename this section to
+`[0.2.1] — <today>` and seed a fresh `[Unreleased]` above.
+
+Two changesets land here:
+
+1. **Phase 4 live-LLM dogfood audit** — pure-docs entry
+   capturing the formal plan §3 phase 4 acceptance run against
+   the real Anthropic API. Total real spend: **$0.35**. Cat 2
+   packet generated, operator approval persisted, post-approval
+   bundle shipped with 8-file SHA-256 manifest. No source / test
+   changes in that entry.
+
+2. **Phase 3.8: cross-run await-resume + inject CLI flags +
+   stop_reason** — three of four "smaller follow-ups" from the
+   v0.2.0 honest-leftovers list:
+   - **Cross-run await-resume** (the namesake): executor's
+     Escalated branch reads the existing packet before
+     committing; preserves any parsable operator decision so
+     APPROVED state survives across re-runs. The Phase 4
+     audit's "two-run split workaround" is **obsolete** —
+     a single command set now spans operator approval.
+   - **`--inject-training` / `--inject-bitexact` CLI flags**
+     (repeatable `Vec<String>`) thread directly into the
+     `Planner::with_training_step` / `with_bitexact_step`
+     builders shipped in Phase 3.7.
+   - **Anthropic `stop_reason` surfacing**: `UsageStats` gains
+     `stop_reasons: Vec<Option<String>>`; surfaced in the
+     Repair-step detail string AND persisted to
+     `RunReport.anthropic_usage.stop_reasons`. Shows
+     `end_turn` / `max_tokens` / etc. per call.
+
+**Workspace at the end of `[Unreleased]`:**
+
+| Crate | Tests | Δ since v0.2.0 |
+|---|---:|---:|
+| `refineforge-escalation` | 170 | — |
+| `refineforge-trainer` | 74 | — |
+| `refineforge-cli` | 62 | +2 (Phase 3.8 cross-run preserve) |
+| `refineforge-bitexact` | 32 | — |
+| `refineforge-strategies` | 21 | +3 (stop_reason) |
+| `refineforge-repair-api` | 11 | — |
+| `example-counter` | 9 | — |
+| `refineforge-eval` | 4 | — |
+| **workspace total** | **383/383 pass** | +5 |
+
+**Honest deferral carried into v0.2.1 territory:**
+- **Nix flake first-build verification** — needs a Nix install
+  or WSL; this Windows commit machine has neither. `flake.nix`
+  is authored; `docs/reproducible-build.md` §8 has the operator
+  invocation; first green CI run on the `nix-flake-check` job
+  is the verification. This is the *only* honest leftover from
+  the v0.2.0 "smaller follow-ups" list that isn't shipped.
+
+**Plan §3 phase status (post-3.8):**
+- Phase 0 (criteria doc → v0.3) — ✅
+- Phase 1 (engine) — ✅
+- Phase 2 (packet + git checkpoint) — ✅
+- Phase 3 (MVP / 3.5 / 3.6 / 3.7 / 3.8 driver) — ✅
+- Phase 4 (EXAMPLE-002 dogfood + criteria v0.4) — ✅ dogfood
+  exercised in this `[Unreleased]`; criteria v0.4 has no
+  pending findings yet (the v0.3 contract held up)
+- Phase 5 (docs + release) — ✅ v0.2.0 shipped at `6486c6a`
+
 ### Added — Phase 3.8: cross-run await-resume + inject-training/bitexact flags + Anthropic stop_reason
 
 Three of the four "smaller follow-ups" listed in the v0.2.0

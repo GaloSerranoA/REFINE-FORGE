@@ -313,11 +313,16 @@ Submodules:
   / `refine-bitexact` (binary path overridable via
   `REFINEFORGE_REFINE_TRAIN_BIN` / `REFINEFORGE_REFINE_BITEXACT_BIN`,
   Phase 3.7). Repair step reads `Arc<Mutex<UsageStats>>` after
-  the strategy is consumed and surfaces token counts on the
-  `Executor.anthropic_usage_observed` field. Engine actions go
-  through `Engine::decide`; escalations commit a packet unless
-  `--dry-run` (override: `commit_packets_in_dry_run = true` for
-  tests).
+  the strategy is consumed and surfaces token counts + per-call
+  `stop_reasons` on the `Executor.anthropic_usage_observed`
+  field (Phase 3.7 + 3.8). Engine actions go through
+  `Engine::decide`; escalations commit a packet unless
+  `--dry-run` (override: `commit_packets_in_dry_run = true`
+  for tests). **Phase 3.8 cross-run preserve**: the Escalated
+  branch reads the packet file BEFORE committing; if a parsable
+  operator decision already exists, the executor preserves it
+  instead of overwriting — APPROVED state survives across
+  `refine autonomous` re-runs.
 - `cost.rs` — `CostGate { max_usd, spent_usd }` with
   fail-closed `charge(amount)`. Failed charges DO NOT debit
   the gate.
@@ -336,36 +341,44 @@ Submodules:
   repair/poll knobs; handles all four `DecisionOutcome`
   variants after Escalated when `--await-decisions` is set.
 
-CLI flags on `refine autonomous`: `--strategy`,
-`--max-cost-usd`, `--operator`, `--dry-run`, `--auto-repair`,
-`--await-decisions`, `--inject-counter-idealisation`.
+CLI flags on `refine autonomous` (current as of Phase 3.8):
+`--strategy`, `--max-cost-usd`, `--operator`, `--dry-run`,
+`--auto-repair`, `--await-decisions`,
+`--inject-counter-idealisation`, `--inject-training <PATH>`
+(repeatable), `--inject-bitexact <PATH>` (repeatable).
 
-Tests: **60 total** (~26 inline across submodules + 5
+Tests: **62 total** (~28 inline across submodules + 5
 integration tests in `tests/autonomous_e2e.rs`):
 - `loader_parses_real_example_001_yaml`,
   `loader_parses_real_example_002_yaml` — real-repo claim load.
 - `dry_run_plans_and_loads_real_claim` — full dry-run pipeline.
 - `live_lean_check_on_example_001` — gated on `lake` on PATH;
-  PASSED via SKIP on the Windows commit machine.
+  result varies by shell environment (PowerShell PATH on the
+  v0.2.0 commit machine had `lake`; Bash PATH did not).
 - `example_002_counter_idealisation_dogfood_with_await_approval`
   — Plan §3 phase 4 acceptance test in mock-LLM form: exactly
   one Cat 2 escalation → simulated APPROVED via
   `MockGitOps::auto_approve_packets` → Scan + BundleExport
-  resume → success. Live-LLM equivalent is the operator's
-  PowerShell one-liner (in CHANGELOG).
+  resume → success. Live-LLM equivalent was exercised in the
+  Phase 4 audit ($0.35 spend; see CHANGELOG).
+- Phase 3.8 cross-run preserve tests:
+  `phase_3_8_preexisting_approved_packet_is_not_overwritten`
+  and `phase_3_8_preexisting_pending_packet_is_still_rewritten`.
 
-Shipped end-to-end against the real Anthropic API in
-[commit 60d2a81](#) — broken `rfl` proof of `a + b = b + a`
-was repaired in 4 LLM iterations (23.3s, $0.35 real spend);
-bundle exported.
+**Live shipped end-to-end** against real Anthropic API:
+- Phase 3.6 ([60d2a81](#)): broken `rfl` proof of `a + b =
+  b + a` repaired in 4 LLM iterations (23.3s, $0.35 spend).
+- Phase 4 audit ([92da3cf](#)): formal acceptance gate — broken
+  proof → live LLM Repair (1 iteration, 5.5s, 781+90 tokens) →
+  Cat 2 escalation → operator approval → SHA-256-sealed bundle
+  shipped. Total spend $0.35.
 
-Honest leftovers:
-- CLI flags `--inject-training` / `--inject-bitexact` not
-  wired (library-API path ships via `Planner::with_training_step`
-  / `with_bitexact_step`).
-- Per-call USD conversion intentionally absent (operator-side).
-- Anthropic `stop_reason` not yet surfaced in RunReport
-  (one-line addition).
+Honest leftovers (smallest remaining):
+- Per-call USD conversion intentionally absent (operator-side
+  reconciliation against Anthropic invoices).
+- Nix flake first-build verification: needs a Nix-capable
+  runner; `docs/reproducible-build.md` §8 has the operator
+  invocation.
 
 ### `crates/refineforge-cli/` — the `refine` binary
 
@@ -479,21 +492,25 @@ the bundle exporter once had is documented in `CHANGELOG.md`).
 
 ## Workspace test counts (current)
 
-`cargo nextest run --workspace` → **378/378 pass**. Per-crate
+`cargo nextest run --workspace` → **383/383 pass**. Per-crate
 breakdown via `cargo nextest list --workspace` (each crate's
 lib + bin targets counted separately per nextest convention):
 
-| Crate | Tests |
-|---|---:|
-| `refineforge-escalation` | 170 |
-| `refineforge-trainer` | 74 |
-| `refineforge-cli` | 60 |
-| `refineforge-bitexact` | 32 |
-| `refineforge-strategies` | 18 |
-| `refineforge-repair-api` | 11 |
-| `example-counter` | 9 |
-| `refineforge-eval` | 4 |
-| `refineforge-derive` | (proc-macro, consumed via example-counter) |
+| Crate | Tests | Δ since v0.2.0 tag |
+|---|---:|---:|
+| `refineforge-escalation` | 170 | — |
+| `refineforge-trainer` | 74 | — |
+| `refineforge-cli` | 62 | +2 (Phase 3.8 cross-run preserve) |
+| `refineforge-bitexact` | 32 | — |
+| `refineforge-strategies` | 21 | +3 (stop_reason) |
+| `refineforge-repair-api` | 11 | — |
+| `example-counter` | 9 | — |
+| `refineforge-eval` | 4 | — |
+| `refineforge-derive` | (proc-macro, consumed via example-counter) | — |
+
+v0.2.0 tag is at commit `6486c6a` (378 tests). Phase 3.8 +
+Phase 4 audit landed post-tag under `[Unreleased]` — see
+CHANGELOG.
 
 ## How the pieces connect
 
