@@ -10,6 +10,86 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Supervised-autonomy contract + enterprise build plan (no code)
+
+Pure docs commit. Lays the contract for an eventual `refine
+autonomous` driver that does each role's work end-to-end while
+escalating only on important decisions. **Code is explicitly
+NOT in this commit** — the contract has to be operator-signed
+before any code enforces it.
+
+- **`docs/escalation-criteria.md`** (v0.1 — ~480 lines).
+  The 8 categories that always escalate to the human:
+  1. Scope change (merged with first-of-kind structural
+     decisions from the original proposal)
+  2. Idealisation (Rust→Lean type mapping that loses info)
+  3. Custom axiom
+  4. Refinement-doc claim about customer intent
+  5. Status upgrade (e.g. proven model-only → model+refined)
+  6. Theorem deletion or weakening
+  7. External-fact assertion
+  8. Trust-base extension (NEW; absent from the original
+     proposal — covers toolchain pins, Mathlib adds, crate
+     switches, GHA-action SHAs)
+
+  Each category: definition + 5+ positive examples + 3+ negative
+  examples + required decision-packet contents.
+
+  Meta-rules: categorical-not-numerical · conservative defaults
+  · versioned · adding/removing a category is itself a
+  Category-1 escalation. Version-history table; 4 named open
+  questions for the first operator review.
+
+- **`docs/autonomous-driver-plan.md`** — enterprise project
+  plan for the 5-phase build:
+   Phase 0 (this commit): criteria doc
+   Phase 1: refineforge-escalation pure engine    (2 days)
+   Phase 2: decision-packet + git checkpoint      (2 days)
+   Phase 3: refineforge-autonomous driver         (4 days)
+   Phase 3.5: trainer + bitexact integration      (1 day)
+   Phase 4: EXAMPLE-002 dogfood + criteria v0.2   (1 day)
+   Phase 5: docs + release ritual                 (0.5 day)
+   = ~11 working days = ~2 calendar weeks (1 focused engineer)
+
+  Includes: resource needs ($50-150 API spend, no GPU, no
+  remote required); 8 named project-level risks with
+  mitigations; 9-point definition-of-done; explicit out-of-
+  scope list; red-team failure-mode rehearsal (rubber-stamp,
+  silent drift, uneditable contract, false-success).
+
+- **`escalations/`** top-level dir reserved (currently empty)
+  for the driver to write packets into.
+- **README documentation map** updated to include both docs
+  with CONTRACT flag on the criteria doc.
+
+### Build gate before any Phase-1 code
+
+The criteria doc has 4 open questions in §"Open questions for
+the first operator review" that the operator must resolve:
+1. Mathlib first-use — own category or merged into Scope?
+2. Bit-exact regression — own category or implicit via 2+6?
+3. Time-based escalation expiry — 7 days or indefinite?
+4. Batch escalations — one packet per item or one packet listing items?
+
+**No `refineforge-escalation` code lands until the operator
+has signed off on criteria v0.2.**
+
+### Honest disclosures
+
+- The 8 categories in v0.1 are this author's best guess from
+  the supervised-autonomy design conversation. The first
+  operator review will surface where they're wrong; v0.2 is
+  the contract that actually gets enforced.
+- The 2-week estimate assumes one senior Rust + LLM-integration
+  engineer. With less experience, double it.
+- The $50-150 API-spend estimate is for development testing
+  only. Production driver runs burn API at whatever rate the
+  strategy + claim require — that's the per-claim cost the
+  operator chooses to pay.
+- This commit adds no Rust code, no tests, no CLI surface. The
+  workspace test count (163/163) is unchanged from the prior
+  commit.
+
 ### Added — Section 4: CUDA / GPU kernel engineer (bit-exact reproducibility scaffold)
 
 Adds a fourth section to ARCHITECTURE.md. Mirrors what the

@@ -28,6 +28,8 @@ Read in this order — each doc is short and points at the next.
 | [docs/security.md](docs/security.md) | Threat model, supply chain, signing chain (shipped), vuln reporting |
 | [docs/reproducible-build.md](docs/reproducible-build.md) | Bit-identical-rebuild methodology — Nix flake (authored), verification protocol |
 | [docs/bit-exact-reproducibility.md](docs/bit-exact-reproducibility.md) | GPU kernel bit-exact reproducibility: non-determinism sources + mitigations + gate primitive |
+| [docs/escalation-criteria.md](docs/escalation-criteria.md) | **CONTRACT.** 8 categories that always escalate to the human during `refine autonomous` runs. Edit BEFORE enforcing |
+| [docs/autonomous-driver-plan.md](docs/autonomous-driver-plan.md) | Enterprise build plan for `refine autonomous`: 5 phases, ~2 weeks, $50-150 API budget, risks + mitigations |
 | [docs/HELYX-CASE-STUDY.md](docs/HELYX-CASE-STUDY.md) | Pointer to the external worked example (helyx-proofforge) |
 
 ## What this is
