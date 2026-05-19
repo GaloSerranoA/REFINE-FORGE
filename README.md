@@ -28,8 +28,8 @@ Read in this order — each doc is short and points at the next.
 | [docs/security.md](docs/security.md) | Threat model, supply chain, signing chain (shipped), vuln reporting |
 | [docs/reproducible-build.md](docs/reproducible-build.md) | Bit-identical-rebuild methodology — Nix flake (authored), verification protocol |
 | [docs/bit-exact-reproducibility.md](docs/bit-exact-reproducibility.md) | GPU kernel bit-exact reproducibility: non-determinism sources + mitigations + gate primitive |
-| [docs/escalation-criteria.md](docs/escalation-criteria.md) | **CONTRACT.** 8 categories that always escalate to the human during `refine autonomous` runs. Edit BEFORE enforcing |
-| [docs/autonomous-driver-plan.md](docs/autonomous-driver-plan.md) | Enterprise build plan for `refine autonomous`: 5 phases, ~2 weeks, $50-150 API budget, risks + mitigations |
+| [docs/escalation-criteria.md](docs/escalation-criteria.md) | **CONTRACT v0.2** (operator-signed). 9 categories that always escalate to the human during `refine autonomous` runs. Enforced by `crates/refineforge-escalation` |
+| [docs/autonomous-driver-plan.md](docs/autonomous-driver-plan.md) | Enterprise build plan for `refine autonomous`: 5 phases, ~2 weeks, $50-150 API budget, risks + mitigations. **Phase 1 shipped** (the escalation engine); Phases 2-5 pending |
 | [docs/HELYX-CASE-STUDY.md](docs/HELYX-CASE-STUDY.md) | Pointer to the external worked example (helyx-proofforge) |
 
 ## What this is
@@ -101,7 +101,7 @@ refineforge/
 ├── claims/                     # claim registry (YAML, one per claim)
 │   ├── example.yaml            # EXAMPLE-001
 │   └── example-counter.yaml    # EXAMPLE-002
-├── crates/                     # Rust workspace (8 members)
+├── crates/                     # Rust workspace (9 members)
 │   ├── refineforge-repair-api/ # stable trait + types (Section 1)
 │   ├── refineforge-cli/        # `refine` binary + driver (Section 1)
 │   ├── refineforge-derive/     # #[derive(LeanModel)] proc-macro (Section 1)
@@ -109,6 +109,7 @@ refineforge/
 │   ├── refineforge-eval/       # `refine-eval` benchmark harness (Section 2)
 │   ├── refineforge-trainer/    # `refine-train` orchestration CLI (Section 2)
 │   ├── refineforge-bitexact/   # `refine-bitexact` gate primitive (Section 4)
+│   ├── refineforge-escalation/ # AI-to-human escalation engine (cross-section)
 │   └── example-counter/        # EXAMPLE-002 Rust side
 ├── templates/                  # scaffolding for `refine new`
 │   ├── append_chain/           # append-only linked chain with hash check
@@ -242,6 +243,7 @@ Where each thing currently lives:
 | `refineforge-eval` (`refine-eval` binary)  | ✅ corpus-driven evaluation harness with JSON output; ships a 3-entry tutorial corpus under [`eval/corpus/`](eval/corpus) |
 | `refineforge-trainer` (`refine-train` binary) | ✅ training-experiment orchestration (axolotl / HF Trainer / custom); run tracking, checkpoint resume, failure recovery, JSON reports. Does NOT perform training itself — backend does. See [`training/README.md`](training/README.md) |
 | `refineforge-bitexact` (`refine-bitexact` binary) | ✅ bit-exact reproducibility gate: runs kernel N times, hashes outputs, fails if any disagree. Stub scripts prove the gate catches non-determinism. Real CUDA kernels are the CUDA engineer's domain. See [`kernels/README.md`](kernels/README.md). |
+| `refineforge-escalation` (library) | ✅ Phase 1 of [`docs/autonomous-driver-plan.md`](docs/autonomous-driver-plan.md): pure-functional engine implementing criteria v0.2. Given an `Action` + `ProjectContext`, returns `Decision::Proceed` or `Decision::Escalate(reason)`. 117 unit + integration tests covering every positive + negative example in [`docs/escalation-criteria.md`](docs/escalation-criteria.md) §3. File loaders + driver wrapping deferred to Phases 2-3. |
 | Verifier Docker image                      | ✅ `containers/Dockerfile.verifier` — multi-stage build, elan + Lean v4.29.1 preinstalled |
 | Multi-arch CI matrix                       | ✅ Ubuntu + macOS + Windows with elan / lake / cargo caches |
 | Sigstore signing in CI + `--verify-signature` | ✅ keyless cosign sign-blob on main + tags; verifier-side `refine bundle verify --verify-signature` (cosign subprocess) |

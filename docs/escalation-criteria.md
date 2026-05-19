@@ -1,9 +1,11 @@
 # Escalation criteria — the AI-to-human contract for `refine autonomous`
 
-> **Status:** v0.1 — DRAFT. These criteria are the boundary
-> between autonomous AI action and human judgment for the
-> `refine autonomous` driver (`crates/refineforge-autonomous/`,
-> not yet implemented; see [`autonomous-driver-plan.md`](autonomous-driver-plan.md)).
+> **Status:** v0.2 — operator-signed. These criteria are the
+> boundary between autonomous AI action and human judgment for
+> the `refine autonomous` driver
+> (`crates/refineforge-escalation/` ships in this revision; the
+> wrapping driver in `crates/refineforge-autonomous/` is still
+> pending — see [`autonomous-driver-plan.md`](autonomous-driver-plan.md)).
 >
 > Every escalation packet records the **version** of this doc the
 > AI was operating under. Changes to this doc are themselves
@@ -14,7 +16,7 @@
 The `refine autonomous` driver does Lean / ML / DevOps / CUDA
 engineering work without per-step human approval, escalating to
 a named human operator ONLY when its proposed next action falls
-into one of the **eight categories** below. The operator approves
+into one of the **nine categories** below. The operator approves
 or rejects via a decision packet committed to `escalations/<CLAIM-ID>/`.
 
 This is **human-on-the-loop**, not human-in-the-loop. The human
@@ -51,7 +53,7 @@ These criteria are non-negotiable defaults:
    (`release/release.sh` + cosign tag-commit) is signed by the
    human, not the AI.
 
-## The 8 escalation categories
+## The 9 escalation categories
 
 Each category has: definition · examples that DO escalate · examples
 that DO NOT escalate · what the decision packet must contain.
@@ -368,6 +370,65 @@ change looks routine.
 
 ---
 
+### Category 9 — Bit-exact regression
+
+> **Added in v0.2.** Resolution of open question §2 from v0.1 —
+> bit-exact regressions are split out from Categories 2 + 6 because
+> the harm shape is qualitatively different (a previously passing
+> kernel starts producing divergent SHA-256 across runs without any
+> source-level theorem changing), and the decision the operator
+> needs to make is different too (re-baseline vs revert vs accept
+> hardware-class-specific divergence).
+
+**Definition.** The AI proposes a change that affects, or could
+affect, the bit-exactness contract a `refine-bitexact` gate has
+previously certified. The contract is: "this kernel produces
+byte-identical output across N independent runs on the
+operator-named hardware class."
+
+**Escalate when:**
+- AI edits any file under `kernels/src/`.
+- AI changes `kernels/configs/<kernel_id>.yaml` `run_count`,
+  `output:` shape, or the `command` invoked.
+- AI bumps the compiler / runtime pin used to build a kernel
+  (nvcc version, CUDA toolkit, cuDNN, ROCm, Metal driver).
+- AI changes `kernels/scripts/<kernel_id>.sh` or `.ps1` in any
+  way that affects the produced bytes (env, args, ordering of
+  ops).
+- AI proposes a build-flag change for a kernel
+  (`-arch=sm_<X>`, `-O<N>`, fast-math toggles).
+- AI proposes adding a `kernels/<NEW_KERNEL>/` directory
+  (also trips Category 1 — scope).
+- AI proposes lowering `run_count` below the baseline value
+  the gate previously passed at (would mask divergence).
+
+**Do NOT escalate when:**
+- AI updates the kernel's README, comments inside its source
+  (with no executable change), or docs adjacent to it.
+- AI changes a kernel-adjacent test fixture that is NOT
+  hashed by the gate.
+- AI raises `run_count` above the baseline (strictly more
+  evidence; cannot turn a Pass into a Fail except by
+  catching real non-determinism, which is the desired outcome).
+
+**Decision packet contents:**
+- The kernel id and its current passing baseline (run_count,
+  baseline SHA-256 set, hardware class the operator named).
+- The exact diff (source / build-flag / pin / config) the AI
+  wants to apply.
+- Predicted impact: "no bit change expected" / "bit change
+  expected — re-baseline needed" / "unknown — needs run on
+  real hardware before/after."
+- Sibling claims whose refinement docs cite the kernel's
+  bit-exactness, if any.
+- Whether `docs/bit-exact-reproducibility.md` §X needs
+  updating (e.g., a newly discovered non-determinism source
+  added to the table).
+- The strongest argument for the change (security advisory,
+  performance need, upstream fix).
+
+---
+
 ## Meta-rules
 
 ### Multiple categories simultaneously
@@ -436,34 +497,70 @@ removal date and the rationale. Once removed, the category cannot
 be silently re-added — a re-addition is a new Category-1
 escalation.
 
+### Escalation expiry (v0.2)
+
+> Resolution of open question §3 from v0.1.
+
+The autonomous driver waits on each packet for **7 calendar
+days** by default before treating it as auto-rejected and
+shutting the claim down (the driver writes a `STATUS:
+EXPIRED-AUTO-REJECTED` line into the packet and stops). Expiry
+is **configurable per-category**: each category may override the
+default via `--escalation-timeout-days.<category>=<N>` on the
+driver invocation, or via a `[escalation_timeout_days]` table in
+the operator's local config. The minimum permitted value is
+**1 day** (an operator who needs faster turnaround should be
+present, not racing a timer); the maximum is **30 days** (beyond
+that, the work has stalled and re-planning is cheaper than
+waiting).
+
+Rationale for the default: 7 days absorbs a typical
+holiday/conference week without forcing a rushed decision, while
+preventing packets from accumulating forever. The per-category
+override exists because (a) Category 3 (custom axiom) and
+Category 5 (status upgrade) often warrant longer review than
+Category 1 (scope), and (b) Category 9 (bit-exact regression) is
+often time-sensitive because the kernel change is blocking a
+release.
+
+Expiry is recorded in the packet's YAML front-matter as
+`expires_at: <ISO 8601 timestamp>` so the operator sees the
+deadline at the top of every packet they open.
+
+### Batch escalations (v0.2)
+
+> Resolution of open question §4 from v0.1.
+
+If an AI step proposes a single coherent action that trips
+multiple categories simultaneously (the "Multiple categories
+simultaneously" rule above), that is **one packet** listing all
+tripped categories.
+
+If an AI step proposes N independent actions (e.g., 5 separate
+idealisations spread across 5 different Rust→Lean mappings, each
+escalatable on its own), that is **N packets** — one per item.
+Rationale: per-item context is more important than brevity. The
+operator deciding on idealisation #3 should not be visually
+crowded by idealisations #1, #2, #4, #5 in the same view. A
+batched packet biases toward the operator approving or rejecting
+all 5 together when they would have approved 3 and rejected 2.
+
+If the operator finds themselves drowning in per-item packets for
+a single claim, that is a signal to either (a) restructure the
+claim into smaller scoped claims, or (b) re-examine the criteria
+to see whether one category is firing too eagerly — both are
+operator decisions, not AI ones.
+
 ## Version history
 
 | Version | Date | Change | Approved by |
 |---|---|---|---|
 | 0.1 | 2026-05-18 | Initial draft. 8 categories from the supervised-autonomy design conversation. Pending operator review before any code enforces them. | (pending) |
+| 0.2 | 2026-05-18 | Operator-signed. Added Category 9 (bit-exact regression — resolution of open question §2). Merged "first-time Mathlib use" into Scope (resolution of §1). Added Meta-rule "Escalation expiry" with 7-day default + per-category override (resolution of §3). Added Meta-rule "Batch escalations" — N independent items = N packets, single coherent multi-category action = 1 packet (resolution of §4). | galo@serragi.com |
 
-## Open questions for the first operator review
+## Open questions
 
-These are points the doc's author was uncertain about. The first
-human reviewer should resolve them:
+Resolved in v0.2 (see Version history). New open questions
+discovered during future operator reviews land here.
 
-1. **Should "first time AI uses Mathlib" be its own category or
-   stay merged into Scope?** Current draft merges. Argument for
-   separating: Mathlib-trust is qualitatively different from
-   scope-expansion in your own codebase.
-2. **Numerical idealisations across hardware classes** —
-   `f32 → Rat` is in Category 2, but should there be a
-   separate Category 9 ("bit-exact reproducibility regression")
-   when the AI proposes a kernel change that crosses the
-   `refine-bitexact` gate? Currently this is implicit via
-   Categories 2 + 6.
-3. **Time-based escalation expiry.** Should an unanswered
-   escalation packet auto-reject after N hours / days? Currently
-   the AI waits indefinitely. Pro: prevents abandoned claims.
-   Con: encourages rushed human decisions.
-4. **Batch escalations.** If the AI hits 5 idealisations in the
-   same claim, are those 5 packets or 1 packet listing 5
-   sub-decisions? Current draft says 5; argument for 1: less
-   context-switching for the human.
-
-Resolve these in the first edit; the doc's version bumps to 0.2.
+(None at v0.2.)

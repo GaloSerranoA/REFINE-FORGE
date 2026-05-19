@@ -25,13 +25,14 @@ refineforge/
 │   └── workflows/ci.yml        # Section 3: multi-arch CI + Sigstore signing
 ├── claims/                     # claim registry (one YAML per claim)
 ├── lean/                       # Lake project: formal models + theorems
-├── crates/                     # Rust workspace members
+├── crates/                     # Rust workspace members (9)
 │   ├── refineforge-repair-api/ # Section 1: stable trait + types
 │   ├── refineforge-cli/        # Section 1: the `refine` binary + driver
 │   ├── refineforge-strategies/ # Section 2: pluggable strategies (+ real HTTP transport)
 │   ├── refineforge-eval/       # Section 2: `refine-eval` benchmark harness
 │   ├── refineforge-trainer/    # Section 2: `refine-train` orchestration CLI
 │   ├── refineforge-bitexact/   # Section 4: `refine-bitexact` gate primitive
+│   ├── refineforge-escalation/ # Cross-section: AI-to-human escalation engine (criteria v0.2)
 │   ├── refineforge-derive/     # Section 1: #[derive(LeanModel)] proc-macro
 │   └── example-counter/        # EXAMPLE-002 tutorial impl (uses LeanModel)
 ├── training/
@@ -169,6 +170,40 @@ Plugin implementations of `RepairStrategy`. Ships:
 18 unit tests across the prompt-construction, response-parsing,
 and transport layers (in-process `tiny_http` stub server for the
 retry / header / error-mapping tests).
+
+### `crates/refineforge-escalation/` — AI-to-human escalation engine (cross-section)
+
+Pure-functional engine implementing the contract in
+[`docs/escalation-criteria.md`](docs/escalation-criteria.md) v0.2.
+Library only — no binary, no I/O inside `Engine::decide`, no
+`unsafe`, no `tokio`, no network.
+
+Public API:
+- `Engine::decide(action: &Action, ctx: &ProjectContext) -> Result<Decision, EngineError>`
+- `Decision::{Proceed, Escalate(EscalationReason)}`
+- `EscalationReason { categories: Vec<Category>, primary, summary, evidence }`
+- `Action` (~30 variants: Lean / refinement / claim YAML / external-fact
+  / 8 trust-base sub-actions / scope additions / 5 bit-exact sub-actions
+  / 3 trivially-OK actions / `Unknown` catch-all)
+- `Category` (9 variants matching criteria-doc §3)
+- `ProjectContext` (claim summary + sets of existing
+  Mathlib imports / Lake packages / bundle-chain crates /
+  approved Anthropic models / kernels with baselines / etc.)
+- `CRITERIA_VERSION` constant (currently `"0.2"`); mismatch
+  between this and `ctx.criteria_version` is a hard
+  `EngineError`.
+
+Modules: `category.rs` · `action.rs` · `decision.rs` · `context.rs` · `engine.rs`.
+
+Tests: 117 total (25 inline + 92 integration files under
+`tests/`, one per category + `multi_category.rs` + `edge_cases.rs`).
+Every positive and negative example from criteria-doc §3 has a
+named test.
+
+**Phase 1 scope only.** File loaders (claim YAMLs / Cargo.lock /
+lake-manifest.json → `ProjectContext`) are deferred to the
+Phase 2 driver crate; this crate provides `test_default()`
+constructors so tests + manual construction work today.
 
 ### `crates/refineforge-bitexact/` — bit-exact gate (Section 4)
 

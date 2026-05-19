@@ -10,6 +10,114 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Phase 1: refineforge-escalation pure-functional engine + criteria v0.2
+
+Operator signed off on `docs/escalation-criteria.md` v0.1 with
+the resolution: **lock all four open questions to the recommended
+defaults**. The criteria doc is now v0.2 and the engine that
+enforces it ships in this commit.
+
+#### Criteria v0.1 → v0.2
+
+- **Status block** flipped from "v0.1 — DRAFT, pending operator
+  review" to "v0.2 — operator-signed."
+- **New Category 9 — Bit-exact regression** (resolution of v0.1
+  open question §2): a change that affects, or could affect, a
+  previously-certified `refine-bitexact` gate now has its own
+  packet template. Splits the responsibility cleanly from
+  Categories 2 + 6 because the operator decision is qualitatively
+  different (re-baseline vs revert vs accept hardware-class
+  divergence).
+- **"First-time Mathlib import" merged into Scope** (resolution
+  of §1): no new category — handled by the Cat-1 examples list
+  plus the engine's `mathlib_imports_existing` context query.
+- **Meta-rule "Escalation expiry"** added (resolution of §3): 7
+  calendar days by default, configurable per-category between 1
+  and 30 days. Recorded as `expires_at:` in every packet's YAML
+  front-matter.
+- **Meta-rule "Batch escalations"** added (resolution of §4):
+  one packet per independent item; a single coherent action that
+  trips multiple categories is one packet listing all categories.
+- **Version-history row** added with operator signature
+  `galo@serragi.com`.
+
+#### `crates/refineforge-escalation` — new workspace crate
+
+Pure-functional engine. No I/O inside `Engine::decide`. No
+`unsafe`, no `tokio`, no network.
+
+Modules:
+- **`category.rs`** — `Category` enum (9 variants); `slug()`
+  for packet filenames; `number()` for 1-9 indexing; `all()`
+  iterator in stable order.
+- **`action.rs`** — `Action` enum (~30 variants covering every
+  step the autonomous driver can propose: Lean structural edits,
+  Rust→Lean mappings, refinement-doc sentences, claim YAML
+  edits, external-fact assertions, 8 trust-base sub-actions,
+  3 scope-expanding additions, 5 kernel/bit-exact sub-actions,
+  3 trivially-OK actions, and `Unknown` catch-all). Supporting
+  enums: `LossKind`, `SentenceKind`, `ExternalCitation`,
+  `WeakeningKind`, `ClaimStatus`.
+- **`decision.rs`** — `Decision::{Proceed, Escalate}` +
+  `EscalationReason` carrying the matched categories, primary
+  (most-specific) category, one-sentence summary, and structured
+  `Evidence` per category.
+- **`context.rs`** — `ProjectContext` (criteria_version + claim
+  summary + sets of existing mathlib imports, Lake packages,
+  bundle-chain crates, approved Anthropic models, kernels with
+  baselines, workspace crates, templates, top-level dirs, Lean
+  modules) + `ClaimSummary` (id, status, scope_model_only,
+  lean_theorems, rust_source_types, review_human_operator).
+  Convenience constructors `test_default()` and
+  `test_with_wrong_criteria_version()` for unit tests.
+- **`engine.rs`** — `Engine::decide(action, ctx) -> Result<Decision, EngineError>`.
+  9 per-category classifiers; multi-category resolver picks the
+  primary by hand-tuned specificity (CustomAxiom > TheoremWeakening
+  > Idealisation > BitExactRegression > TrustBaseExtension >
+  CustomerIntent > ExternalFact > StatusUpgrade > Scope).
+  Refuses to operate when `ctx.criteria_version != CRITERIA_VERSION`
+  (the engine's compiled-in `"0.2"`).
+
+#### Tests
+
+- `cargo nextest run -p refineforge-escalation`: **117/117 pass**.
+  - 25 inline unit tests in `category.rs` / `action.rs` /
+    `decision.rs` / `context.rs` / `engine.rs`.
+  - 92 integration tests under `tests/`, one file per category
+    (`cat01_scope.rs` through `cat09_bit_exact.rs`),
+    `multi_category.rs`, `edge_cases.rs`. Every positive +
+    negative example from criteria-doc §3 has a test that names
+    it explicitly.
+- `cargo nextest run --workspace`: **280/280 pass** (was 163;
+  +117 exactly from the new crate). No regression elsewhere.
+
+#### What this commit does NOT ship (honest disclosures)
+
+- **No file loaders.** `ProjectContext` is the data shape;
+  building one from claim YAMLs / `lake-manifest.json` /
+  `Cargo.lock` is the Phase 2 driver crate's responsibility.
+  Phase 1 ships `test_default()` for unit tests + manual
+  construction for integration.
+- **No CLI wiring.** `refine autonomous <CLAIM-ID>` doesn't exist
+  yet. The engine is a library that Phase 3 will import.
+- **No decision-packet renderer.** Phase 2 (per
+  `docs/autonomous-driver-plan.md`) is the markdown templates +
+  git-checkpoint loop. The engine produces structured `Evidence`
+  the renderer will consume.
+- **No real LLM strategy integration.** The engine doesn't talk
+  to Anthropic — `refineforge-strategies` does that today, and
+  Phase 3 wires the two together.
+- **No git-watcher.** Phase 2 polls for the operator's signature
+  commit on each packet. The engine itself never touches the
+  filesystem.
+- **No criteria-doc → engine code build-time cross-check.**
+  Manually kept in sync today; Phase 2 risk mitigation includes
+  a CI job that parses the criteria doc and asserts every
+  category has matching engine logic.
+- **The engine's per-category specificity ordering** is hand-tuned,
+  not derived from the doc. If overlap cases produce a surprising
+  primary in dogfood, the ordering becomes criteria v0.3 conversation.
+
 ### Added — Supervised-autonomy contract + enterprise build plan (no code)
 
 Pure docs commit. Lays the contract for an eventual `refine

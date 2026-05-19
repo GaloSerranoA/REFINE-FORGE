@@ -1,0 +1,19 @@
+[package]
+name = "refineforge-escalation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "refineforge: pure-functional escalation engine implementing the AI-to-human contract in docs/escalation-criteria.md. Given a ProposedAction + ProjectContext, returns Escalate(category, reason) or Proceed. No I/O inside decide(); no unsafe; no tokio; no network."
+
+[lib]
+name = "refineforge_escalation"
+path = "src/lib.rs"
+
+[dependencies]
+serde       = { version = "1.0", features = ["derive"] }
+serde_yaml  = "0.9"
+serde_json  = "1.0"
+thiserror   = "1.0"
+
+[dev-dependencies]
+tempfile    = "3"
