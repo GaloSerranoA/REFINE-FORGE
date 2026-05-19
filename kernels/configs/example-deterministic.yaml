@@ -1,0 +1,27 @@
+# Example: the bit-exact gate against a kernel that IS deterministic.
+# Running `refine-bitexact run kernels/configs/example-deterministic.yaml`
+# MUST produce outcome=Pass (exit 0).
+#
+# Replace this stub with your real kernel binary once it's compiled
+# from kernels/src/*.cu.
+
+id: example-deterministic
+description: |
+  Smoke test using the deterministic stub script. Proves the
+  refine-bitexact gate correctly RECOGNISES bit-exact output. Pair
+  with example-nondeterministic.yaml to prove the gate also
+  correctly REJECTS non-deterministic output.
+
+command: "bash kernels/scripts/stub-deterministic.sh"
+runs: 5
+output: stdout
+
+env:
+  # These have no effect on the bash stub but document what real
+  # CUDA experiments would set:
+  CUBLAS_WORKSPACE_CONFIG: ":4096:8"
+  CUDA_LAUNCH_BLOCKING: "1"
+  PYTHONHASHSEED: "0"
+
+hardware:
+  notes: "stub script — no GPU involved"

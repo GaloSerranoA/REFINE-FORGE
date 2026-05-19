@@ -23,3 +23,9 @@ lean/build/
 result
 result-*
 .direnv/
+
+# Bit-exact gate run outputs
+/kernels/runs/*/
+
+# Trainer run outputs
+/training/runs/*/

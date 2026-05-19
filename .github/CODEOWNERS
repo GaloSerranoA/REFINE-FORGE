@@ -43,6 +43,11 @@ docs/llm-repair-design.md                          @refineforge/ml-engineer
 # models/                                          @refineforge/ml-engineer
 # docs/repair-evaluation.md                        @refineforge/ml-engineer
 
+# ─── Section 4: CUDA / GPU Kernel Engineer (bit-exact reproducibility) ──
+kernels/                                           @refineforge/cuda-engineer
+crates/refineforge-bitexact/                       @refineforge/cuda-engineer
+docs/bit-exact-reproducibility.md                  @refineforge/cuda-engineer
+
 # ─── Section 3: Infrastructure / DevOps (production surface) ─────────
 .github/                                           @refineforge/devops
 .gitignore                                         @refineforge/devops

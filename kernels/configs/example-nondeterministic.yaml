@@ -1,0 +1,17 @@
+# Example: the bit-exact gate against a kernel that is INTENTIONALLY
+# non-deterministic. Running this MUST fail (non-zero exit). Proves
+# the gate correctly catches non-determinism.
+#
+# This is a regression test for the gate primitive itself, NOT a
+# real kernel under test. A CUDA engineer should remove this once
+# the kernels/src/ tree has real kernels.
+
+id: example-nondeterministic
+description: |
+  Smoke test using the non-deterministic stub script (each call
+  emits $RANDOM-$PID). Proves refine-bitexact correctly REJECTS
+  non-deterministic output. Expected outcome: Fail.
+
+command: "bash kernels/scripts/stub-nondeterministic.sh"
+runs: 5
+output: stdout

@@ -184,6 +184,49 @@ jobs:
             cat /tmp/bundle-hashes.txt
           fi
 
+  # ─── Bit-exact gate (CPU stub on every push; real GPU gate when
+  # a self-hosted GPU runner is available) ─────────────────────────────
+  bit-exact-gate:
+    name: bit-exact-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-bitexact-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+
+      - name: Build refine-bitexact
+        run: cargo build --release --bin refine-bitexact
+
+      - name: Stub-deterministic gate must PASS
+        run: ./target/release/refine-bitexact run kernels/configs/example-deterministic.yaml
+
+      - name: Stub-nondeterministic gate must FAIL
+        run: |
+          if ./target/release/refine-bitexact run kernels/configs/example-nondeterministic.yaml; then
+            echo "ERROR: gate should have FAILED on non-deterministic stub" >&2
+            exit 1
+          fi
+          echo "OK: gate correctly rejected non-deterministic output"
+
+      - name: Real-kernel gates (skipped on non-GPU runners)
+        run: |
+          # When a real kernel is added under kernels/src/ and its
+          # config name doesn't start with `example-`, a self-hosted
+          # GPU runner job will execute it. This step is informational
+          # on the public runner.
+          REAL=$(find kernels/configs -name '*.yaml' -not -name 'example-*' | wc -l)
+          echo "Real (non-example) kernel configs: $REAL"
+          if [ "$REAL" -gt 0 ]; then
+            echo "Add a self-hosted [gpu] runner to actually execute these."
+          fi
+
   # ─── Sigstore signing (canonical builder only) ──────────────────────
   # Runs only on push to main or tags. Pull requests don't sign because
   # cosign's keyless flow uses the workflow's OIDC identity, and PR

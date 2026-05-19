@@ -1,0 +1,23 @@
+[package]
+name = "refineforge-bitexact"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "refineforge: bit-exact reproducibility gate for GPU kernels (Section 4). Runs a kernel N times, hashes outputs, fails if any hash disagrees. Does NOT write kernels — that's the CUDA engineer's job."
+
+[[bin]]
+name = "refine-bitexact"
+path = "src/main.rs"
+
+[dependencies]
+anyhow      = "1.0"
+clap        = { version = "4.5", features = ["derive"] }
+serde       = { version = "1.0", features = ["derive"] }
+serde_yaml  = "0.9"
+serde_json  = "1.0"
+sha2        = "0.10"
+hex         = "0.4"
+chrono      = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+tempfile    = "3"

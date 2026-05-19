@@ -10,6 +10,79 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Section 4: CUDA / GPU kernel engineer (bit-exact reproducibility scaffold)
+
+Adds a fourth section to ARCHITECTURE.md. Mirrors what the
+training-orchestration scaffold did for Section 2: ships the
+**gate primitive** that detects non-determinism in any kernel,
+plus a methodology doc covering CUDA-specific non-determinism
+sources. Does NOT ship actual CUDA kernels — no nvcc, no GPU
+on this dev machine.
+
+- **New workspace crate `crates/refineforge-bitexact`** with the
+  `refine-bitexact` binary. Modules: `experiment` (KernelExperiment
+  YAML schema with custom Deserialize for the `output:
+  stdout|{file: ...}` user-friendly form), `hash` (streaming
+  SHA-256 + `all_equal`), `runner` (run kernel N times, capture
+  stdout or file, hash, time), `report` (Pass/Fail + per-run
+  hashes + summary).
+- **CLI**: `refine-bitexact run <kernel.yaml> [--dry-run]`,
+  `refine-bitexact report <run_dir>`. Pass → exit 0; Fail →
+  exit non-zero (suitable for CI gating).
+- **`kernels/` top-level**: README + 2 example configs
+  (deterministic must pass; non-deterministic must fail; the
+  pair acts as a regression test for the gate itself) + 4 stub
+  scripts (sh + ps1 × deterministic + non-deterministic) +
+  empty `src/` for the CUDA engineer + `runs/.gitkeep`.
+- **`docs/bit-exact-reproducibility.md`** — full methodology:
+  what bit-exact means + why it matters; 9-source table of GPU
+  non-determinism (atomicAdd ordering, cuBLAS algorithm
+  selection, cuDNN, reduction trees, TF32/FP16 mixed precision,
+  stream sync, memory allocator, FMA, driver versions) with
+  per-source mitigation; PyTorch deterministic-setup snippet;
+  CI integration example; cross-hardware verification doc'd as
+  deferred work; reading list for new CUDA engineer.
+- **ARCHITECTURE.md** gains Section 4 (mission, owned subdirs,
+  responsibilities, current status, open work, interface to
+  other sections); diagram updated from 3 → 4 sections.
+- **ROLES.md** gains CUDA engineer row; **`.github/CODEOWNERS`**
+  maps `kernels/` + `refineforge-bitexact/` + the methodology
+  doc to `@refineforge/cuda-engineer`.
+- **CI workflow** gains a `bit-exact-gate` job: builds the
+  binary, asserts deterministic-stub config passes AND
+  non-deterministic-stub config fails (uses a bash conditional
+  to flip the expected exit code), with informational message
+  about needing a self-hosted GPU runner for real kernels.
+- **`.gitignore`** adds `/kernels/runs/*/` + `/training/runs/*/`
+  (the second was missed in the trainer commit; fixing now).
+
+#### Tests
+
+- `cargo nextest run --workspace`: **163/163 pass** (was 131;
+  +32 for refineforge-bitexact: ~16 unit tests counted twice via
+  lib+bin targets, plus 3 POSIX-only e2e tests).
+- Local smoke on Windows: deterministic stub → 5/5 identical
+  SHA-256 → PASS, exit 0. Non-deterministic stub → 5 unique
+  SHA-256 → FAIL, exit non-zero. **Gate works in both directions.**
+
+#### Honest disclosures (load-bearing)
+
+- **No actual CUDA kernel was written or executed by this
+  commit.** `kernels/src/` is empty. The CUDA engineer fills it.
+- **Cross-hardware bit-exactness is NOT verified.** Single-
+  runner only. Cross-hardware (A100 vs H100 vs consumer)
+  requires a CI matrix with multiple GPU runner classes —
+  documented as future work in §6 of the methodology doc.
+- **The gate is hardware-agnostic in principle** — runs a
+  command N times and hashes outputs. ROCm / Metal / CPU kernels
+  work too. But the CUDA-specific mitigations in §2–§3 of the
+  methodology doc don't transfer.
+- **The CI `bit-exact-gate` job runs on a public Ubuntu runner**
+  using only the bash stubs. Adding a self-hosted GPU runner is
+  the operator's commitment; the YAML is ready when it arrives.
+- **No performance benchmarking.** The gate cares about
+  bit-exactness, not speed.
+
 ### Added — Section 2 phase 1.5: training-experiment orchestration (no actual training)
 
 The "training infrastructure scaffold" the user asked for. The

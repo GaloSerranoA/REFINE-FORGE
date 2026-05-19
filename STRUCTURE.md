@@ -31,6 +31,7 @@ refineforge/
 │   ├── refineforge-strategies/ # Section 2: pluggable strategies (+ real HTTP transport)
 │   ├── refineforge-eval/       # Section 2: `refine-eval` benchmark harness
 │   ├── refineforge-trainer/    # Section 2: `refine-train` orchestration CLI
+│   ├── refineforge-bitexact/   # Section 4: `refine-bitexact` gate primitive
 │   ├── refineforge-derive/     # Section 1: #[derive(LeanModel)] proc-macro
 │   └── example-counter/        # EXAMPLE-002 tutorial impl (uses LeanModel)
 ├── training/
@@ -38,6 +39,11 @@ refineforge/
 │   ├── scripts/                # stub-trainer.sh/.ps1 for tests
 │   ├── data/                   # training datasets (empty)
 │   └── runs/                   # refine-train per-experiment runs (gitignored)
+├── kernels/                    # Section 4: GPU kernels + bit-exact gates
+│   ├── configs/                # per-kernel gate YAMLs
+│   ├── scripts/                # stub-deterministic + stub-nondeterministic
+│   ├── src/                    # actual .cu source (empty; CUDA engineer fills)
+│   └── runs/                   # refine-bitexact per-gate reports (gitignored)
 ├── eval/
 │   ├── corpus/                 # broken-proof entries + ground truth
 │   └── runs/                   # refine-eval JSON outputs (gitignored)
@@ -163,6 +169,24 @@ Plugin implementations of `RepairStrategy`. Ships:
 18 unit tests across the prompt-construction, response-parsing,
 and transport layers (in-process `tiny_http` stub server for the
 retry / header / error-mapping tests).
+
+### `crates/refineforge-bitexact/` — bit-exact gate (Section 4)
+
+Binary `refine-bitexact`. Runs a kernel N times, hashes each
+output (SHA-256), fails the process if any hash disagrees. Does
+NOT enforce determinism — only detects its absence. Custom
+serde Deserialize for `OutputSource` accepts `output: stdout`
+(bare scalar) and `output: {file: "..."}` (map) without YAML !tag
+syntax.
+
+Modules: `experiment` (KernelExperiment YAML + validation),
+`hash` (streaming SHA-256 of bytes / files; `all_equal`),
+`runner` (subprocess N times + env vars + per-run timing),
+`report` (Pass/Fail outcome + unique-hash count + summary).
+
+23 unit tests + 3 POSIX-only e2e tests using the shipped stub
+scripts (deterministic → Pass; non-deterministic → Fail;
+dry-run → no execution).
 
 ### `crates/refineforge-trainer/` — training orchestration (Section 2)
 

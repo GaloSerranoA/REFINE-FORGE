@@ -27,6 +27,7 @@ Read in this order — each doc is short and points at the next.
 | [docs/repair-evaluation.md](docs/repair-evaluation.md) | How we'll measure whether `refine repair` is any good — corpus design, mutation taxonomy, statistical reporting |
 | [docs/security.md](docs/security.md) | Threat model, supply chain, signing chain (shipped), vuln reporting |
 | [docs/reproducible-build.md](docs/reproducible-build.md) | Bit-identical-rebuild methodology — Nix flake (authored), verification protocol |
+| [docs/bit-exact-reproducibility.md](docs/bit-exact-reproducibility.md) | GPU kernel bit-exact reproducibility: non-determinism sources + mitigations + gate primitive |
 | [docs/HELYX-CASE-STUDY.md](docs/HELYX-CASE-STUDY.md) | Pointer to the external worked example (helyx-proofforge) |
 
 ## What this is
@@ -98,13 +99,14 @@ refineforge/
 ├── claims/                     # claim registry (YAML, one per claim)
 │   ├── example.yaml            # EXAMPLE-001
 │   └── example-counter.yaml    # EXAMPLE-002
-├── crates/                     # Rust workspace (7 members)
+├── crates/                     # Rust workspace (8 members)
 │   ├── refineforge-repair-api/ # stable trait + types (Section 1)
 │   ├── refineforge-cli/        # `refine` binary + driver (Section 1)
 │   ├── refineforge-derive/     # #[derive(LeanModel)] proc-macro (Section 1)
 │   ├── refineforge-strategies/ # AnthropicStrategy + ReqwestTransport (Section 2)
 │   ├── refineforge-eval/       # `refine-eval` benchmark harness (Section 2)
 │   ├── refineforge-trainer/    # `refine-train` orchestration CLI (Section 2)
+│   ├── refineforge-bitexact/   # `refine-bitexact` gate primitive (Section 4)
 │   └── example-counter/        # EXAMPLE-002 Rust side
 ├── templates/                  # scaffolding for `refine new`
 │   ├── append_chain/           # append-only linked chain with hash check
@@ -120,6 +122,11 @@ refineforge/
 │   ├── scripts/                # stub-trainer for tests; backend shims
 │   ├── data/                   # training datasets (empty; mathlib mut. pipeline pending)
 │   └── runs/                   # refine-train per-experiment output (gitignored)
+├── kernels/                    # Section 4: GPU kernels + bit-exact gates
+│   ├── configs/                # per-kernel gate YAMLs
+│   ├── scripts/                # stub-deterministic + stub-nondeterministic (sh + ps1)
+│   ├── src/                    # actual .cu source (empty; CUDA engineer fills)
+│   └── runs/                   # refine-bitexact per-gate output (gitignored)
 ├── artifacts/                  # exported verification bundles
 ├── containers/
 │   └── Dockerfile.verifier     # elan + Lean preinstalled for reviewers
@@ -190,6 +197,7 @@ cargo build --release
 | `refine-train sweep <sweep.yaml>`      | Grid or random hyperparameter sweep |
 | `refine-train monitor <run_dir>`       | Tail `progress.jsonl` and show latest metrics |
 | `refine-train report <run_dir>`        | Build / refresh `report.json` for a run |
+| `refine-bitexact run <kernel.yaml>`    | Bit-exact reproducibility gate: run kernel N times, fail if SHA-256 hashes disagree. See [`kernels/README.md`](kernels/README.md) and [`docs/bit-exact-reproducibility.md`](docs/bit-exact-reproducibility.md) |
 | `refine templates`                     | List scaffolding templates                                              |
 | `refine new --template <t> --module <M> <ID>` | Scaffold a new claim from a template                             |
 
@@ -231,6 +239,7 @@ Where each thing currently lives:
 | `refineforge-strategies` workspace member  | ✅ `AnthropicStrategy` + `ReqwestTransport` (real HTTP, retry-with-backoff, error mapping; 18 unit tests) |
 | `refineforge-eval` (`refine-eval` binary)  | ✅ corpus-driven evaluation harness with JSON output; ships a 3-entry tutorial corpus under [`eval/corpus/`](eval/corpus) |
 | `refineforge-trainer` (`refine-train` binary) | ✅ training-experiment orchestration (axolotl / HF Trainer / custom); run tracking, checkpoint resume, failure recovery, JSON reports. Does NOT perform training itself — backend does. See [`training/README.md`](training/README.md) |
+| `refineforge-bitexact` (`refine-bitexact` binary) | ✅ bit-exact reproducibility gate: runs kernel N times, hashes outputs, fails if any disagree. Stub scripts prove the gate catches non-determinism. Real CUDA kernels are the CUDA engineer's domain. See [`kernels/README.md`](kernels/README.md). |
 | Verifier Docker image                      | ✅ `containers/Dockerfile.verifier` — multi-stage build, elan + Lean v4.29.1 preinstalled |
 | Multi-arch CI matrix                       | ✅ Ubuntu + macOS + Windows with elan / lake / cargo caches |
 | Sigstore signing in CI + `--verify-signature` | ✅ keyless cosign sign-blob on main + tags; verifier-side `refine bundle verify --verify-signature` (cosign subprocess) |

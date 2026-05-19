@@ -250,37 +250,121 @@ The DevOps engineer owns:
 
 ---
 
-## How the three sections connect
+## Section 4 — CUDA / GPU Kernel Engineer (bit-exact reproducibility)
+
+**Mission.** Own the kernel-level work that makes refineforge's
+bit-exact-across-hardware claim hold. Modern GPU kernels have
+many sources of non-determinism (atomicAdd ordering, cuBLAS
+algorithm selection, cuDNN, mixed precision); achieving bit-exact
+reproducibility across hardware classes requires deliberate
+kernel-level discipline.
+
+**Subdirectories owned**
+
+| Path                                            | What lives here                                  |
+|-------------------------------------------------|--------------------------------------------------|
+| `kernels/src/`                                  | Actual CUDA / HIP / Metal source                 |
+| `kernels/configs/`                              | Per-kernel bit-exact-gate YAMLs                  |
+| `kernels/scripts/`                              | Compiled binaries (or wrappers around them)      |
+| `kernels/runs/`                                 | runtime: per-experiment gate outputs (gitignored)|
+| `crates/refineforge-bitexact/`                  | the gate primitive (`refine-bitexact` binary)    |
+| `docs/bit-exact-reproducibility.md`             | methodology — sources of non-determinism + mitigations |
+
+**Responsibilities**
+
+The CUDA engineer owns:
+
+- **Kernel implementations.** Real `.cu` / `.cuh` source under
+  `kernels/src/`, compiled to binaries that read deterministic
+  inputs and write deterministic outputs.
+- **Determinism hygiene.** Apply the mitigations table in
+  `docs/bit-exact-reproducibility.md` §2-§3: deterministic
+  reduction trees, pinned cuBLAS / cuDNN algorithms, no
+  `atomicAdd` for float accumulation, proper env-var setup.
+- **Bit-exact gate authorship.** One `kernels/configs/<kernel>.yaml`
+  per kernel under test. The CI job runs them all on every push.
+- **Cross-hardware verification.** Once multiple GPU classes are
+  available in CI (A100 / H100 / consumer), aggregate per-runner
+  reports; a "fully bit-exact" claim requires all runners to
+  agree on hashes.
+- **CUDA-version pin maintenance.** Record `gpu` / `cuda` /
+  `driver` in each experiment's `hardware:` block; bump pinned
+  versions in CI when validated.
+
+**Current status (in refineforge today)**
+
+- Gate primitive (`crates/refineforge-bitexact`): ✅ shipped + tested
+- `refine-bitexact` CLI (`run` + `report` subcommands): ✅ shipped
+- Stub deterministic + non-deterministic scripts (prove gate works
+  in both directions): ✅ shipped
+- `kernels/src/` actual CUDA kernels: ❌ empty (CUDA engineer fills)
+- `docs/bit-exact-reproducibility.md` methodology: ✅ shipped
+- CI matrix with GPU runners: ❌ not yet (requires self-hosted GPU
+  CI infrastructure)
+- Cross-hardware-class verification: ❌ deferred (requires multiple
+  GPU runners)
+
+**Open work, in order**
+
+1. Hire a CUDA engineer (or assign one). The scaffold is ready.
+2. Write the first real kernel under `kernels/src/`. Compile to
+   `kernels/scripts/<name>`.
+3. Author the first bit-exact gate config; verify it passes on
+   a single GPU.
+4. Add a self-hosted GPU runner to CI; wire the `bit-exact-gate`
+   job.
+5. Add a second GPU class (different hardware); verify
+   cross-hardware bit-exactness.
+6. Iterate on every kernel HELYX (or other consumers) want
+   reproducibility-attested.
+
+**Interface to other sections**
+
+- Section 4's outputs (signed bit-exact gates per kernel)
+  attach to Section 3's bundles. A bundle can advertise:
+  "the cited Rust source compiles to the GPU kernels at
+  `kernels/src/`, and those kernels pass the bit-exact gate at
+  commit `<sha>` on hardware classes [A100, H100]."
+- Section 4 does NOT depend on Section 1's `RepairStrategy` or
+  Section 2's training pipeline. The orchestration scaffold
+  (`refineforge-bitexact`) is independent of the LLM repair loop.
+- Section 4's `bit-exact-gate` CI job is added by Section 3
+  alongside the other CI jobs.
+
+---
+
+## How the four sections connect
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  Section 1 — Lean 4 Specialist                                  │
-│                                                                 │
-│  lean/  claims/  templates/  docs/methodology.md  …             │
+│  lean/ claims/ templates/ docs/methodology.md                   │
 │  +  bundle format, policy gate, RepairStrategy trait            │
-└──────────┬──────────────────────────────────────────────┬───────┘
-           │                                              │
-           │ trait surface                                │ bundle schema
-           │                                              │
-           ▼                                              ▼
-┌──────────────────────────────────┐     ┌──────────────────────────────────┐
-│  Section 2 — ML Training         │     │  Section 3 — Infra / DevOps      │
-│                                  │     │                                  │
-│  RepairStrategy impls            │     │  CI matrix, hermetic builds      │
-│  training/ pipelines             │     │  sigstore signing                │
-│  models/ artifacts               │     │  containers/  attestation/       │
-│  eval harness, benchmarks        │     │  reproducible bundles            │
-│                                  │     │                                  │
-└──────────┬───────────────────────┘     └──────────────────────────────────┘
-           │                                              ▲
-           │ model artifact + strategy crate              │
-           └──────────────────────────────────────────────┘
-                            packaged & distributed
+└────────┬─────────────────────────────────────────────────┬──────┘
+         │ trait surface                                   │ bundle schema
+         ▼                                                 ▼
+┌──────────────────────────┐  ┌──────────────────────────────────┐
+│  Section 2 — ML Training │  │  Section 3 — Infra / DevOps      │
+│  RepairStrategy impls    │  │  CI matrix, hermetic builds      │
+│  training/ pipelines     │  │  sigstore signing                │
+│  eval harness, benchmarks│  │  containers/ release/            │
+└──────┬───────────────────┘  └────────────────────────┬─────────┘
+       │ model artifact                                ▲
+       │ + strategy crate                              │ kernel reports
+       └──────────────────────────────────┐            │ attach to bundles
+                                          ▼            │
+                          ┌──────────────────────────────────┐
+                          │  Section 4 — CUDA / GPU Kernels  │
+                          │  kernels/ src/ configs/ scripts/ │
+                          │  refineforge-bitexact gate       │
+                          │  bit-exact reproducibility       │
+                          └──────────────────────────────────┘
 ```
 
-The trait surface and the bundle schema are the only two interfaces
-that must stay stable. Everything else can be reorganised inside its
-section without affecting the others.
+The trait surface, the bundle schema, and the bit-exact gate's
+report format are the only three interfaces that must stay stable.
+Everything else can be reorganised inside its section without
+affecting the others.
 
 ---
 
