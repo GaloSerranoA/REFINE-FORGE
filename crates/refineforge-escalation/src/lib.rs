@@ -34,7 +34,8 @@ pub use decision::{Decision, EscalationReason, Evidence};
 pub use decision_outcome::{DecisionOutcome, DecisionParseError, PartialDecision};
 pub use engine::{Engine, EngineError};
 pub use git_checkpoint::{
-    AwaitConfig, GitCheckpointError, GitOps, MockGitOps, SubprocessGitOps,
+    await_decision, commit_packet, poll_decision_once, AwaitConfig, CommitSha,
+    GitCheckpointError, GitOps, MockGitOps, SubprocessGitOps,
 };
 pub use packet::{BatchBlock, BatchItem, Packet, PacketFrontMatter};
 

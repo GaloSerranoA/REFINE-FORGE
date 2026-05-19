@@ -11,7 +11,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use refineforge_cli::{bundle, claim, repair, runner, scaffold, scan};
+use refineforge_cli::{autonomous, bundle, claim, repair, runner, scaffold, scan};
 
 #[derive(Parser)]
 #[command(
@@ -72,6 +72,36 @@ enum Cmd {
         /// Don't write changes to disk
         #[arg(long)]
         dry_run: bool,
+    },
+    /// MVP autonomous driver: plans + executes a baseline
+    /// workflow against the claim, escalating per the
+    /// refineforge-escalation engine. See
+    /// docs/autonomous-driver-plan.md.
+    Autonomous {
+        claim_id: String,
+        /// Strategy (built-in: "mock"; "anthropic" requires
+        /// ANTHROPIC_API_KEY)
+        #[arg(long, default_value = "mock")]
+        strategy: String,
+        /// Cap cumulative API spend; fails closed when exceeded.
+        #[arg(long, default_value_t = 10.0)]
+        max_cost_usd: f64,
+        /// Operator identity (recorded in the run report's
+        /// `operator` field; not used for any access control).
+        #[arg(long)]
+        operator: Option<String>,
+        /// Plan and report without writing commits, packets,
+        /// or the final RunReport JSON.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// `refine escalations list` — operator queue dashboard.
+    /// Per criteria v0.3 the autonomous driver never
+    /// auto-rejects; this command is how the operator sees
+    /// what's pending.
+    Escalations {
+        #[command(subcommand)]
+        cmd: EscalationsCmd,
     },
     /// Scaffold a new claim from a template
     New {
@@ -146,6 +176,20 @@ enum ScanCmd {
     CheckAll,
 }
 
+#[derive(Subcommand)]
+enum EscalationsCmd {
+    /// List every escalation packet across the project,
+    /// sorted by age, with PENDING / DECIDED status.
+    List {
+        /// Filter to a single claim id.
+        #[arg(long)]
+        claim: Option<String>,
+        /// Only show packets older than N days.
+        #[arg(long)]
+        age_gt: Option<u32>,
+    },
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
@@ -183,6 +227,25 @@ fn main() -> Result<()> {
             strategy,
             dry_run,
         } => repair::run_cli(&cli.root, &claim_id, max_iterations, &strategy, dry_run),
+        Cmd::Autonomous {
+            claim_id,
+            strategy,
+            max_cost_usd,
+            operator,
+            dry_run,
+        } => autonomous::run_cli(
+            &cli.root,
+            &claim_id,
+            &strategy,
+            max_cost_usd,
+            operator.as_deref(),
+            dry_run,
+        ),
+        Cmd::Escalations { cmd } => match cmd {
+            EscalationsCmd::List { claim, age_gt } => {
+                autonomous::escalations_list(&cli.root, claim.as_deref(), age_gt)
+            }
+        },
         Cmd::New {
             template,
             claim_id,

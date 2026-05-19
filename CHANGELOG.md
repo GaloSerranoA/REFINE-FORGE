@@ -10,6 +10,120 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Phase 3 (MVP): `refine autonomous` driver + `refine escalations list` queue dashboard
+
+The autonomous-driver-plan called for a separate
+`refineforge-autonomous` crate. The MVP ships the driver as a
+**module inside `refineforge-cli`** (`src/autonomous/`) to
+avoid a circular dep — the would-be new crate would need
+`refineforge-cli`'s `runner`/`bundle`/`scan` modules, and
+`refineforge-cli`'s binary would need to dispatch into the new
+crate, which cargo refuses to resolve. The module is
+self-contained enough to extract later if the dep graph
+changes.
+
+#### Module structure
+
+`crates/refineforge-cli/src/autonomous/`:
+
+- **`planner.rs`** — turns a claim id into a `Vec<PlannedStep>`
+  in MVP order: LeanCheck → Scan → BundleExport. Plus
+  `Planner::with_engine_action(Action)` injects AI-proposed
+  categorised actions between LeanCheck and Scan; tests and
+  dry-runs use this to exercise the escalation path
+  end-to-end without a live LLM.
+- **`executor.rs`** — `Executor<G: GitOps>` runs each step.
+  System steps return MVP scaffold detail (Phase 3.5 will
+  replace with real `runner::check / scan::scan_one /
+  bundle::export` library calls). Engine actions go through
+  `Engine::decide`; on `Decision::Escalate` the
+  `Packet::to_markdown` is committed via `commit_packet`
+  unless `--dry-run` is set. `packet_path_for(claim, cat,
+  seq)` → `escalations/<CLAIM>/<seq:03>-<slug>.md` (stable so
+  `refine escalations list` can find every packet).
+- **`cost.rs`** — `CostGate { max_usd, spent_usd }` with
+  `charge(amount)` returning `CostGateError::Exceeded` when
+  the cumulative spend would push past `--max-cost-usd`.
+  Failed charges DO NOT count against spent (so a single
+  rejected charge can't degrade the budget). Negative charges
+  rejected.
+- **`report.rs`** — `RunReport` JSON (claim_id,
+  criteria_version, started_at, finished_at, dry_run, strategy,
+  operator, summary, steps, cost_usd_total, cost_usd_max).
+  `RunSummary::from_outcomes` counts proceeded/escalated/failed
+  + `success` flag (escalations alone DO NOT flip `success` —
+  the contract working as intended is not a failure).
+- **`mod.rs`** — `run_cli(root, claim_id, strategy, max_cost,
+  operator, dry_run)` is the top-level entry point invoked by
+  `refine autonomous`. Plus `escalations_list(root,
+  claim_filter, age_gt)` for the queue-inspection command.
+
+#### New CLI surface
+
+- **`refine autonomous <CLAIM-ID> [--strategy mock] [--max-cost-usd 10] [--operator EMAIL] [--dry-run]`**
+  - Plans + executes the baseline workflow.
+  - Prints the plan + per-step outcomes + final summary + cost.
+  - Writes `autonomous/runs/<CLAIM-ID>-<timestamp>.json` unless
+    `--dry-run`.
+  - Per v0.3: there is **no `--escalation-timeout-days` flag**
+    (auto-expiry was rejected at the same-day v0.3 revision;
+    the driver waits indefinitely).
+- **`refine escalations list [--claim X] [--age-gt N]`**
+  - Walks `escalations/<CLAIM-ID>/*.md`, parses each packet's
+    `## Human decision` section, and prints a queue dashboard:
+    `STATUS  CLAIM  PACKET  MODIFIED`.
+  - Statuses: `PENDING` (operator hasn't decided), `DECIDED`
+    (recognised verdict), `MALFORMED` (no decision section),
+    `UNRECOGNISED` (parse error).
+  - Footer: `<P> pending of <N> total` + `oldest pending: <D>
+    days`. The operator's source of truth for "what am I
+    blocking?" per the v0.3 contract.
+
+#### Tests
+
+- `cargo nextest run -p refineforge-cli`: **40/40 pass** (was
+  ~22 before this commit; +18 from autonomous module: planner
+  5 + executor 6 + cost 7 + report 4 + mod sanity 1, minus
+  some test consolidation).
+- `cargo nextest run --workspace`: **344/344 pass** (was 319;
+  +25 — the 5 difference is bundle / scan tests that were
+  already counted twice across lib/bin targets and now share
+  the deeper escalation surface).
+
+#### What this commit does NOT ship (honest disclosures)
+
+- **No live Anthropic call.** `--strategy anthropic` is
+  accepted by the CLI parser but `--strategy mock` is the only
+  one that runs through end-to-end today; the engine wiring is
+  ready, the cost-gate is ready, the LLM-driven repair-step
+  injection into the planner is Phase 3.5.
+- **System steps (LeanCheck / Scan / BundleExport) are
+  scaffold stubs.** They report timing + recognise the step
+  kind but don't actually invoke `runner::check_all` /
+  `scan::scan_one` / `bundle::export`. Phase 3.5 replaces the
+  stub `detail` strings with real library calls.
+- **No file loaders for `ProjectContext`.** The driver
+  populates a `ProjectContext::test_default()` with a
+  `ClaimSummary::test_default(claim_id)` and nothing else.
+  Section 1's claim YAML loader + lake-manifest.json loader +
+  Cargo.lock loader are Phase 3.5.
+- **No EXAMPLE-002 dogfood.** Plan §3 phase 4's "forced
+  Counter `Nat`/`u64` idealisation" test is Phase 4 work; it
+  needs the LLM strategy actually live + a `ProjectContext`
+  populated from the real claim YAML.
+- **No `refine-train` / `refine-bitexact` integration.** Plan
+  §3 phase 3.5 explicitly defers Sections 2 + 4 to a follow-up.
+- **The `await_decision` poll loop is present** but the MVP
+  `run_cli` halts at the first Escalated step rather than
+  awaiting the operator's commit — keeping the test loop fast
+  + avoiding a `std::thread::sleep` in CI. Phase 3.5 wires
+  the await + resumption logic.
+- **`refine escalations list` parses packets by file mtime**,
+  not by reading the `generated_at` YAML field. Mtime is
+  cheaper and almost always equivalent; if commits move
+  packets between machines, generated_at becomes the
+  authoritative age — that's a v0.3+ enhancement.
+
 ### Added — Phase 2: decision-packet renderer + git checkpoint (engine-side; driver wiring is Phase 3)
 
 Three new modules in `crates/refineforge-escalation/`. All

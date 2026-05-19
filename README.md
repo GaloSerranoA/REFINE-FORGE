@@ -195,6 +195,8 @@ cargo build --release
 | `refine bundle verify <bundle-dir>`    | Re-hash every file in a bundle and confirm the manifest matches         |
 | `refine bundle verify <bundle-dir> --verify-signature` | Hashes + Sigstore signature (via cosign). See [SECURITY.md](SECURITY.md) |
 | `refine repair <id>`                   | Bounded LLM repair loop against Lean's LSP server. Strategies: `mock` (declines all), `anthropic-mock` (canned), `anthropic` (real HTTP, needs `ANTHROPIC_API_KEY`). See [`docs/llm-repair-design.md`](docs/llm-repair-design.md) |
+| `refine autonomous <id> [--strategy mock] [--max-cost-usd 10] [--operator EMAIL] [--dry-run]` | **MVP** of the Phase 3 driver from [`docs/autonomous-driver-plan.md`](docs/autonomous-driver-plan.md). Plans + executes a baseline workflow, escalates per criteria v0.3 (no auto-expiry), writes a `RunReport` JSON. System steps are scaffold stubs in MVP — Phase 3.5 wires real library calls. |
+| `refine escalations list [--claim X] [--age-gt N]` | Operator queue dashboard: walks `escalations/<CLAIM-ID>/*.md`, shows PENDING vs DECIDED for every packet sorted by age. Per criteria v0.3 the driver never auto-rejects; this is how operators see what's blocking. |
 | `refine-eval --corpus … --strategy …`  | Drive `refine repair` against a JSONL corpus; emit JSON report. See [`docs/repair-evaluation.md`](docs/repair-evaluation.md) |
 | `refine-train run <exp.yaml>`          | Run one training experiment (axolotl / HF Trainer / custom backend). See [`training/README.md`](training/README.md). Always start with `--dry-run`. |
 | `refine-train sweep <sweep.yaml>`      | Grid or random hyperparameter sweep |

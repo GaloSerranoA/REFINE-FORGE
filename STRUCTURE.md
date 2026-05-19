@@ -286,6 +286,33 @@ swapping in the broken file. Without pre-warm, cold lake
 elaboration exceeds the LSP diagnostic timeout and breaks
 register as false `AlreadyClean`.
 
+### `crates/refineforge-cli/src/autonomous/` — Phase 3 MVP driver
+
+Lives inside `refineforge-cli` (not a separate crate) to avoid
+a circular dep with the existing `runner` / `bundle` / `scan`
+modules. Provides `refine autonomous <CLAIM-ID>` + `refine
+escalations list`.
+
+Submodules:
+- `planner.rs` — sequences a baseline workflow (LeanCheck →
+  Scan → BundleExport) + injection point for AI-proposed
+  categorised `Action`s via `Planner::with_engine_action`.
+- `executor.rs` — runs each step. System steps are MVP scaffold
+  stubs (Phase 3.5 wires real library calls). Engine actions
+  go through `Engine::decide`; escalations commit a packet
+  unless `--dry-run`.
+- `cost.rs` — `CostGate` with fail-closed `charge(amount)`;
+  honours `--max-cost-usd`.
+- `report.rs` — `RunReport` JSON with per-step outcomes +
+  cost + summary.
+- `mod.rs` — `run_cli` (entry point) + `escalations_list`
+  (queue dashboard).
+
+23 tests; honest deferrals documented in CHANGELOG (real
+Anthropic call, real library-call wiring for system steps,
+file loaders for ProjectContext, EXAMPLE-002 dogfood, await
+resumption).
+
 ### `crates/refineforge-cli/` — the `refine` binary
 
 ```

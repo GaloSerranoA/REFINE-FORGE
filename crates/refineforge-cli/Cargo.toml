@@ -17,6 +17,7 @@ serde_json              = "1.0"
 sha2                    = "0.10"
 hex                     = "0.4"
 anyhow                  = "1.0"
+thiserror               = "1.0"
 walkdir                 = "2.5"
 regex                   = "1.10"
 chrono                  = { version = "0.4", features = ["serde"] }
@@ -29,6 +30,10 @@ refineforge-repair-api  = { path = "../refineforge-repair-api" }
 # strategy registry. No circular dep — strategies depends on the
 # api crate, not on this one.
 refineforge-strategies  = { path = "../refineforge-strategies" }
+# Escalation engine + packet renderer + git checkpoint (Phase 3
+# autonomous driver wraps these to drive the four sections
+# without per-step human approval).
+refineforge-escalation  = { path = "../refineforge-escalation" }
 
 [dev-dependencies]
 tempfile                = "3"
