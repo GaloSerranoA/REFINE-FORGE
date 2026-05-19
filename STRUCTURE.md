@@ -489,7 +489,7 @@ the bundle exporter once had is documented in `CHANGELOG.md`).
 | `escalation-criteria.md` | **all sections** | **CONTRACT v0.3** — 9 categories that always escalate to the human during `refine autonomous` runs. Operator-signed |
 | `plans/autonomous-driver-plan.md` | maintainers, operators | 5-phase enterprise build plan for `refine autonomous`. All plan phases + 3.5-3.8 shipped; Phase 4 acceptance-gate exercised against real Anthropic ($0.35 spend); v0.2.0 + v0.2.1 released |
 | `plans/gui-plan.md` | maintainers, operators | 9-phase enterprise plan for `refineforge-studio` production GUI (Tauri 2.x + Solid). PLAN ONLY — no code; 6 open questions to resolve before Phase 0 |
-| `plans/resourcing-plan.md` | maintainers, operators | People (4 specialists) + compute (16,000 GPU-hours) + tools + libraries + 3 funding options (A grants / B customer-funded / C cash) with concrete numbers. 12-month budget: ~$520k LATAM mid-band / ~$1.13M US ceiling |
+| `plans/resourcing-plan.md` | maintainers, operators | v0.2: **refineforge IS the four specialists**, not headcount. Operator-side resourcing is 1 human operator + 1 part-time maintainer + compute. 16,000 GPU-hr fine-tune via Option A grants (~$5-10k cash). 12-month budget: ~$12-52k LATAM mid-band / ~$35-108k US ceiling. v0.1 had framing inverted; superseded |
 | `HELYX-CASE-STUDY.md` | adopters | Pointer to the external worked example (`helyx-proofforge`) |
 
 ## Workspace test counts (current)

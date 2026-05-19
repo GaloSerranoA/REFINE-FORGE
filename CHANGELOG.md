@@ -10,6 +10,54 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Changed — `docs/plans/resourcing-plan.md` rewritten (v0.1 had the framing inverted)
+
+The v0.1 of the resourcing plan (shipped earlier in this
+`[Unreleased]` cycle as commit `2f60d9c`) framed the four
+ARCHITECTURE sections as humans to hire and quoted a
+$520k-$1.13M annual burn. **That was wrong.** The operator's
+brief listed those four specialist roles as **capabilities
+refineforge would provide**, not headcount.
+
+**The corrected framing (v0.2 of this plan):** refineforge IS
+the four specialists. Section 1 is performed by the autonomous
+driver + escalation engine. Section 2 by
+`refineforge-strategies` + `refineforge-eval` +
+`refineforge-trainer`. Section 3 by the CI workflow +
+Sigstore + release.sh. Section 4 by `refineforge-bitexact`.
+What the operator actually needs is:
+
+- **1 human operator** (you — the "human operator must
+  approve" doctrine; ~5-20% of working week steady-state;
+  zero cash cost).
+- **1 part-time refineforge maintainer** ($18-80k/year fully-
+  loaded, OR the operator's own time at zero cash).
+- **Compute** that runs the four AI-driven specialists
+  (Anthropic API ~$10-200/month for autonomous runs; 16,000
+  GPU-hour fine-tune ~$45k via Option A grants at ~$5-10k
+  cash outlay; CI ~$0-200/month).
+
+**Corrected 12-month budget:**
+- LATAM mid-band: **~$35-52k/year** (down from $520k v0.1).
+- US ceiling: **~$68-108k/year** (down from $1.13M v0.1).
+- Lower-bound (operator handles maintainer duties): **~$12-15k/year**.
+
+**Two orders of magnitude smaller** than v0.1. This is the
+framework's whole point: refineforge replaces a 4-person team
+with one operator + the compute that runs the AI-driven
+specialists.
+
+v0.1 is preserved in git history under commit `2f60d9c` for
+audit. v0.2 supersedes it as the canonical operator-facing
+plan. Useful sections of v0.1 (cloud pricing, funding option
+breakdowns, software library catalog) survive in v0.2; the
+inverted staffing band is gone.
+
+New §10 in the plan ("v0.1 errata") documents the inversion
+explicitly. The lesson for future plan docs: **multi-FTE
+budgets for refineforge proper should trip a review**
+because refineforge IS the team.
+
 ### Added — `docs/plans/resourcing-plan.md` (people / compute / tools / funding)
 
 Pure docs commit. Captures the operator's resourcing brief
