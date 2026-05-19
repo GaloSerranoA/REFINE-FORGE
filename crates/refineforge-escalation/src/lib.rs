@@ -20,7 +20,10 @@ pub mod action;
 pub mod category;
 pub mod context;
 pub mod decision;
+pub mod decision_outcome;
 pub mod engine;
+pub mod git_checkpoint;
+pub mod packet;
 
 pub use action::{
     Action, ClaimStatus, ExternalCitation, LossKind, SentenceKind, WeakeningKind,
@@ -28,7 +31,12 @@ pub use action::{
 pub use category::Category;
 pub use context::{ClaimSummary, ProjectContext};
 pub use decision::{Decision, EscalationReason, Evidence};
+pub use decision_outcome::{DecisionOutcome, DecisionParseError, PartialDecision};
 pub use engine::{Engine, EngineError};
+pub use git_checkpoint::{
+    AwaitConfig, GitCheckpointError, GitOps, MockGitOps, SubprocessGitOps,
+};
+pub use packet::{BatchBlock, BatchItem, Packet, PacketFrontMatter};
 
 /// The version of `docs/escalation-criteria.md` this engine
 /// implements. Bumping this MUST happen in lock-step with a

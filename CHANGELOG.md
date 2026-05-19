@@ -10,6 +10,153 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Phase 2: decision-packet renderer + git checkpoint (engine-side; driver wiring is Phase 3)
+
+Three new modules in `crates/refineforge-escalation/`. All
+honour criteria v0.3 (no `expires_at`; batching opt-in under
+named conditions; partial-approval response form for batched
+packets).
+
+#### `src/packet.rs` — markdown packet renderer
+
+- `Packet` struct with `PacketFrontMatter` (criteria_version,
+  claim_id, category, all_categories, generated_at,
+  generated_by_strategy, optional `batch`) + `summary` +
+  `evidence` + raw `action`.
+- `BatchBlock { items: Vec<BatchItem>, rationale_for_batching }`
+  for v0.3-conformant batched packets. Conditions (a)/(b)/(c)
+  from the criteria doc are the AI's responsibility to assert
+  before calling `Packet::with_batch`.
+- `Packet::build(...)` constructs from an `EscalationReason`.
+- `Packet::with_batch(...)` attaches a batch block (additive;
+  default is no batch).
+- `Packet::to_markdown()` renders the full file: YAML
+  front-matter delimited by `---`, headline + multi-category
+  callout, per-Evidence-variant details, raw-Action JSON,
+  optional batched-items section, `## Human decision` block
+  with comment-hints listing recognised verdict forms
+  (`APPROVED:`, `REJECTED:`, `EDIT_AND_RESUBMIT:`, plus partial
+  form for batched). **No `expires_at` field** — explicitly
+  forbidden by a test (`v0.3 forbids expires_at`).
+- 12 inline tests including a sanity-check that every
+  `Evidence` variant renders without panicking (so new variants
+  added later are forced through this path).
+
+#### `src/decision_outcome.rs` — parser for `## Human decision`
+
+- `DecisionOutcome::{Approved, Rejected, EditAndResubmit, Partial}`.
+  `Partial` carries `PartialDecision { approved_indices: Vec<u32>,
+  rejected_indices: Vec<(u32, String)> }` — `Vec` (not HashMap)
+  because (a) it preserves the operator's written order in
+  packet auditing and (b) HashMap<u32, _> can't round-trip
+  through serde_json without custom adaptors (caught by the
+  `decision_round_trips_via_json` test before it landed).
+- `parse_decision(markdown)` walks the `## Human decision`
+  section, skips HTML comments, and routes by verdict prefix.
+  Heuristic for partial-vs-free-text: a verdict line whose
+  trailing content looks like an index list (digits + commas +
+  hyphens + whitespace only, up to `;` or `[`) is partial.
+  Caught a real bug pre-commit: my first heuristic required
+  both APPROVED and REJECTED to be present, so
+  `APPROVED: 1-3,5;` was misclassified as a free-text reason.
+- `DecisionParseError` covers MissingSection / Pending /
+  Unrecognised / InvalidIndices / RejectedWithoutReason /
+  EditWithoutSuggestions.
+- 16 inline tests covering every verdict form, multi-line
+  reasons, partials with ranges/individuals, invalid ranges,
+  pending detection, missing-section detection.
+
+#### `src/git_checkpoint.rs` — commit + (indefinite) await
+
+- `GitOps` trait with `add_and_commit`, `read_file`,
+  `write_file` — enough surface to drive the packet flow
+  without exposing the rest of git.
+- `SubprocessGitOps`: shells out to the system `git` binary
+  (consistent with refineforge's existing pattern of shelling
+  to `cosign`). No git2 / libgit2 dependency.
+- `MockGitOps`: in-memory `HashMap<PathBuf, String>` + commit
+  log; lets unit tests drive `commit_packet` /
+  `poll_decision_once` without filesystem or subprocess.
+- `commit_packet(git, repo_root, file_rel, markdown, msg)`
+  writes + commits in one shot.
+- `poll_decision_once(git, repo_root, file_rel)` — single
+  non-blocking poll; returns `Ok(Some(outcome))` if the
+  operator has decided, `Ok(None)` if still pending, `Err(_)`
+  on I/O or parse-shape errors.
+- `await_decision(git, repo_root, file_rel, AwaitConfig)` —
+  blocks indefinitely calling `poll_decision_once` every
+  `poll_interval` (default 5s). **No timeout** — per criteria
+  v0.3, visible failure (claim sits blocking; operator runs
+  `refine escalations list` to see what's pending) beats silent
+  failure (a stale packet auto-rejected after N days).
+- 10 inline tests against `MockGitOps`.
+
+#### POSIX end-to-end tests
+
+New file `tests/packet_e2e.rs` (gated on `#[cfg(unix)]`). Two
+tests drive the real `git` binary against a `tempfile::tempdir()`:
+1. commit-then-poll-pending-then-operator-approves: assert the
+   `commit_packet` returns a 40-char SHA, the first poll sees
+   `(pending)`, the operator's APPROVED commit is detected on
+   the next poll.
+2. batched packet → partial-decision flow: APPROVED: 1; REJECTED:
+   2 [reason] is parsed and the rejection-reason is preserved.
+
+Plus a defence-in-depth test that the engine still refuses to
+operate when `ctx.criteria_version != CRITERIA_VERSION` even in
+the e2e setup.
+
+**These two tests are not executed on Windows** (the runner
+this commit was prepared on) because `cfg(unix)` strips them
+out — the `MockGitOps` tests cover the same surface in a
+platform-agnostic way. First CI run on a Linux/macOS runner
+will execute them.
+
+#### Dependency
+
+- `chrono = { version = "0.4", features = ["serde"] }` added —
+  used for ISO-8601 `generated_at` timestamps in packet
+  front-matter. (Not yet used at runtime — the driver, Phase 3,
+  will call `chrono::Utc::now().to_rfc3339()`. The dep is in
+  place so Phase 3 doesn't need a re-bump.)
+
+#### Tests
+
+- `cargo nextest run -p refineforge-escalation`: **156/156 pass**
+  (was 118 under v0.3; +38 from this commit — packet 12, decision
+  16, git 10).
+- `cargo nextest run --workspace`: **319/319 pass** (was 281;
+  same +38).
+- The two POSIX e2e tests compile cleanly on Windows but are
+  not executed there; coverage of the wiring is via the
+  `SubprocessGitOps` source review + the `MockGitOps`
+  unit tests.
+
+#### What this commit does NOT ship (honest disclosures)
+
+- **No CLI surface.** `refine escalations list` is documented
+  in criteria-doc §"Escalation expiry" as the Phase 2-or-3
+  queue-inspection command, but it lives in `refineforge-cli`,
+  not this crate. The data shapes are ready; the subcommand is
+  Phase 3.
+- **No reminder hooks.** The 7/14/30-day notifications mentioned
+  in criteria v0.3 are deferred to Phase 3 driver-level config
+  (channel + format). The `await_decision` loop has no reminder
+  callback today.
+- **No criteria-doc → engine build-time cross-check** (plan §3
+  phase 2 risk mitigation). The packet templates render every
+  Evidence variant, but there's no programmatic assertion that
+  every category in the criteria-doc §3 has a matching
+  Evidence variant. Manually kept in sync; Phase 2.5 polish.
+- **No git remote support.** `SubprocessGitOps` works against
+  a local repo only — the operator decides on the same machine
+  as the driver. Cross-machine workflow is plan §8 out-of-scope
+  for v0.2 and explicitly fine.
+- **No real Anthropic call.** The packet renderer formats AI
+  reasoning, but this commit doesn't invoke Anthropic. Phase 3
+  wires `refineforge-strategies` to feed reasoning into the
+  packet's `evidence` block.
+
 ### Changed — Criteria v0.2 → v0.3 (operator same-day correction)
 
 v0.2 was operator-signed earlier the same day; before any

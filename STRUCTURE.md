@@ -195,16 +195,35 @@ Public API:
 
 Modules: `category.rs` · `action.rs` · `decision.rs` · `context.rs` · `engine.rs`.
 
-Tests: 118 total (under criteria v0.3 — was 117 under v0.2; net
-+1 from cat08 additions and cat01 rename). Inline tests in each
-src module + integration tests under `tests/`, one file per
-category + `multi_category.rs` + `edge_cases.rs`. Every positive
+Tests: **156 total** under criteria v0.3 (118 from Phase 1 +
+38 from Phase 2). Inline tests in each src module + integration
+tests under `tests/` (one file per category + `multi_category.rs`
++ `edge_cases.rs` + POSIX-only `packet_e2e.rs`). Every positive
 and negative example from criteria-doc §3 has a named test.
 
-**Phase 1 scope only.** File loaders (claim YAMLs / Cargo.lock /
-lake-manifest.json → `ProjectContext`) are deferred to the
-Phase 2 driver crate; this crate provides `test_default()`
-constructors so tests + manual construction work today.
+**Phase 1 + Phase 2 scope.** Phase 1 shipped the engine
+(category classifier, multi-category resolver, ProjectContext);
+Phase 2 (this revision) ships the packet renderer, decision
+parser, and git-checkpoint primitives. Phase 3 (driver: CLI
+subcommand `refine autonomous`, real-LLM-strategy wiring, file
+loaders building `ProjectContext` from claim YAMLs +
+lake-manifest.json + Cargo.lock) is pending.
+
+Phase 2 modules:
+- `src/packet.rs` — `Packet` + `BatchBlock` + per-Evidence
+  markdown renderer. `Packet::to_markdown` produces the file
+  the driver commits to `escalations/<CLAIM-ID>/`. No
+  `expires_at` field per v0.3.
+- `src/decision_outcome.rs` — `DecisionOutcome::{Approved,
+  Rejected, EditAndResubmit, Partial(PartialDecision)}` +
+  `parse_decision(markdown)` that walks the `## Human decision`
+  section. Partial form recognises `APPROVED: 1-5,7; REJECTED:
+  6,8 [reason]` for batched packets.
+- `src/git_checkpoint.rs` — `GitOps` trait + `SubprocessGitOps`
+  (production, shells to `git`) + `MockGitOps` (in-memory,
+  unit-test) + `commit_packet` + `poll_decision_once` +
+  `await_decision` (**indefinite poll, no auto-reject** per
+  v0.3).
 
 ### `crates/refineforge-bitexact/` — bit-exact gate (Section 4)
 
