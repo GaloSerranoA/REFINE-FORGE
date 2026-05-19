@@ -10,6 +10,10 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+(nothing yet)
+
+## [0.2.0] — 2026-05-19
+
 ### Highlights (read first)
 
 Everything below in `[Unreleased]` accumulated across the
