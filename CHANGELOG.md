@@ -10,6 +10,63 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — `docs/ecosystem.md`: the four-project portfolio map
+
+Pure docs commit. Captures the operator's strategic
+articulation of how their four projects compose, triggered
+by the operator pointing the assistant at three external
+verification directories on Desktop (`helyx-verification`,
+`verification-2026-05-16` for Knowledge-Foundry,
+`cogn8ty-verification`) over the course of one session.
+
+The four projects, mapped to structural layers:
+
+| Layer | Project | Tests passing | What it owns |
+|---|---|---:|---|
+| Data | Knowledge-Foundry (Python) | 1115/1115 | LLM-teacher data generation; 5 modes; HF publishing |
+| Substrate (symbolic) | Cogn8ty / NANTAR INMORTAL RUST | 12,272/12,272 | Pure-Rust NARS + Prolog + 8-tier cognition + JSON-RPC brain |
+| Substrate (neural) | HELYX + NAL | 4643/4643 | 5-substrate architecture; Lean → Rust extraction; differentiable NAL |
+| Trust | refineforge | 383/383 | Lean proofs + refinement bundles + autonomous driver |
+
+The load-bearing structural observation: **Cogn8ty (symbolic
+NARS) and HELYX-NAL (differentiable NARS) are the two halves
+of a NARS system in the strict sense Pei Wang defined.** Most
+"neuro-symbolic" projects glue PyTorch to a Python Prolog;
+NANTAR has both halves in pure Rust sharing a trust base, no
+FFI tax, no language-impedance mismatch.
+
+§3 Pair-by-pair complementarity matrix (8 directional flows
+across the 4 projects). §4 One-sentence composition.
+§5 The honest constraint ("complementary ≠ integrated";
+3-6 months focused work for full composition; 6-10 weeks
+for the smallest demonstrable three-way). §6 Why this
+position is hard to replicate (5 architectural choices that
+compound; 18-month minimum for a competitor from scratch).
+§7 Three sensible next-step deliverables (smallest:
+`refine --strategy cogn8ty` adapter at 2-4 weeks; medium:
+HELYX-NAL-001 + supporting Audit/* claims at 4-6 weeks;
+largest: full Cogn8ty ↔ HELYX-NAL composition at 2-4 months).
+§8 What this doc is NOT (not a roadmap commitment; not a
+sales pitch; not a substitute for per-pair plan docs; not a
+definitive architecture).
+
+The one-liner that closes the doc and the layer-map together:
+
+> **Cogn8ty thinks, HELYX runs, KF teaches, refineforge proves.
+> Rust binds them. No one else has shipped all four.**
+
+The doc explicitly DOES NOT commit refineforge to any of the
+integration deliverables in §7. Each warrants its own plan
+doc; this ecosystem doc records the *conceptual map* so
+integration plans can be drafted from a shared frame later.
+
+Cross-references:
+- README doc-map row added.
+- STRUCTURE docs table row added.
+
+No source / test changes. cargo nextest run --workspace
+still 383/383.
+
 ### Added — `docs/plans/finetuning-plan.md` (Knowledge-Foundry → axolotl → `refine --strategy local-finetune`)
 
 Pure docs commit. Captures the end-to-end fine-tuning
