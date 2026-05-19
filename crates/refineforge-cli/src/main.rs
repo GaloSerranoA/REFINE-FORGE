@@ -102,6 +102,19 @@ enum Cmd {
         /// this is where live LLM cost is incurred.
         #[arg(long)]
         auto_repair: bool,
+        /// When a step Escalates, block-poll the operator's
+        /// packet decision (Approved → continue, Rejected /
+        /// EditAndResubmit / Partial → halt). Per criteria v0.3
+        /// there is no timeout; operators run `refine
+        /// escalations list` to see what's pending.
+        #[arg(long)]
+        await_decisions: bool,
+        /// Plan §3 phase 4 bait: synthetically inject the
+        /// counter-idealisation Action (u64 → Nat, UnsignedOverflow)
+        /// into the plan. Drives EXAMPLE-002's Cat 2 escalation
+        /// without requiring a live LLM to produce it.
+        #[arg(long)]
+        inject_counter_idealisation: bool,
     },
     /// `refine escalations list` — operator queue dashboard.
     /// Per criteria v0.3 the autonomous driver never
@@ -242,6 +255,8 @@ fn main() -> Result<()> {
             operator,
             dry_run,
             auto_repair,
+            await_decisions,
+            inject_counter_idealisation,
         } => autonomous::run_cli(
             &cli.root,
             &claim_id,
@@ -250,6 +265,8 @@ fn main() -> Result<()> {
             operator.as_deref(),
             dry_run,
             auto_repair,
+            await_decisions,
+            inject_counter_idealisation,
         ),
         Cmd::Escalations { cmd } => match cmd {
             EscalationsCmd::List { claim, age_gt } => {

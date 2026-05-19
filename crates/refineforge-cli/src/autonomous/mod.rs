@@ -36,13 +36,176 @@ pub use cost::{CostGate, CostGateError};
 pub use executor::{ExecuteError, Executor, StepOutcome};
 pub use planner::{PlannedStep, Planner, StepKind};
 pub use report::{RunReport, RunSummary};
+// `WorkRunConfig` + `run_worklist` are defined later in this file
+// and re-exported automatically via `pub fn` / `pub struct`.
 
 use anyhow::{Context, Result};
 use refineforge_escalation::{
-    load_project_context, ClaimSummary, Engine, ProjectContext, SubprocessGitOps,
-    CRITERIA_VERSION,
+    load_project_context, AwaitConfig, ClaimSummary, DecisionOutcome, Engine, GitOps,
+    ProjectContext, SubprocessGitOps, CRITERIA_VERSION,
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// Configuration for the worklist runner. Keeps `run_worklist`'s
+/// signature stable as more knobs are added (auto-repair,
+/// await-decisions, etc.).
+#[derive(Debug, Clone)]
+pub struct WorkRunConfig {
+    pub strategy: String,
+    pub auto_repair: bool,
+    pub await_decisions: bool,
+    pub repair_max_iterations: usize,
+    pub max_repair_attempts: usize,
+    pub await_poll_interval: Duration,
+}
+
+impl Default for WorkRunConfig {
+    fn default() -> Self {
+        Self {
+            strategy: "mock".into(),
+            auto_repair: false,
+            await_decisions: false,
+            repair_max_iterations: 5,
+            max_repair_attempts: 2,
+            await_poll_interval: Duration::from_secs(5),
+        }
+    }
+}
+
+/// Drive a [`PlannedStep`] list through the executor with
+/// optional auto-repair injection and optional escalation-await
+/// resumption. Generic over [`GitOps`] so tests can drive it
+/// with [`refineforge_escalation::MockGitOps`].
+///
+/// Returns the full list of [`StepOutcome`]s including any
+/// dynamically-injected Repair/recheck steps and any
+/// post-Escalated resume outcomes.
+pub fn run_worklist<G: GitOps>(
+    ex: &mut Executor<G>,
+    plan: Vec<PlannedStep>,
+    cfg: &WorkRunConfig,
+) -> Vec<StepOutcome> {
+    let mut work: std::collections::VecDeque<PlannedStep> = plan.into_iter().collect();
+    let mut next_seq = work.iter().map(|s| s.seq).max().unwrap_or(0) + 1;
+    let mut outcomes: Vec<StepOutcome> = Vec::new();
+    let mut repair_attempts = 0usize;
+    while let Some(step) = work.pop_front() {
+        let outcome = ex.run_step(&step);
+        let is_lean_failed = matches!(
+            &outcome,
+            StepOutcome::Failed { kind, .. } if kind == "LeanCheck"
+        );
+        let escalated_packet: Option<(String, PathBuf)> = if let StepOutcome::Escalated {
+            category,
+            packet_path,
+            ..
+        } = &outcome
+        {
+            Some((category.clone(), PathBuf::from(packet_path)))
+        } else {
+            None
+        };
+        outcomes.push(outcome);
+
+        if is_lean_failed && cfg.auto_repair && repair_attempts < cfg.max_repair_attempts {
+            repair_attempts += 1;
+            let repair_step = PlannedStep {
+                seq: next_seq,
+                kind: StepKind::Repair {
+                    strategy: cfg.strategy.clone(),
+                    max_iterations: cfg.repair_max_iterations,
+                },
+                rationale: format!(
+                    "LeanCheck failed; --auto-repair attempt {}/{} (strategy={})",
+                    repair_attempts, cfg.max_repair_attempts, cfg.strategy
+                ),
+            };
+            let recheck_step = PlannedStep {
+                seq: next_seq + 1,
+                kind: StepKind::LeanCheck,
+                rationale: "re-verify after auto-repair".into(),
+            };
+            next_seq += 2;
+            work.push_front(recheck_step);
+            work.push_front(repair_step);
+            continue;
+        }
+
+        if let Some((category, packet_rel)) = escalated_packet {
+            if !cfg.await_decisions {
+                // Default behaviour: halt at first escalation, leaving the
+                // packet pending. Operator runs `refine escalations list`
+                // to see what's blocking.
+                break;
+            }
+            let await_cfg = AwaitConfig {
+                poll_interval: cfg.await_poll_interval,
+            };
+            match ex.await_packet(&packet_rel, await_cfg) {
+                Ok(DecisionOutcome::Approved { reason }) => {
+                    outcomes.push(StepOutcome::Proceeded {
+                        seq: next_seq,
+                        kind: "OperatorDecision".into(),
+                        detail: format!(
+                            "APPROVED ({}): {}",
+                            category,
+                            reason.unwrap_or_else(|| "<no reason given>".into())
+                        ),
+                        elapsed_ms: 0,
+                    });
+                    next_seq += 1;
+                }
+                Ok(DecisionOutcome::Rejected { reason }) => {
+                    outcomes.push(StepOutcome::Failed {
+                        seq: next_seq,
+                        kind: "OperatorDecision".into(),
+                        error: format!("REJECTED ({}): {}", category, reason),
+                        elapsed_ms: 0,
+                    });
+                    break;
+                }
+                Ok(DecisionOutcome::EditAndResubmit { suggestions }) => {
+                    outcomes.push(StepOutcome::Failed {
+                        seq: next_seq,
+                        kind: "OperatorDecision".into(),
+                        error: format!(
+                            "EDIT_AND_RESUBMIT ({}): {}",
+                            category, suggestions
+                        ),
+                        elapsed_ms: 0,
+                    });
+                    break;
+                }
+                Ok(DecisionOutcome::Partial(p)) => {
+                    // Phase 3.7 MVP: we don't yet generate batched packets
+                    // from the driver, so a Partial decision is unexpected
+                    // — record it and halt for operator follow-up.
+                    outcomes.push(StepOutcome::Failed {
+                        seq: next_seq,
+                        kind: "OperatorDecision".into(),
+                        error: format!(
+                            "PARTIAL ({}): approved={:?}, rejected={:?}",
+                            category, p.approved_indices, p.rejected_indices
+                        ),
+                        elapsed_ms: 0,
+                    });
+                    break;
+                }
+                Err(e) => {
+                    outcomes.push(StepOutcome::Failed {
+                        seq: next_seq,
+                        kind: "OperatorDecision".into(),
+                        error: format!("await_decision: {}", e),
+                        elapsed_ms: 0,
+                    });
+                    break;
+                }
+            }
+        }
+    }
+    outcomes
+}
 
 /// Top-level entry point invoked by `refine autonomous <CLAIM-ID>`.
 ///
@@ -59,9 +222,14 @@ pub fn run_cli(
     operator: Option<&str>,
     dry_run: bool,
     auto_repair: bool,
+    await_decisions: bool,
+    inject_counter_idealisation: bool,
 ) -> Result<()> {
-    println!("refine autonomous {} (strategy={}, dry_run={}, max-cost-usd=${:.2}, auto_repair={})",
-        claim_id, strategy, dry_run, max_cost_usd, auto_repair);
+    println!("refine autonomous {} (strategy={}, dry_run={}, max-cost-usd=${:.2}, auto_repair={}, await_decisions={})",
+        claim_id, strategy, dry_run, max_cost_usd, auto_repair, await_decisions);
+    if inject_counter_idealisation {
+        println!("**INJECTED BAIT**: Cat 2 counter-idealisation Action (u64→Nat, UnsignedOverflow)");
+    }
     if let Some(op) = operator {
         println!("operator: {}", op);
     }
@@ -114,30 +282,40 @@ pub fn run_cli(
         project_ctx,
         cost_gate,
         generated_at: generated_at.clone(),
+        anthropic_usage_observed: None,
+        commit_packets_in_dry_run: false,
     };
 
-    let plan = Planner::new().plan(claim_id);
+    let mut planner = Planner::new();
+    if inject_counter_idealisation {
+        planner = planner.with_engine_action(
+            refineforge_escalation::Action::MapRustToLean {
+                rust_type: "u64".into(),
+                lean_type: "Nat".into(),
+                lossy_kinds: vec![refineforge_escalation::LossKind::UnsignedOverflow],
+            },
+        );
+    }
+    let plan = planner.plan(claim_id);
     println!("plan ({} steps):", plan.len());
     for step in &plan {
         println!("  {:>2}. {:?} — {}", step.seq, step.kind, step.rationale);
     }
     println!();
 
-    // Worklist execution so --auto-repair can dynamically inject
-    // a Repair step + re-run LeanCheck after a failed LeanCheck.
-    let mut work: std::collections::VecDeque<PlannedStep> = plan.into_iter().collect();
-    let mut next_seq = work.iter().map(|s| s.seq).max().unwrap_or(0) + 1;
-    let mut outcomes: Vec<StepOutcome> = Vec::new();
-    let mut repair_attempts = 0usize;
-    let max_repair_attempts = 2usize; // bound: avoid runaway repair loops at driver level
-
-    while let Some(step) = work.pop_front() {
-        let outcome = ex.run_step(&step);
-        let is_lean_failed = matches!(
-            &outcome,
-            StepOutcome::Failed { kind, .. } if kind == "LeanCheck"
-        );
-        match &outcome {
+    let cfg = WorkRunConfig {
+        strategy: strategy.to_string(),
+        auto_repair,
+        await_decisions,
+        repair_max_iterations: 5,
+        max_repair_attempts: 2,
+        await_poll_interval: Duration::from_secs(5),
+    };
+    let outcomes = run_worklist(&mut ex, plan, &cfg);
+    // Print outcomes (run_worklist itself is silent so tests can
+    // consume it cleanly).
+    for o in &outcomes {
+        match o {
             StepOutcome::Proceeded { seq, kind, detail, elapsed_ms } => {
                 println!("  step {:>2} [{}] PROCEEDED ({}ms): {}", seq, kind, elapsed_ms, detail);
             }
@@ -146,38 +324,13 @@ pub fn run_cli(
                     "  step {:>2} [{}] ESCALATED [{}] ({}ms) → packet: {}",
                     seq, kind, category, elapsed_ms, packet_path
                 );
-                println!("    (driver halts pending operator decision; per v0.3 no auto-reject)");
+                if !await_decisions {
+                    println!("    (--await-decisions not set; driver halts here)");
+                }
             }
             StepOutcome::Failed { seq, kind, error, elapsed_ms } => {
                 println!("  step {:>2} [{}] FAILED ({}ms): {}", seq, kind, elapsed_ms, error);
             }
-        }
-        outcomes.push(outcome);
-
-        if is_lean_failed && auto_repair && repair_attempts < max_repair_attempts {
-            repair_attempts += 1;
-            let repair_step = PlannedStep {
-                seq: next_seq,
-                kind: StepKind::Repair {
-                    strategy: strategy.to_string(),
-                    max_iterations: 5,
-                },
-                rationale: format!(
-                    "LeanCheck failed; --auto-repair attempt {}/{} (strategy={})",
-                    repair_attempts, max_repair_attempts, strategy
-                ),
-            };
-            let recheck_step = PlannedStep {
-                seq: next_seq + 1,
-                kind: StepKind::LeanCheck,
-                rationale: "re-verify after auto-repair".into(),
-            };
-            next_seq += 2;
-            // push_front + push_front in reverse order so the
-            // recheck runs AFTER the repair.
-            work.push_front(recheck_step);
-            work.push_front(repair_step);
-            println!("  → auto-repair: injected Repair + recheck LeanCheck");
         }
     }
 
@@ -193,6 +346,7 @@ pub fn run_cli(
         steps: outcomes,
         cost_usd_total: ex.cost_gate.spent_usd,
         cost_usd_max: ex.cost_gate.max_usd,
+        anthropic_usage: ex.anthropic_usage_observed.clone(),
     };
 
     println!();

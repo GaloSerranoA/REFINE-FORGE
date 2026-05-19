@@ -22,6 +22,12 @@ pub struct RunReport {
     pub steps: Vec<StepOutcome>,
     pub cost_usd_total: f64,
     pub cost_usd_max: f64,
+    /// Anthropic API usage as reported by the API itself.
+    /// Surfaced for post-run reporting; the cost-gate's
+    /// upfront $0.07/attempt estimate remains authoritative
+    /// for budget control. `None` when no Anthropic call ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anthropic_usage: Option<refineforge_strategies::UsageStats>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -121,11 +127,41 @@ mod tests {
             steps: vec![proceeded(), escalated()],
             cost_usd_total: 0.0,
             cost_usd_max: 10.0,
+            anthropic_usage: None,
         };
         let j = serde_json::to_string(&r).expect("ser");
         let back: RunReport = serde_json::from_str(&j).expect("de");
         assert_eq!(back.claim_id, "EXAMPLE-002");
         assert_eq!(back.summary, r.summary);
         assert_eq!(back.steps.len(), 2);
+    }
+
+    #[test]
+    fn report_with_anthropic_usage_round_trips() {
+        let r = RunReport {
+            claim_id: "X".into(),
+            criteria_version: "0.3".into(),
+            started_at: "t1".into(),
+            finished_at: "t2".into(),
+            dry_run: false,
+            strategy: "anthropic".into(),
+            operator: None,
+            summary: RunSummary::default(),
+            steps: Vec::new(),
+            cost_usd_total: 0.35,
+            cost_usd_max: 1.0,
+            anthropic_usage: Some(refineforge_strategies::UsageStats {
+                calls: 4,
+                input_tokens: 2000,
+                output_tokens: 400,
+                cache_creation_input_tokens: 100,
+                cache_read_input_tokens: 1500,
+            }),
+        };
+        let j = serde_json::to_string(&r).expect("ser");
+        let back: RunReport = serde_json::from_str(&j).expect("de");
+        let u = back.anthropic_usage.expect("usage round-trips");
+        assert_eq!(u.calls, 4);
+        assert_eq!(u.input_tokens, 2000);
     }
 }

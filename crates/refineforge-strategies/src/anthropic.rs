@@ -147,6 +147,34 @@ pub struct Usage {
     pub cache_read_input_tokens: u32,
 }
 
+/// Per-strategy-instance accumulation of Anthropic API usage.
+/// Phase 3.7 surfaces this in the autonomous driver's `RunReport`
+/// so the operator can see actual token counts after the run.
+///
+/// **No USD conversion is computed here.** Anthropic pricing
+/// shifts; embedding a per-model rate would drift silently. The
+/// driver's `--max-cost-usd` cost-gate stays authoritative for
+/// budget control via an upfront $0.07/attempt estimate; this
+/// struct is for post-run reporting only.
+#[derive(Debug, Clone, Default, serde::Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageStats {
+    pub calls: u32,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+}
+
+impl UsageStats {
+    pub fn merge(&mut self, u: &Usage) {
+        self.calls += 1;
+        self.input_tokens += u.input_tokens as u64;
+        self.output_tokens += u.output_tokens as u64;
+        self.cache_creation_input_tokens += u.cache_creation_input_tokens as u64;
+        self.cache_read_input_tokens += u.cache_read_input_tokens as u64;
+    }
+}
+
 // ─── Strategy ───────────────────────────────────────────────────────────
 
 pub struct AnthropicStrategy<T: AnthropicTransport> {
@@ -155,18 +183,47 @@ pub struct AnthropicStrategy<T: AnthropicTransport> {
     pub max_tokens: u32,
     pub enable_caching: bool,
     transport: T,
+    /// Shared usage accumulator. The factory clones the `Arc`
+    /// so the executor can read it after the boxed strategy has
+    /// been moved into `repair::repair`.
+    usage_stats: std::sync::Arc<std::sync::Mutex<UsageStats>>,
 }
 
 impl<T: AnthropicTransport> AnthropicStrategy<T> {
-    /// Default constructor: caching enabled, max_tokens=4096.
+    /// Default constructor: caching enabled, max_tokens=4096,
+    /// fresh per-instance usage accumulator.
     pub fn new(api_key: String, model: impl Into<String>, transport: T) -> Self {
+        Self::with_usage_stats(
+            api_key,
+            model,
+            transport,
+            std::sync::Arc::new(std::sync::Mutex::new(UsageStats::default())),
+        )
+    }
+
+    /// Like [`Self::new`] but the caller provides the
+    /// `Arc<Mutex<UsageStats>>` so they can read it after the
+    /// strategy has been consumed.
+    pub fn with_usage_stats(
+        api_key: String,
+        model: impl Into<String>,
+        transport: T,
+        usage_stats: std::sync::Arc<std::sync::Mutex<UsageStats>>,
+    ) -> Self {
         Self {
             api_key,
             model: model.into(),
             max_tokens: 4096,
             enable_caching: true,
             transport,
+            usage_stats,
         }
+    }
+
+    /// Clone of the shared usage accumulator. Caller reads the
+    /// inner `UsageStats` after the repair loop completes.
+    pub fn usage_stats_handle(&self) -> std::sync::Arc<std::sync::Mutex<UsageStats>> {
+        self.usage_stats.clone()
     }
 
     pub fn with_max_tokens(mut self, n: u32) -> Self {
@@ -230,6 +287,11 @@ impl<T: AnthropicTransport> RepairStrategy for AnthropicStrategy<T> {
     ) -> Result<Option<Patch>> {
         let request = self.build_request(diagnostic, file_content);
         let response = self.transport.send(&request)?;
+        if let Some(u) = &response.usage {
+            if let Ok(mut stats) = self.usage_stats.lock() {
+                stats.merge(u);
+            }
+        }
         Ok(parse_response_into_patch(&response))
     }
 
@@ -292,6 +354,22 @@ pub fn anthropic_mock_strategy() -> Box<dyn RepairStrategy> {
         "claude-opus-4-7",
         MockTransport::declines(),
     ))
+}
+
+/// Same as [`anthropic_mock_strategy`] but also returns a handle
+/// to the shared usage accumulator (always zero for the
+/// declining mock, but type-symmetric with
+/// `anthropic_strategy_from_env_with_usage`).
+pub fn anthropic_mock_strategy_with_usage()
+-> (Box<dyn RepairStrategy>, std::sync::Arc<std::sync::Mutex<UsageStats>>) {
+    let handle = std::sync::Arc::new(std::sync::Mutex::new(UsageStats::default()));
+    let strategy = AnthropicStrategy::with_usage_stats(
+        "MOCK-KEY-NOT-USED".to_string(),
+        "claude-opus-4-7",
+        MockTransport::declines(),
+        handle.clone(),
+    );
+    (Box::new(strategy), handle)
 }
 
 #[cfg(test)]

@@ -178,6 +178,11 @@ impl GitOps for SubprocessGitOps {
 pub struct MockGitOps {
     files: Arc<Mutex<HashMap<PathBuf, String>>>,
     commits: Arc<Mutex<Vec<MockCommit>>>,
+    /// When `Some(reason)`, every `write_file` call substitutes
+    /// `(pending)` in the written content with `APPROVED: <reason>`.
+    /// Used by EXAMPLE-002-style dogfood tests to simulate operator
+    /// approval without a real commit-then-edit dance.
+    auto_approve_reason: Arc<Mutex<Option<String>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -197,6 +202,14 @@ impl MockGitOps {
             .lock()
             .unwrap()
             .insert(file_rel.to_path_buf(), content.into());
+    }
+
+    /// Test-only mode: every subsequent `write_file` call
+    /// rewrites the content's `(pending)` marker with
+    /// `APPROVED: <reason>`. Lets tests simulate "operator
+    /// approves the packet between commit and next poll."
+    pub fn auto_approve_packets(&self, reason: impl Into<String>) {
+        *self.auto_approve_reason.lock().unwrap() = Some(reason.into());
     }
 
     pub fn commits(&self) -> Vec<MockCommit> {
@@ -240,10 +253,16 @@ impl GitOps for MockGitOps {
         file_rel: &Path,
         content: &str,
     ) -> Result<(), GitCheckpointError> {
+        let effective = if let Some(reason) = self.auto_approve_reason.lock().unwrap().as_ref()
+        {
+            content.replace("(pending)", &format!("APPROVED: {}", reason))
+        } else {
+            content.to_string()
+        };
         self.files
             .lock()
             .unwrap()
-            .insert(file_rel.to_path_buf(), content.to_string());
+            .insert(file_rel.to_path_buf(), effective);
         Ok(())
     }
 }

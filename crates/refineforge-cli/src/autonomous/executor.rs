@@ -99,6 +99,17 @@ pub struct Executor<G: GitOps> {
     pub project_ctx: ProjectContext,
     pub cost_gate: CostGate,
     pub generated_at: String,
+    /// Filled in by a Repair step that invokes a real Anthropic
+    /// strategy. Phase 3.7: surfaced in the `RunReport`'s
+    /// `anthropic_usage` field for post-run reporting.
+    pub anthropic_usage_observed: Option<refineforge_strategies::UsageStats>,
+    /// When `dry_run` is set, system steps short-circuit AND
+    /// packet commits are skipped by default. Setting this to
+    /// `true` keeps packet commits live even under `dry_run` —
+    /// needed by integration tests (and any future operator
+    /// flow) that want to exercise the await-resumption path
+    /// without burning real Lake build time.
+    pub commit_packets_in_dry_run: bool,
 }
 
 impl<G: GitOps> Executor<G> {
@@ -119,6 +130,8 @@ impl<G: GitOps> Executor<G> {
             project_ctx: ProjectContext::test_default(),
             cost_gate: CostGate::new(0.0),
             generated_at: "2026-05-18T00:00:00Z".into(),
+            anthropic_usage_observed: None,
+            commit_packets_in_dry_run: false,
         }
     }
 
@@ -136,6 +149,24 @@ impl<G: GitOps> Executor<G> {
                 strategy,
                 max_iterations,
             } => self.run_repair_step(step, strategy, *max_iterations, started),
+            StepKind::RunTrainingExperiment { config_path } => {
+                self.run_subprocess_step(
+                    step,
+                    "RunTrainingExperiment",
+                    "REFINEFORGE_REFINE_TRAIN_BIN",
+                    "refine-train",
+                    &["run", config_path, "--dry-run"],
+                    started,
+                )
+            }
+            StepKind::RunBitExactGate { config_path } => self.run_subprocess_step(
+                step,
+                "RunBitExactGate",
+                "REFINEFORGE_REFINE_BITEXACT_BIN",
+                "refine-bitexact",
+                &["run", config_path],
+                started,
+            ),
             StepKind::EngineAction(action) => {
                 let decision = match self.engine.decide(action, &self.project_ctx) {
                     Ok(d) => d,
@@ -167,7 +198,7 @@ impl<G: GitOps> Executor<G> {
                         let packet_rel = packet_path_for(&self.claim_id, category, step.seq);
                         let category_slug = category.slug().to_string();
                         let packet_path_str = packet_rel.display().to_string();
-                        if !self.dry_run {
+                        if !self.dry_run || self.commit_packets_in_dry_run {
                             let msg = format!(
                                 "escalation: {} for {}",
                                 category.slug(),
@@ -310,6 +341,67 @@ impl<G: GitOps> Executor<G> {
         }
     }
 
+    fn run_subprocess_step(
+        &self,
+        step: &PlannedStep,
+        kind_label: &'static str,
+        env_var: &str,
+        default_bin: &str,
+        args: &[&str],
+        started: Instant,
+    ) -> StepOutcome {
+        if self.dry_run {
+            return StepOutcome::Proceeded {
+                seq: step.seq,
+                kind: kind_label.into(),
+                detail: format!(
+                    "dry-run: would shell `{} {}`",
+                    default_bin,
+                    args.join(" ")
+                ),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+            };
+        }
+        let bin = std::env::var(env_var).unwrap_or_else(|_| default_bin.to_string());
+        let output = std::process::Command::new(&bin)
+            .args(args)
+            .current_dir(&self.repo_root)
+            .output();
+        match output {
+            Ok(out) if out.status.success() => StepOutcome::Proceeded {
+                seq: step.seq,
+                kind: kind_label.into(),
+                detail: format!(
+                    "{} {} exit 0 ({} bytes stdout)",
+                    bin,
+                    args.join(" "),
+                    out.stdout.len()
+                ),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+            },
+            Ok(out) => StepOutcome::Failed {
+                seq: step.seq,
+                kind: kind_label.into(),
+                error: format!(
+                    "{} exited {} — stderr: {}",
+                    bin,
+                    out.status,
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+            },
+            Err(e) => StepOutcome::Failed {
+                seq: step.seq,
+                kind: kind_label.into(),
+                error: format!(
+                    "spawn `{}` failed: {} — set {} to override the binary path",
+                    bin, e, env_var
+                ),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+            },
+        }
+    }
+
     fn run_repair_step(
         &mut self,
         step: &PlannedStep,
@@ -343,7 +435,7 @@ impl<G: GitOps> Executor<G> {
                 elapsed_ms: started.elapsed().as_millis() as u64,
             };
         }
-        let strategy: Box<dyn RepairStrategy> = match resolve_strategy(strategy_name) {
+        let (strategy, usage_handle) = match resolve_strategy(strategy_name) {
             Ok(s) => s,
             Err(e) => {
                 return StepOutcome::Failed {
@@ -361,12 +453,31 @@ impl<G: GitOps> Executor<G> {
         };
         match repair::repair(&self.repo_root, &self.claim_id, config) {
             Ok(report) => {
+                let usage = usage_handle
+                    .lock()
+                    .map(|s| s.clone())
+                    .unwrap_or_default();
+                let usage_str = if usage.calls > 0 {
+                    format!(
+                        " [api: {} calls, {} input + {} output tokens, {} cache-create + {} cache-read]",
+                        usage.calls,
+                        usage.input_tokens,
+                        usage.output_tokens,
+                        usage.cache_creation_input_tokens,
+                        usage.cache_read_input_tokens
+                    )
+                } else {
+                    String::new()
+                };
+                // Surface latest usage on the executor so RunReport can read it.
+                self.anthropic_usage_observed = Some(usage);
                 let detail = format!(
-                    "repair[{}] outcome={:?}, iterations={}, file_modified={}",
+                    "repair[{}] outcome={:?}, iterations={}, file_modified={}{}",
                     strategy_name,
                     report.outcome,
                     report.iterations.len(),
-                    report.file_modified
+                    report.file_modified,
+                    usage_str
                 );
                 match report.outcome {
                     RepairOutcome::AlreadyClean | RepairOutcome::Fixed { .. } => {
@@ -411,15 +522,32 @@ impl<G: GitOps> Executor<G> {
 }
 
 /// Resolve a `--strategy` CLI value to a concrete
-/// [`RepairStrategy`]. `anthropic` reads `ANTHROPIC_API_KEY` +
-/// optional `ANTHROPIC_MODEL` from the environment.
-pub fn resolve_strategy(name: &str) -> Result<Box<dyn RepairStrategy>, String> {
+/// [`RepairStrategy`] + a shared usage-accumulator handle.
+/// `anthropic` reads `ANTHROPIC_API_KEY` + optional
+/// `ANTHROPIC_MODEL` from the environment.
+///
+/// For non-Anthropic strategies (`mock`) the usage handle stays
+/// at default `UsageStats { calls: 0, .. }`; this lets the
+/// caller treat strategy-resolution uniformly.
+pub fn resolve_strategy(
+    name: &str,
+) -> Result<
+    (
+        Box<dyn RepairStrategy>,
+        std::sync::Arc<std::sync::Mutex<refineforge_strategies::UsageStats>>,
+    ),
+    String,
+> {
     match name {
-        "mock" => Ok(Box::new(MockStrategy)),
-        "anthropic-mock" => Ok(refineforge_strategies::anthropic_mock_strategy()),
-        "anthropic" => {
-            refineforge_strategies::anthropic_strategy_from_env().map_err(|e| e.to_string())
-        }
+        "mock" => Ok((
+            Box::new(MockStrategy),
+            std::sync::Arc::new(std::sync::Mutex::new(
+                refineforge_strategies::UsageStats::default(),
+            )),
+        )),
+        "anthropic-mock" => Ok(refineforge_strategies::anthropic_mock_strategy_with_usage()),
+        "anthropic" => refineforge_strategies::anthropic_strategy_from_env_with_usage()
+            .map_err(|e| e.to_string()),
         other => Err(format!(
             "unknown strategy `{}` (known: mock, anthropic-mock, anthropic)",
             other
@@ -644,6 +772,85 @@ mod tests {
         match resolve_strategy("definitely-not-a-real-strategy") {
             Err(e) => assert!(e.contains("unknown strategy"), "got: {}", e),
             Ok(_) => panic!("expected Err for unknown strategy"),
+        }
+    }
+
+    #[test]
+    fn dry_run_run_training_experiment_records_proceeded() {
+        let mut ex = mock_executor();
+        ex.dry_run = true;
+        let step = PlannedStep {
+            seq: 4,
+            kind: StepKind::RunTrainingExperiment {
+                config_path: "training/configs/example-qwen-1.5b.yaml".into(),
+            },
+            rationale: "test".into(),
+        };
+        let outcome = ex.run_step(&step);
+        match outcome {
+            StepOutcome::Proceeded { kind, detail, .. } => {
+                assert_eq!(kind, "RunTrainingExperiment");
+                assert!(
+                    detail.contains("refine-train run") && detail.contains("--dry-run"),
+                    "detail missing expected argv shape: {}",
+                    detail
+                );
+            }
+            other => panic!("expected Proceeded, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dry_run_run_bitexact_gate_records_proceeded() {
+        let mut ex = mock_executor();
+        ex.dry_run = true;
+        let step = PlannedStep {
+            seq: 5,
+            kind: StepKind::RunBitExactGate {
+                config_path: "kernels/configs/matmul_fp32.yaml".into(),
+            },
+            rationale: "test".into(),
+        };
+        let outcome = ex.run_step(&step);
+        match outcome {
+            StepOutcome::Proceeded { kind, detail, .. } => {
+                assert_eq!(kind, "RunBitExactGate");
+                assert!(
+                    detail.contains("refine-bitexact run"),
+                    "detail missing expected argv shape: {}",
+                    detail
+                );
+            }
+            other => panic!("expected Proceeded, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn non_dry_run_subprocess_step_fails_helpfully_when_binary_missing() {
+        let mut ex = mock_executor();
+        ex.dry_run = false;
+        // Override the binary path to something guaranteed not to exist.
+        let bogus = "definitely-not-a-real-binary-9999.exe";
+        std::env::set_var("REFINEFORGE_REFINE_TRAIN_BIN", bogus);
+        let step = PlannedStep {
+            seq: 4,
+            kind: StepKind::RunTrainingExperiment {
+                config_path: "x.yaml".into(),
+            },
+            rationale: "test".into(),
+        };
+        let outcome = ex.run_step(&step);
+        std::env::remove_var("REFINEFORGE_REFINE_TRAIN_BIN");
+        match outcome {
+            StepOutcome::Failed { error, kind, .. } => {
+                assert_eq!(kind, "RunTrainingExperiment");
+                assert!(
+                    error.contains("REFINEFORGE_REFINE_TRAIN_BIN"),
+                    "error should mention the env-var override: {}",
+                    error
+                );
+            }
+            other => panic!("expected Failed, got {:?}", other),
         }
     }
 

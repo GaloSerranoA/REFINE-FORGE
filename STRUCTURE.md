@@ -311,8 +311,15 @@ Submodules:
   `crate::repair::repair` with `resolve_strategy(name)`
   (`mock` / `anthropic-mock` / `anthropic`); cost-gate
   charges $0.07 × max_iterations upfront for `anthropic`.**
+  **Phase 3.7: `StepKind::RunTrainingExperiment` /
+  `RunBitExactGate` subprocess-shell to `refine-train` /
+  `refine-bitexact` (binary path overridable via env vars).
+  `resolve_strategy` now returns the
+  `(Box<dyn RepairStrategy>, Arc<Mutex<UsageStats>>)` tuple;
+  Repair step records Anthropic token usage on the Executor.**
   Engine actions go through `Engine::decide`; escalations
-  commit a packet unless `--dry-run`.
+  commit a packet unless `--dry-run` (override:
+  `Executor::commit_packets_in_dry_run = true` for tests).
 - `cost.rs` — `CostGate` with fail-closed `charge(amount)`;
   honours `--max-cost-usd`.
 - `report.rs` — `RunReport` JSON with per-step outcomes +
@@ -320,7 +327,12 @@ Submodules:
 - `mod.rs` — `run_cli` (Phase 3.5: loads `ProjectContext` +
   `Claim` from disk via `refineforge_escalation::load_project_context`
   before constructing the `Executor`) + `escalations_list`
-  (queue dashboard).
+  (queue dashboard). **Phase 3.7: extracted
+  `run_worklist<G: GitOps>(ex, plan, cfg: &WorkRunConfig)`
+  helper. `WorkRunConfig` carries `auto_repair`,
+  `await_decisions`, repair/poll knobs. Handles the four
+  `DecisionOutcome` variants after Escalated when
+  `--await-decisions` is set.**
 
 Tests: 23 inline + 4 in `tests/autonomous_e2e.rs` (2 loader
 tests against real repo claims, 1 dry-run end-to-end against

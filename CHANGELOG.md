@@ -10,6 +10,206 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Phase 3.7: close the remaining Phase-3 leftovers (await + dogfood + trainer/bitexact + usage)
+
+Four items at once. Per-item honest scope below.
+
+#### 1. `await_decision` resumption from `run_cli`
+
+The Phase 3.5/3.6 worklist loop halted at the first `Escalated`
+outcome. Phase 3.7 refactors it into a generic
+`pub fn run_worklist<G: GitOps>(ex: &mut Executor<G>, plan,
+cfg: &WorkRunConfig) -> Vec<StepOutcome>` so the worklist is
+testable with `MockGitOps`, and adds escalation-await
+resumption gated by the new `--await-decisions` flag:
+
+| Outcome | After-await behaviour |
+|---|---|
+| `Approved { reason }` | Append `OperatorDecision: Proceeded` and continue with the next step in the worklist. |
+| `Rejected { reason }` | Append `OperatorDecision: Failed` and halt. |
+| `EditAndResubmit { suggestions }` | Same as Rejected — operator must re-run with edits. |
+| `Partial(p)` | Append Failed with the per-item split — Phase 3.7 doesn't generate batched packets from the driver, so a Partial response is treated as unexpected and halts for operator follow-up. |
+
+`WorkRunConfig` carries `strategy`, `auto_repair`,
+`await_decisions`, `repair_max_iterations`,
+`max_repair_attempts`, `await_poll_interval`. Default
+`await_poll_interval = 5s` matches Phase 2's `AwaitConfig`.
+
+Per criteria v0.3 the loop still has **no timeout** — visible
+failure beats silent failure; operators run `refine
+escalations list` to inspect the queue.
+
+#### 2. `--inject-counter-idealisation` flag + EXAMPLE-002 dogfood
+
+Implements plan §3 phase 4's acceptance test, modulo the
+"under 5 minutes" and "real LLM" parts (those are operator-env
+dependent). New CLI flag `--inject-counter-idealisation`
+synthetically injects `Action::MapRustToLean { rust_type:
+"u64", lean_type: "Nat", lossy_kinds: [UnsignedOverflow] }`
+into the planner — the same Cat 2 escalation a real LLM
+strategy would produce when refining EXAMPLE-002, but
+reproducible without a live LLM call.
+
+New integration test `example_002_counter_idealisation_dogfood_with_await_approval`
+(in `crates/refineforge-cli/tests/autonomous_e2e.rs`):
+- Loads the real EXAMPLE-002 claim from `claims/`.
+- Constructs an Executor with `MockGitOps` + the bait
+  Action + `--await-decisions = true`.
+- `git.auto_approve_packets("counter saturating_add gap
+  documented in refinement doc")` simulates the operator
+  approving the packet between commit and the first poll.
+- Runs `run_worklist` end-to-end.
+- Asserts:
+  - **exactly ONE** Escalated outcome (Cat 2: `idealisation`)
+  - **exactly ONE** `OperatorDecision: Proceeded` (APPROVED)
+  - Scan + BundleExport BOTH ran after approval
+  - `RunSummary { failed: 0, escalated: 1, success: true }`
+
+To exercise this against the LIVE LLM end-to-end the operator
+runs (from PowerShell with sourced User-scope key):
+```
+$env:ANTHROPIC_API_KEY = [Environment]::GetEnvironmentVariable(
+    'ANTHROPIC_API_KEY', 'User')
+refine.exe autonomous EXAMPLE-002 --strategy anthropic-mock `
+    --inject-counter-idealisation --await-decisions `
+    --max-cost-usd 1.00 --operator galo@serragi.com
+```
+(`anthropic-mock` declines so no real cost; switch to
+`anthropic` for a paid run.)
+
+#### 3. `refine-train` / `refine-bitexact` integration
+
+Two new planner variants:
+- `StepKind::RunTrainingExperiment { config_path }` — appended
+  after BundleExport via `Planner::with_training_step(path)`.
+  Executor subprocess-shells to `refine-train run <path>
+  --dry-run` (the `--dry-run` is hardcoded for Phase 3.7
+  because real training requires the operator's backend +
+  dataset).
+- `StepKind::RunBitExactGate { config_path }` — appended after
+  any training steps via `Planner::with_bitexact_step(path)`.
+  Subprocess-shells to `refine-bitexact run <path>` (no
+  `--dry-run`; the bit-exact gate's whole point is to run
+  the kernel for real and hash the output).
+
+Binary path is overridable via env var:
+- `REFINEFORGE_REFINE_TRAIN_BIN` → defaults to `refine-train`.
+- `REFINEFORGE_REFINE_BITEXACT_BIN` → defaults to
+  `refine-bitexact`.
+
+Same env-var-override pattern as the existing
+`REFINEFORGE_COSIGN_BIN`. Reasonable failure path: if the
+binary isn't on PATH and the env var isn't set, the step
+records `Failed` with a message naming the env var so the
+operator knows what to set.
+
+**Honest scope**: this wires the **step kinds + planner
+builders + executor subprocess dispatch + error reporting**.
+Real training (axolotl / HF Trainer / etc.) requires an
+operator-provided backend YAML; real bit-exact gating
+requires an operator-provided kernel script + CUDA runtime.
+The autonomous driver inherits both from PATH. No CLI flag
+yet to inject these via `refine autonomous` — operators
+construct a custom plan via the library API; a future
+`--inject-training <path>` / `--inject-bitexact <path>` flag
+is a one-file follow-up.
+
+#### 4. Per-call usage reader (token counts; **no** USD invented)
+
+Anthropic's API already returns a `usage` block (input /
+output / cache-creation / cache-read tokens) per call.
+`refineforge-strategies` was parsing it and discarding it;
+Phase 3.7 keeps it.
+
+New in `refineforge-strategies`:
+- `UsageStats { calls, input_tokens, output_tokens,
+  cache_creation_input_tokens, cache_read_input_tokens }`
+  with a `merge(&Usage)` accumulator.
+- `AnthropicStrategy::with_usage_stats(key, model, transport,
+  Arc<Mutex<UsageStats>>)` — caller-supplied shared
+  accumulator. The existing `new(...)` constructor wraps it
+  with a fresh `Arc`.
+- New factory `anthropic_strategy_from_env_with_usage() ->
+  (Box<dyn RepairStrategy>, Arc<Mutex<UsageStats>>)`. The
+  Phase-3.6 `anthropic_strategy_from_env()` is preserved as
+  a thin wrapper that drops the handle.
+- `propose_patch` calls `usage_stats.merge(...)` on every
+  successful response.
+
+New in `refineforge-cli/autonomous`:
+- `Executor.anthropic_usage_observed: Option<UsageStats>`
+  field. Phase 3.7 `run_repair_step` reads the handle after
+  `repair::repair` returns and stores the snapshot.
+- `resolve_strategy(name) -> (Box<dyn RepairStrategy>,
+  Arc<Mutex<UsageStats>>)` (was just `Box<dyn RepairStrategy>`).
+- `RunReport.anthropic_usage: Option<UsageStats>` field,
+  serialized with `#[serde(skip_serializing_if = "Option::is_none")]`
+  so non-Anthropic runs keep clean JSON.
+- The Repair-step `detail` string gets a usage suffix when
+  usage is non-zero: `" [api: N calls, X input + Y output
+  tokens, A cache-create + B cache-read]"`.
+
+**Deliberately NOT included**: a USD-conversion table.
+Anthropic's per-token prices shift; embedding constants in
+this crate would drift silently and over-bill or under-bill
+quietly. The driver's `--max-cost-usd` cost-gate stays
+authoritative for budget control via the conservative
+`$0.07/attempt` upfront estimate; the token counts are for
+post-run reporting and operator-side cost reconciliation.
+
+#### Test additions
+
+`crates/refineforge-cli/src/autonomous/planner.rs`:
+- `with_training_step_appends_after_bundle`
+- `with_bitexact_step_appends_after_training`
+- `run_training_experiment_step_kind_serializes`
+- `run_bitexact_gate_step_kind_serializes`
+
+`crates/refineforge-cli/src/autonomous/executor.rs`:
+- `dry_run_run_training_experiment_records_proceeded`
+- `dry_run_run_bitexact_gate_records_proceeded`
+- `non_dry_run_subprocess_step_fails_helpfully_when_binary_missing`
+
+`crates/refineforge-cli/src/autonomous/report.rs`:
+- `report_with_anthropic_usage_round_trips`
+
+`crates/refineforge-cli/tests/autonomous_e2e.rs`:
+- `example_002_counter_idealisation_dogfood_with_await_approval`
+  (the formal plan §3 phase 4 acceptance gate test, with the
+  caveat that the live-LLM portion is documented + the
+  operator runs it separately).
+
+`refineforge-escalation::MockGitOps`:
+- `auto_approve_packets(reason)` test mode that rewrites
+  `(pending)` → `APPROVED: <reason>` on every `write_file`.
+  Used by the dogfood test to simulate operator approval.
+
+#### Tests
+
+- `cargo nextest run -p refineforge-cli`: **60/60 pass** (was
+  51; +9 new across planner, executor, report, dogfood).
+- `cargo nextest run --workspace`: **378/378 pass** (was 369;
+  same +9).
+
+#### Honest leftovers (smaller still)
+
+- **No CLI flags for `--inject-training` / `--inject-bitexact`.**
+  The library-API path (`Planner::with_training_step`) ships;
+  the CLI flags are deferred to keep the `refine autonomous`
+  signature stable for this commit. One-file follow-up.
+- **EXAMPLE-002 dogfood live-LLM end-to-end was NOT executed
+  this commit.** The integration test exercises the
+  await-resumption + plan-mutation + post-approval-continuation
+  logic with a mock strategy + dry-run system steps + simulated
+  approval. The PowerShell command above is the operator's
+  next live invocation — it's already shippable; this commit
+  hasn't burned the API credit a real run would cost.
+- **Per-call USD conversion is intentionally absent.** Token
+  counts surface; pricing tables don't.
+- **The Anthropic strategy still discards `stop_reason`** —
+  could surface it in `RunReport` for "did the LLM finish
+  vs. hit max_tokens?" diagnostics. Trivial; deferred.
+
 ### Added — Phase 3.6: live Anthropic-strategy auto-repair wired into `refine autonomous` (LLM call observed end-to-end)
 
 **This commit ships a real, working live LLM repair path AND

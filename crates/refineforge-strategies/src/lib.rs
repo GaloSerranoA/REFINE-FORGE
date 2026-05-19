@@ -32,9 +32,12 @@ pub mod anthropic;
 pub mod reqwest_transport;
 
 pub use anthropic::{
-    anthropic_mock_strategy, AnthropicStrategy, AnthropicTransport, MockTransport,
+    anthropic_mock_strategy, anthropic_mock_strategy_with_usage, AnthropicStrategy,
+    AnthropicTransport, MockTransport, UsageStats,
 };
 pub use reqwest_transport::ReqwestTransport;
+
+use std::sync::{Arc, Mutex};
 
 // ─── Convenience factories used by the refine CLI ───────────────────────
 
@@ -47,10 +50,22 @@ use refineforge_repair_api::RepairStrategy;
 /// Reads `ANTHROPIC_API_KEY` (required) and optionally
 /// `ANTHROPIC_MODEL` (default: `claude-opus-4-7`).
 pub fn anthropic_strategy_from_env() -> Result<Box<dyn RepairStrategy>> {
+    anthropic_strategy_from_env_with_usage().map(|(s, _)| s)
+}
+
+/// Like [`anthropic_strategy_from_env`] but also returns a handle
+/// to the shared usage accumulator. The autonomous driver uses
+/// this so it can read total Anthropic token counts after the
+/// repair loop completes.
+pub fn anthropic_strategy_from_env_with_usage()
+-> Result<(Box<dyn RepairStrategy>, Arc<Mutex<UsageStats>>)> {
     let key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| {
         anyhow!("ANTHROPIC_API_KEY env var is not set — refine repair --strategy anthropic needs it")
     })?;
     let model = std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-opus-4-7".into());
     let transport = ReqwestTransport::new(key.clone());
-    Ok(Box::new(AnthropicStrategy::new(key, model, transport)))
+    let handle = Arc::new(Mutex::new(UsageStats::default()));
+    let strategy =
+        AnthropicStrategy::with_usage_stats(key, model, transport, handle.clone());
+    Ok((Box::new(strategy), handle))
 }
