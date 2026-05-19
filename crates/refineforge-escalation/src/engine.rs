@@ -148,9 +148,6 @@ fn summarise(action: &Action, primary: Category, all: &[Category]) -> String {
         (Category::Scope, Action::AddTheorem { module, name, .. }) => {
             format!("add theorem {}.{} not in claim scope", module, name)
         }
-        (Category::Scope, Action::AddLeanImport { import_path, .. }) => {
-            format!("first-time Mathlib import {}", import_path)
-        }
         (Category::Scope, Action::AddWorkspaceCrate { name }) => {
             format!("add workspace crate {}", name)
         }
@@ -323,24 +320,13 @@ fn classify_scope(action: &Action, ctx: &ProjectContext) -> Option<Evidence> {
             }
         }
 
-        // "First time the AI uses a Mathlib import in this project."
-        // v0.2: Mathlib-first-use merged into Scope (resolution of open Q1).
-        Action::AddLeanImport {
-            import_path,
-            is_mathlib,
-            ..
-        } => {
-            if *is_mathlib && !ctx.mathlib_imports_existing.contains(import_path) {
-                Some(Evidence::Scope {
-                    what_added: format!("first-time Mathlib import: {}", import_path),
-                    smallest_in_scope_alternative: Some(
-                        "inline the needed lemma instead of importing".into(),
-                    ),
-                })
-            } else {
-                None
-            }
-        }
+        // v0.3: AddLeanImport never trips Cat 1. Trust footprint
+        // is established when a Lake package enters
+        // lake-manifest.json (handled by `classify_trust_base`
+        // for AddLakePackage). Per-module imports from an
+        // already-trusted package draw on existing trust and
+        // proceed without escalation.
+        Action::AddLeanImport { .. } => None,
 
         // "AI wants to add a new workspace crate ..."
         Action::AddWorkspaceCrate { name } => Some(Evidence::Scope {
@@ -360,14 +346,12 @@ fn classify_scope(action: &Action, ctx: &ProjectContext) -> Option<Evidence> {
             smallest_in_scope_alternative: None,
         }),
 
-        // AddLakePackage also trips Cat 8; surface it as Scope too
-        // because it expands the project's external dep surface.
-        Action::AddLakePackage { name, .. } => Some(Evidence::Scope {
-            what_added: format!("new Lake package: {}", name),
-            smallest_in_scope_alternative: Some(
-                "inline the lemma from the package instead".into(),
-            ),
-        }),
+        // v0.3: AddLakePackage no longer trips Cat 1. Mathlib (and
+        // any Lake registry package) is a trust-footprint extension
+        // — handled solely by `classify_trust_base`. The operator's
+        // decision on AddLakePackage is about trust delta
+        // (transitive footprint, axiom usage), not scope delta.
+        // Action::AddLakePackage handled in classify_trust_base.
 
         // AddKernelDirectory expands the kernels/ surface.
         Action::AddKernelDirectory { kernel_id } => Some(Evidence::Scope {
@@ -702,15 +686,18 @@ mod tests {
 
     #[test]
     fn summarise_lists_secondary_categories() {
+        // Under v0.3, AddKernelDirectory is a real multi-trip
+        // (Scope + BitExactRegression). Using it here exercises
+        // both branches of the summary formatter with realistic
+        // inputs.
         let s = summarise(
-            &Action::AddLakePackage {
-                name: "mathlib".into(),
-                version_or_rev: "v4.29.0".into(),
+            &Action::AddKernelDirectory {
+                kernel_id: "rope_v2".into(),
             },
-            Category::TrustBaseExtension,
-            &[Category::Scope, Category::TrustBaseExtension],
+            Category::BitExactRegression,
+            &[Category::Scope, Category::BitExactRegression],
         );
-        assert!(s.contains("Lake package mathlib"), "{}", s);
+        assert!(s.contains("rope_v2"), "{}", s);
         assert!(s.contains("scope"), "missing secondary in: {}", s);
     }
 }

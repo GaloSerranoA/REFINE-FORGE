@@ -35,4 +35,4 @@ pub use engine::{Engine, EngineError};
 /// criteria-doc revision; any `ProjectContext` whose
 /// `criteria_version` differs is refused by [`Engine::decide`]
 /// per the criteria-doc's "Criteria version recording" rule.
-pub const CRITERIA_VERSION: &str = "0.2";
+pub const CRITERIA_VERSION: &str = "0.3";

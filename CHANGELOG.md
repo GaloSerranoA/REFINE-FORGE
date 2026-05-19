@@ -10,6 +10,130 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Changed — Criteria v0.2 → v0.3 (operator same-day correction)
+
+v0.2 was operator-signed earlier the same day; before any
+Phase 2+ code lands, the operator revised three of four
+resolutions with reasoning that overrides the recommended
+defaults v0.2 carried. The engine and tests are updated to
+match; `CRITERIA_VERSION = "0.3"`.
+
+**Q1 — Mathlib first-use → Category 8, NOT Category 1.** v0.2
+merged Mathlib into Scope on the argument that "first-time use"
+is a scope-expansion event. v0.3 routes it to Trust-base on the
+argument that importing `Mathlib.Tactic.Linarith` adds ~1.5M
+lines of community-maintained Lean (with `Classical.choice` use
+and tactic implementations that have had soundness bugs) to the
+trust base of every claim using it. The operator-facing decision
+is about **trust delta** (transitive footprint, axiom usage,
+version-pinning audit), not **scope delta** (what does this
+claim cover).
+
+  Practical test (operator-stated): "if Mathlib v4.30 ships a
+  tactic regression, do we need to re-verify our bundles?" Yes →
+  trust-base concern. The answer is yes → Cat 8.
+
+  Cat 8 picks up new "escalate when" text + dedicated Mathlib /
+  Lake-registry decision-packet fields (specific modules, the
+  `lake-manifest.json` diff, the reviewer-checklist update).
+  Cat 1's prose explicitly directs Mathlib first-use to Cat 8.
+
+**Q3 — Auto-expiry rejected entirely.** v0.2 set 7-day default
+with per-category overrides. v0.3 rejects auto-expiry on the
+principle that **visible failure beats silent failure in a trust
+system**: a packet auto-rejected after 7 days might have been
+exactly the decision that needed careful thought, and the
+operator finds out a week later. The driver waits indefinitely;
+a new `refine escalations list [--claim X] [--age-gt N]`
+queue-inspection command (Phase 2 work) gives the operator a
+dashboard for "what am I blocking?" without the system making
+the decision. Optional reminders at 7/14/30 days are
+notifications, not auto-decisions.
+
+  Same principle as `refine bundle verify` failing closed when
+  cosign is missing — visible failure is the correct mode.
+
+**Q4 — Default one-per-item kept, but AI-proposed batching
+allowed under three named conditions.** v0.2's rigid rule
+created friction for cases like "8 `u64` → `Nat` idealisations
+on the same struct" where the underlying decision is identical.
+v0.3 keeps one-per as the default but lets the AI propose a
+batch when **(a)** every item trips the same category, **(b)**
+the AI's analysis and recommendation are identical across
+items, and **(c)** the AI's evidence does not distinguish
+between items. Batching is the AI's proposal, not its right;
+the human can approve as a unit OR split with per-item decisions
+in a single block (`APPROVED: 1-5,7; REJECTED: 6,8 [reason]`).
+Packet format requires a `batch:` YAML front-matter block with
+`items` + `rationale_for_batching`; the rationale itself is
+reviewable. Over-batching by the AI on the same kind of batch
+becomes a v0.3+ open question — operator-tracked, not
+auto-corrected.
+
+**Q2 — Bit-exact regression as own Cat 9 (unchanged from
+v0.2).** v0.3 expands Cat 9's "do NOT escalate" list to
+explicitly include `kernels/README.md` edits, kernel-script
+test-stub edits, and changes to the bit-exact gate's own logic
+(`crates/refineforge-bitexact/` source) — the gate itself lives
+in the trust chain and is **Cat 8 trust-base**, not Cat 9.
+
+#### Engine changes
+
+- `CRITERIA_VERSION` constant: `"0.2"` → `"0.3"`.
+- `classify_scope` no longer matches `Action::AddLakePackage`
+  (Mathlib is Cat 8 ONLY now). Removed branch is replaced with
+  an inline comment explaining the v0.3 routing.
+- `classify_scope` no longer matches `Action::AddLeanImport`
+  with `is_mathlib && !already_known`. Trust footprint is
+  established at lake-manifest entry (handled by
+  `classify_trust_base` for `AddLakePackage`); per-module
+  imports from an already-trusted package proceed.
+- `summarise` drops the dead Scope-AddLeanImport branch.
+- The expiry and batching meta-rules are still doc-only — the
+  engine has no expiry or batching logic to remove (both are
+  Phase 2 driver concerns).
+
+#### Test changes
+
+- `cat01_scope.rs`:
+  - Deleted `first_time_mathlib_import_escalates_as_scope`.
+  - Renamed inverse: `first_time_mathlib_import_does_not_trip_scope_in_v0_3`
+    (positive proceed check with explanatory comment).
+- `cat08_trust_base.rs`:
+  - `add_lake_package_escalates` renamed to
+    `add_lake_package_escalates_as_trust_base_only`; now
+    asserts Cat 1 is **NOT** in `.categories()`.
+  - Added `add_lake_package_non_mathlib_also_trust_base_only`.
+  - Added `mathlib_import_after_package_already_in_manifest_proceeds`.
+- `multi_category.rs`:
+  - Deleted `add_lake_package_trips_scope_plus_trust_base`
+    (no longer multi-trip under v0.3).
+  - `summary_lists_secondary_categories` switched to use
+    `AddKernelDirectory` (the canonical remaining multi-trip
+    Scope+BitExactRegression case).
+- `edge_cases.rs`:
+  - `criteria_version_constant_is_exact_v0_2` →
+    `criteria_version_constant_is_exact_v0_3` (asserts `"0.3"`).
+- Engine inline test `summarise_lists_secondary_categories`
+  switched to `AddKernelDirectory` for the same reason.
+
+#### Tests
+
+- `cargo nextest run -p refineforge-escalation`: **118/118 pass**
+  (was 117 under v0.2; net +1 from cat08 additions and cat01
+  rename).
+- `cargo nextest run --workspace`: **281/281 pass** (was 280;
+  same +1).
+
+#### Honest disclosure
+
+v0.2 lasted exactly one commit ([37cca31](https://example.invalid))
+before being superseded. No real escalation packets were
+generated under v0.2 (Phase 2+ is not yet built), so the
+supersession is clean — the version-history table preserves the
+audit trail, and the v0.2 entry stays in the table so a future
+reader sees why v0.3 looks the way it does.
+
 ### Added — Phase 1: refineforge-escalation pure-functional engine + criteria v0.2
 
 Operator signed off on `docs/escalation-criteria.md` v0.1 with

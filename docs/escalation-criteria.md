@@ -1,8 +1,10 @@
 # Escalation criteria — the AI-to-human contract for `refine autonomous`
 
-> **Status:** v0.2 — operator-signed. These criteria are the
-> boundary between autonomous AI action and human judgment for
-> the `refine autonomous` driver
+> **Status:** v0.3 — operator-signed (v0.2 was operator-signed
+> the same day; superseded by v0.3 within hours when the operator
+> revised three of the four resolutions — see Version history).
+> These criteria are the boundary between autonomous AI action
+> and human judgment for the `refine autonomous` driver
 > (`crates/refineforge-escalation/` ships in this revision; the
 > wrapping driver in `crates/refineforge-autonomous/` is still
 > pending — see [`autonomous-driver-plan.md`](autonomous-driver-plan.md)).
@@ -66,8 +68,11 @@ that DO NOT escalate · what the decision packet must contain.
 Lean / Rust / config entity that is not listed in the claim's
 stated scope. Includes first-time-in-project structural choices
 (first use of an inductive predicate for a state machine, first
-use of `BitVec`, first Mathlib tactic, first sweep config beyond
-the existing dimensions).
+use of `BitVec`, first sweep config beyond the existing
+dimensions). **First-time use of an external Lake package
+(Mathlib etc.) is Category 8, not Category 1** — per v0.3,
+trust-footprint extensions are routed to Cat 8 because the
+operator's decision is about trust delta, not scope delta.
 
 **Escalate when:**
 - Claim YAML `scope: model-only` and AI wants to add a Rust
@@ -78,8 +83,6 @@ the existing dimensions).
   add `t3`.
 - AI wants to introduce a new Lean module that isn't imported
   from the library root.
-- First time the AI uses a Mathlib import in this project
-  (`Mathlib.X` not previously in `lake-manifest.json`).
 - AI wants to add a new workspace crate, a new top-level
   directory, or a new template under `templates/`.
 - AI wants to add a new ANTHROPIC_MODEL value, a new training
@@ -164,7 +167,7 @@ rewrites to avoid the axiom.
 - AI uses existing axioms from Lean core (already permitted).
 - AI uses lemmas marked `axiom` in Mathlib (those are imported,
   not declared in our source — but adding the Mathlib import
-  itself trips Category 1).
+  itself trips Category 8).
 
 **Decision packet contents:**
 - The exact axiom statement.
@@ -339,7 +342,16 @@ change looks routine.
 
 **Escalate when:**
 - Bumping `lean-toolchain` from v4.29.1 to any other version.
-- Adding a Mathlib (or other Lake package) dependency.
+- **First time the project imports a Mathlib (or other Lake
+  registry) module not previously in `lake-manifest.json`**
+  (moved here from Category 1 in v0.3 — Mathlib first-use is
+  a trust-footprint extension, not a scope expansion; importing
+  `Mathlib.Tactic.Linarith` adds ~1.5M lines of community-
+  maintained Lean to the trust base of every claim using it,
+  including Mathlib's `Classical.choice` usage and tactic
+  implementations).
+- Adding any Lake package not previously in the manifest, even
+  beyond Mathlib.
 - Bumping any pin in `Cargo.lock` for crates in the bundle's
   trust chain (`sha2`, `serde`, `regex`, `lsp-types`, `reqwest`,
   `sigstore-rs` if added, etc.).
@@ -349,6 +361,9 @@ change looks routine.
 - Adding a new system tool to the verifier Dockerfile.
 - Pointing `refine repair --strategy anthropic` at a different
   ANTHROPIC_MODEL than previously approved.
+- Changing the bit-exact gate's OWN logic
+  (`crates/refineforge-bitexact/`) — that's trust-base, not
+  Category 9 (which is for kernel changes the gate observes).
 
 **Do NOT escalate when:**
 - Updating a dev-dependency that doesn't appear in any bundle
@@ -357,6 +372,9 @@ change looks routine.
   time and doesn't end up in the binary — but DO escalate if a
   refinement-doc cites it.
 - Changing test fixtures.
+- Subsequent imports from a Lake package already in
+  `lake-manifest.json` (the trust footprint is established at
+  manifest entry, not per-module import).
 
 **Decision packet contents:**
 - The current pin and proposed pin (with hash if available).
@@ -367,6 +385,22 @@ change looks routine.
 - Sibling claims that need re-verification after the bump.
 - Whether the bump invalidates any signed bundles already
   produced; if so, which.
+
+**Additional decision-packet fields for Mathlib / Lake registry
+first-use** (per v0.3):
+- The specific Mathlib (or registry) module(s) the AI wants to
+  use (e.g., `Mathlib.Tactic.Linarith`,
+  `Mathlib.Analysis.Calculus.MeanValue`).
+- The transitive trust footprint — the `lake-manifest.json` diff
+  showing every new dependency entry (Mathlib pulls in `Std`,
+  `Qq`, `aesop`, `proofwidgets`, etc.).
+- Whether the project's reviewer checklist needs a new item
+  asserting the Mathlib version pin (and which Mathlib commit
+  is being pinned), so future signers know what they're
+  certifying.
+- The AI's smallest in-scope alternative (e.g., "inline the
+  one needed lemma from `Mathlib.X` instead of pulling the
+  whole package") and why it was rejected.
 
 ---
 
@@ -403,6 +437,11 @@ operator-named hardware class."
   the gate previously passed at (would mask divergence).
 
 **Do NOT escalate when:**
+- AI edits `kernels/README.md` or other Section 4
+  documentation (no executable change to hashed output).
+- AI edits test stubs under `kernels/scripts/` that are NOT
+  the real kernel command (the stubs exist to test the gate
+  itself, not to certify hardware).
 - AI updates the kernel's README, comments inside its source
   (with no executable change), or docs adjacent to it.
 - AI changes a kernel-adjacent test fixture that is NOT
@@ -410,6 +449,10 @@ operator-named hardware class."
 - AI raises `run_count` above the baseline (strictly more
   evidence; cannot turn a Pass into a Fail except by
   catching real non-determinism, which is the desired outcome).
+- AI changes the bit-exact **gate's own logic**
+  (`crates/refineforge-bitexact/` source code) — that's
+  **Category 8 trust-base** instead, because the gate sits
+  in the trust chain for every Section 4 claim.
 
 **Decision packet contents:**
 - The kernel id and its current passing baseline (run_count,
@@ -435,9 +478,14 @@ operator-named hardware class."
 
 If a proposed action trips more than one category, the escalation
 packet **lists all of them** and uses the most-restrictive's
-required decision-packet contents. Example: adding a Mathlib
-dependency to a `model-only` claim trips Category 1 (scope) AND
-Category 8 (trust-base); the packet documents both.
+required decision-packet contents. Example: adding a new
+`kernels/rope_v2/` directory trips Category 1 (new top-level
+scope) AND Category 9 (a new un-baselined bit-exact target);
+the packet documents both, with Cat 9's template as the primary
+since the bit-exact decision is more specific. (Under v0.3,
+adding a Mathlib dependency is Cat 8 ONLY — see Cat 8's
+definition for why trust-footprint is not concurrently a scope
+concern.)
 
 ### When the AI is uncertain whether a category applies
 
@@ -497,59 +545,118 @@ removal date and the rationale. Once removed, the category cannot
 be silently re-added — a re-addition is a new Category-1
 escalation.
 
-### Escalation expiry (v0.2)
+### Escalation expiry (v0.3 — supersedes v0.2)
 
-> Resolution of open question §3 from v0.1.
+> Resolution of open question §3 from v0.1, **revised in v0.3.**
+> v0.2 set a 7-day default with per-category overrides; v0.3
+> rejects auto-expiry entirely on the principle that **visible
+> failure is always preferable to silent failure in a trust
+> system**.
 
-The autonomous driver waits on each packet for **7 calendar
-days** by default before treating it as auto-rejected and
-shutting the claim down (the driver writes a `STATUS:
-EXPIRED-AUTO-REJECTED` line into the packet and stops). Expiry
-is **configurable per-category**: each category may override the
-default via `--escalation-timeout-days.<category>=<N>` on the
-driver invocation, or via a `[escalation_timeout_days]` table in
-the operator's local config. The minimum permitted value is
-**1 day** (an operator who needs faster turnaround should be
-present, not racing a timer); the maximum is **30 days** (beyond
-that, the work has stalled and re-planning is cheaper than
-waiting).
+**The autonomous driver waits indefinitely.** A packet has no
+auto-reject timer. If the operator never decides, the claim
+sits blocking forever and someone eventually notices — that's
+the desired failure mode for a trust system. The cost of an
+auto-reject after 7 days is silent failure: the operator might
+have been carefully thinking through the most consequential
+decision in the claim, and finds out a week later they were
+timed out on it. Silent failure is the worse error.
 
-Rationale for the default: 7 days absorbs a typical
-holiday/conference week without forcing a rushed decision, while
-preventing packets from accumulating forever. The per-category
-override exists because (a) Category 3 (custom axiom) and
-Category 5 (status upgrade) often warrant longer review than
-Category 1 (scope), and (b) Category 9 (bit-exact regression) is
-often time-sensitive because the kernel change is blocking a
-release.
+This is the same principle that makes `refine bundle verify`
+fail closed when cosign is missing instead of silently passing —
+the user finds out immediately what's wrong.
 
-Expiry is recorded in the packet's YAML front-matter as
-`expires_at: <ISO 8601 timestamp>` so the operator sees the
-deadline at the top of every packet they open.
+To make indefinite-pending ergonomic rather than just
+defensible, the driver ships a queue-inspection command:
 
-### Batch escalations (v0.2)
+```
+refine escalations list [--claim <CLAIM-ID>] [--age-gt <DAYS>]
+```
 
-> Resolution of open question §4 from v0.1.
+Shows every pending packet across all claims, sorted by age,
+with a clear "oldest pending: <N> days" line at the top.
+Operators self-manage their queue; the system never makes
+the decision for them.
 
-If an AI step proposes a single coherent action that trips
-multiple categories simultaneously (the "Multiple categories
-simultaneously" rule above), that is **one packet** listing all
-tripped categories.
+Optional reminders are permitted at **7, 14, and 30 days** —
+but reminders are notifications (e.g., to the operator's
+preferred channel), not auto-decisions. The decision itself
+stays human. Whether to emit reminders, and through which
+channel, is an operator-configurable concern; the engine has
+no opinion.
 
-If an AI step proposes N independent actions (e.g., 5 separate
-idealisations spread across 5 different Rust→Lean mappings, each
-escalatable on its own), that is **N packets** — one per item.
-Rationale: per-item context is more important than brevity. The
-operator deciding on idealisation #3 should not be visually
-crowded by idealisations #1, #2, #4, #5 in the same view. A
-batched packet biases toward the operator approving or rejecting
-all 5 together when they would have approved 3 and rejected 2.
+### Batch escalations (v0.3 — supersedes v0.2)
 
-If the operator finds themselves drowning in per-item packets for
-a single claim, that is a signal to either (a) restructure the
-claim into smaller scoped claims, or (b) re-examine the criteria
-to see whether one category is firing too eagerly — both are
-operator decisions, not AI ones.
+> Resolution of open question §4 from v0.1, **revised in v0.3.**
+> v0.2 was rigid one-packet-per-item; v0.3 keeps that as the
+> default but allows AI-proposed batching under three named
+> conditions.
+
+**Default: one decision = one packet.** The reasoning still
+holds: a 5-decision packet is 5× harder to read carefully than
+5 separate ones, and the human will start triaging by skim —
+the rubber-stamp failure mode the entire contract is designed
+to prevent.
+
+**Exception: AI-proposed batching when the decisions are
+formally identical.** Example: AI is refining a Rust struct
+with 8 `u64` fields. Each one is a separate Cat 2 idealisation
+(`u64` → `Nat`), but the underlying decision is the same:
+"are we OK with the saturating-vs-unbounded gap on this kind
+of arithmetic?" Forcing 8 separate packets here is noise, not
+signal — the human will approve all 8 identically and resent
+the friction.
+
+The AI MAY propose a batch when all three conditions hold:
+
+- **(a)** Every item trips the **same category**.
+- **(b)** The AI's **analysis and recommendation are identical**
+  across items.
+- **(c)** The AI's **evidence does not distinguish** between
+  items (i.e., no per-item difference in alternative considered,
+  downstream impact, or sibling-claim implications).
+
+If any single item's reasoning differs from the others — even
+slightly — they are separate packets. Batching is the AI's
+**proposal, not its right**.
+
+**Packet format implication** (Phase 2 work). Most packets carry
+`batch: null` in their YAML front-matter. Batched packets carry:
+
+```yaml
+batch:
+  items:
+    - id: counter.value_u64_to_nat
+      ...
+    - id: counter.timestamp_u64_to_nat
+      ...
+  rationale_for_batching: |
+    All 8 items are u64→Nat idealisations on the same Counter
+    struct; same Cat 2 reasoning; same alternative (BitVec 64)
+    considered and rejected at the same cost estimate.
+```
+
+The `rationale_for_batching` field is itself reviewable — if
+the AI is wrong about the decisions being substantively
+identical, the human catches it there.
+
+**Operator response forms** for batched packets:
+
+```
+APPROVED: all
+REJECTED: all [reason]
+APPROVED: 1-5,7; REJECTED: 6,8 [per-item reasons]
+```
+
+The third form (partial approval) splits the batch into
+individual decisions in a single decision block.
+
+**Over-batching detection.** If the operator splits more than
+once on the same kind of batch (same category, same AI
+rationale shape), the AI is over-batching and that pattern
+itself becomes a v0.3+ open question — the criteria-doc
+maintainer should consider tightening the conditions for that
+category.
 
 ## Version history
 
@@ -557,10 +664,21 @@ operator decisions, not AI ones.
 |---|---|---|---|
 | 0.1 | 2026-05-18 | Initial draft. 8 categories from the supervised-autonomy design conversation. Pending operator review before any code enforces them. | (pending) |
 | 0.2 | 2026-05-18 | Operator-signed. Added Category 9 (bit-exact regression — resolution of open question §2). Merged "first-time Mathlib use" into Scope (resolution of §1). Added Meta-rule "Escalation expiry" with 7-day default + per-category override (resolution of §3). Added Meta-rule "Batch escalations" — N independent items = N packets, single coherent multi-category action = 1 packet (resolution of §4). | galo@serragi.com |
+| 0.3 | 2026-05-18 | **Operator-signed; supersedes v0.2 same-day.** Q1 revised: Mathlib first-use is now Category 8 (Trust-base), NOT Category 1 (Scope) — Mathlib is a trust-footprint extension, not a scope expansion. Q3 revised: auto-expiry rejected; indefinite-pending + new `refine escalations list` queue-inspection command (Phase 2 work); optional notifications at 7/14/30 days are not auto-decisions. Q4 revised: default still one-per-item, but AI MAY propose batching when (a) same category, (b) identical analysis, (c) evidence doesn't distinguish; packet format requires `batch:` field with `rationale_for_batching`; partial-approval response form documented. Cat 9 "do NOT escalate" list expanded to explicitly include docs / test-stub edits / gate-logic-changes (gate logic is Cat 8 trust-base instead). | galo@serragi.com |
 
 ## Open questions
 
-Resolved in v0.2 (see Version history). New open questions
+Resolved in v0.3 (see Version history). New open questions
 discovered during future operator reviews land here.
 
-(None at v0.2.)
+**For v0.4+ (Phase 4 dogfood findings):**
+- Per-module Mathlib trust granularity. v0.3 treats trust as
+  established at lake-manifest entry; per-module differences
+  (e.g., importing `Mathlib.Analysis.X` vs `Mathlib.Tactic.X`
+  pulls different transitive trust) may need finer-grained
+  escalation if dogfood surfaces a real divergence.
+- Over-batching detection threshold. v0.3 says "if the operator
+  splits more than once on the same kind of batch, the AI is
+  over-batching" but doesn't quantify "more than once" — is it
+  per-category-per-claim, per-category-globally, per-week?
+  Dogfood data needed.

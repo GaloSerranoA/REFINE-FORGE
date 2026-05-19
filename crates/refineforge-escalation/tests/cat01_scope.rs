@@ -61,10 +61,16 @@ fn add_theorem_already_in_claim_scope_proceeds() {
     assert!(d.is_proceed(), "expected proceed, got {:?}", d);
 }
 
-// ---------- Positive: first-time Mathlib import ----------
+// ---------- v0.3: Mathlib imports never trip Cat 1 ----------
+//
+// Under v0.3, the trust footprint is established when a Lake
+// package enters lake-manifest.json (Cat 8 trigger via
+// AddLakePackage). Per-module `import Mathlib.X` statements
+// always proceed because they draw on already-trusted surface.
+// See `cat08_trust_base.rs` for the Cat 8 first-use tests.
 
 #[test]
-fn first_time_mathlib_import_escalates_as_scope() {
+fn first_time_mathlib_import_does_not_trip_scope_in_v0_3() {
     let ctx = ProjectContext::test_default(); // no Mathlib imports yet
     let act = Action::AddLeanImport {
         module: "Refineforge.Counter".into(),
@@ -72,11 +78,8 @@ fn first_time_mathlib_import_escalates_as_scope() {
         is_mathlib: true,
     };
     let d = eng().decide(&act, &ctx).unwrap();
-    assert!(d.is_escalate());
-    assert_eq!(d.primary_category(), Some(Category::Scope));
+    assert!(d.is_proceed(), "v0.3: Mathlib imports proceed; got {:?}", d);
 }
-
-// ---------- Negative: subsequent Mathlib import ----------
 
 #[test]
 fn already_used_mathlib_import_proceeds() {

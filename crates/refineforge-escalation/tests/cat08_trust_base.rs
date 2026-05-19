@@ -28,20 +28,56 @@ fn bump_lean_toolchain_escalates() {
     assert_eq!(d.primary_category(), Some(Category::TrustBaseExtension));
 }
 
-// ---------- Positive: add Lake package ----------
+// ---------- Positive: add Lake package (v0.3 — Cat 8 only) ----------
+//
+// Under v0.3, Mathlib (and any Lake registry package) is a
+// trust-footprint extension, NOT a scope expansion. The Cat 1
+// trip on AddLakePackage that v0.2 produced was removed in v0.3.
 
 #[test]
-fn add_lake_package_escalates() {
+fn add_lake_package_escalates_as_trust_base_only() {
     let act = Action::AddLakePackage {
         name: "mathlib".into(),
         version_or_rev: "v4.29.0".into(),
     };
     let d = eng().decide(&act, &ProjectContext::test_default()).unwrap();
     assert!(d.is_escalate());
-    // multi-category: also trips Scope.
     let cats = d.categories();
     assert!(cats.contains(&Category::TrustBaseExtension));
-    assert!(cats.contains(&Category::Scope));
+    assert!(
+        !cats.contains(&Category::Scope),
+        "v0.3: AddLakePackage no longer trips Cat 1; got {:?}",
+        cats
+    );
+    assert_eq!(d.primary_category(), Some(Category::TrustBaseExtension));
+}
+
+#[test]
+fn add_lake_package_non_mathlib_also_trust_base_only() {
+    let act = Action::AddLakePackage {
+        name: "batteries".into(),
+        version_or_rev: "v0.1.0".into(),
+    };
+    let d = eng().decide(&act, &ProjectContext::test_default()).unwrap();
+    assert!(d.is_escalate());
+    let cats = d.categories();
+    assert_eq!(cats, vec![Category::TrustBaseExtension]);
+}
+
+#[test]
+fn mathlib_import_after_package_already_in_manifest_proceeds() {
+    // Per v0.3: the trust footprint is established when the
+    // package enters lake-manifest. Subsequent per-module imports
+    // do not re-trigger escalation.
+    let mut ctx = ProjectContext::test_default();
+    ctx.lake_packages_existing.insert("mathlib".into());
+    let act = Action::AddLeanImport {
+        module: "Refineforge.NewModule".into(),
+        import_path: "Mathlib.Analysis.SpecialFunctions.Pow.Real".into(),
+        is_mathlib: true,
+    };
+    let d = eng().decide(&act, &ctx).unwrap();
+    assert!(d.is_proceed(), "v0.3: post-manifest Mathlib imports proceed; got {:?}", d);
 }
 
 // ---------- Positive: bump in-bundle Cargo pin ----------

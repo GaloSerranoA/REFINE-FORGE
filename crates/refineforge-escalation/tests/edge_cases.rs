@@ -75,10 +75,10 @@ fn unknown_action_evidence_is_unknown_shape() {
 }
 
 #[test]
-fn criteria_version_constant_is_exact_v0_2() {
+fn criteria_version_constant_is_exact_v0_3() {
     // Public constant pinned so a silent bump can't drift away
     // from the criteria-doc revision.
-    assert_eq!(CRITERIA_VERSION, "0.2");
+    assert_eq!(CRITERIA_VERSION, "0.3");
 }
 
 #[test]

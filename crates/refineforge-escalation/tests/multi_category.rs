@@ -9,27 +9,11 @@ fn eng() -> Engine {
     Engine::new()
 }
 
-// AddLakePackage trips Scope (new external dep) + Trust-base
-// (Lake-package surface). Primary should be TrustBaseExtension
-// because its packet has the pin-version field Scope's lacks.
-#[test]
-fn add_lake_package_trips_scope_plus_trust_base() {
-    let act = Action::AddLakePackage {
-        name: "mathlib".into(),
-        version_or_rev: "v4.29.0".into(),
-    };
-    let d = eng().decide(&act, &ProjectContext::test_default()).unwrap();
-    assert!(d.is_escalate());
-
-    let cats = d.categories();
-    assert!(cats.contains(&Category::Scope), "missing Scope in {:?}", cats);
-    assert!(
-        cats.contains(&Category::TrustBaseExtension),
-        "missing TrustBaseExtension in {:?}",
-        cats
-    );
-    assert_eq!(d.primary_category(), Some(Category::TrustBaseExtension));
-}
+// v0.3 deleted the previous `add_lake_package_trips_scope_plus_trust_base`
+// test: AddLakePackage is now Cat 8 ONLY (Mathlib first-use is a
+// trust-footprint extension, not a scope expansion). See
+// cat08_trust_base.rs::add_lake_package_escalates_as_trust_base_only
+// for the v0.3 single-category test.
 
 // AddKernelDirectory trips Scope (new kernels/<X>/) + BitExactRegression
 // (new un-baselined target). Primary should be BitExactRegression.
@@ -48,12 +32,13 @@ fn add_kernel_directory_trips_scope_plus_bit_exact() {
 }
 
 // Summary should mention both the primary and the secondaries
-// so the operator immediately sees the multi-trip.
+// so the operator immediately sees the multi-trip. Use
+// AddKernelDirectory under v0.3 since it's the canonical
+// remaining multi-trip case (Scope + BitExactRegression).
 #[test]
 fn summary_lists_secondary_categories() {
-    let act = Action::AddLakePackage {
-        name: "mathlib".into(),
-        version_or_rev: "v4.29.0".into(),
+    let act = Action::AddKernelDirectory {
+        kernel_id: "rope_v2".into(),
     };
     let d = eng().decide(&act, &ProjectContext::test_default()).unwrap();
     if let Decision::Escalate(r) = d {
@@ -63,8 +48,8 @@ fn summary_lists_secondary_categories() {
             r.summary
         );
         assert!(
-            r.summary.contains("Lake package"),
-            "summary missing primary: {}",
+            r.summary.contains("rope_v2"),
+            "summary missing primary kernel id: {}",
             r.summary
         );
     } else {

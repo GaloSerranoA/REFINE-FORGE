@@ -32,7 +32,7 @@ refineforge/
 │   ├── refineforge-eval/       # Section 2: `refine-eval` benchmark harness
 │   ├── refineforge-trainer/    # Section 2: `refine-train` orchestration CLI
 │   ├── refineforge-bitexact/   # Section 4: `refine-bitexact` gate primitive
-│   ├── refineforge-escalation/ # Cross-section: AI-to-human escalation engine (criteria v0.2)
+│   ├── refineforge-escalation/ # Cross-section: AI-to-human escalation engine (criteria v0.3)
 │   ├── refineforge-derive/     # Section 1: #[derive(LeanModel)] proc-macro
 │   └── example-counter/        # EXAMPLE-002 tutorial impl (uses LeanModel)
 ├── training/
@@ -195,10 +195,11 @@ Public API:
 
 Modules: `category.rs` · `action.rs` · `decision.rs` · `context.rs` · `engine.rs`.
 
-Tests: 117 total (25 inline + 92 integration files under
-`tests/`, one per category + `multi_category.rs` + `edge_cases.rs`).
-Every positive and negative example from criteria-doc §3 has a
-named test.
+Tests: 118 total (under criteria v0.3 — was 117 under v0.2; net
++1 from cat08 additions and cat01 rename). Inline tests in each
+src module + integration tests under `tests/`, one file per
+category + `multi_category.rs` + `edge_cases.rs`. Every positive
+and negative example from criteria-doc §3 has a named test.
 
 **Phase 1 scope only.** File loaders (claim YAMLs / Cargo.lock /
 lake-manifest.json → `ProjectContext`) are deferred to the

@@ -28,7 +28,7 @@ Read in this order — each doc is short and points at the next.
 | [docs/security.md](docs/security.md) | Threat model, supply chain, signing chain (shipped), vuln reporting |
 | [docs/reproducible-build.md](docs/reproducible-build.md) | Bit-identical-rebuild methodology — Nix flake (authored), verification protocol |
 | [docs/bit-exact-reproducibility.md](docs/bit-exact-reproducibility.md) | GPU kernel bit-exact reproducibility: non-determinism sources + mitigations + gate primitive |
-| [docs/escalation-criteria.md](docs/escalation-criteria.md) | **CONTRACT v0.2** (operator-signed). 9 categories that always escalate to the human during `refine autonomous` runs. Enforced by `crates/refineforge-escalation` |
+| [docs/escalation-criteria.md](docs/escalation-criteria.md) | **CONTRACT v0.3** (operator-signed; v0.2 superseded same-day with Q1/Q3/Q4 revisions). 9 categories that always escalate to the human during `refine autonomous` runs. Enforced by `crates/refineforge-escalation` |
 | [docs/autonomous-driver-plan.md](docs/autonomous-driver-plan.md) | Enterprise build plan for `refine autonomous`: 5 phases, ~2 weeks, $50-150 API budget, risks + mitigations. **Phase 1 shipped** (the escalation engine); Phases 2-5 pending |
 | [docs/HELYX-CASE-STUDY.md](docs/HELYX-CASE-STUDY.md) | Pointer to the external worked example (helyx-proofforge) |
 
