@@ -10,6 +10,89 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — `docs/plans/resourcing-plan.md` (people / compute / tools / funding)
+
+Pure docs commit. Captures the operator's resourcing brief
+in enterprise format alongside the other two plans. Scoped
+to **refineforge proper**; the wider ecosystem (HELYX
+substrate, Cogn8ty, immortal-nars/prolog, Knowledge Foundry)
+is named in §7 as external-and-out-of-scope.
+
+The plan covers:
+
+- **§2 People** — the 4 specialists matching ARCHITECTURE.md's
+  4 sections. Lean specialist named HIGHEST PRIORITY (refineforge's
+  value anchors on the Lean side). Each section gets a
+  seniority + effort + rate range. **US fully-loaded ceiling
+  vs LATAM mid-band** quoted side-by-side; ~$880-1,350k vs
+  ~$400-610k annual for the 4-FTE peak shape.
+- **§3 Compute** — the operator's 16,000 GPU-hour line item
+  for the Section 2 fine-tune (~13B model on N≥1000 broken-
+  proof corpus). Also the smaller items: Mathlib mutation
+  pipeline (CPU-bound), Anthropic API dev budget (~$50-500/mo),
+  CI compute, GPU CI for future kernel work.
+- **§4 Tools** — Rust, Python, Lean 4, Git, cargo-nextest,
+  cosign — all already in v0.2.1 use. Plus the training-framework
+  decision (axolotl + PyTorch + FSDP recommended; trainer
+  crate already targets this shape) and the experiment-tracker
+  pick (W&B free tier recommended).
+- **§5 Funding strategy** — the operator-stated three options
+  with **concrete numbers**:
+  - **Option A (grants)**: NVIDIA Inception ($5-25k credits) +
+    AWS Activate (up to $100k) + Google Cloud Research +
+    Azure for Startups + Lambda/CoreWeave direct startup
+    credits + HuggingFace + Anthropic/OpenAI research grants.
+    Recommended stack: ~$45k effective at ~$5-10k cash outlay.
+  - **Option B (customer-funded)**: $50-250k POC engagement
+    OR embedded-researcher model (~$150k + benefits + cost-
+    plus compute). IP-sharing is the friction point.
+  - **Option C (direct cash)**: 16,000 H100-hours at
+    $2.50/hr spot avg = ~$40k cloud; OR 8x H100 server
+    capex $300-450k + $5-15k/mo colo. Bare metal pays
+    back the cloud after 11-20 fine-tune-equivalents.
+- **§6 Software libraries** — broken down per section
+  (Lean / ML / DevOps / CUDA + cross-cutting Rust crypto).
+- **§8 Risks** — 8 named resourcing-level risks with
+  mitigations (Lean talent scarcity #1; mid-fine-tune
+  poaching #2; grant expiry; spot preemption; cloud price
+  spikes; IP-exfil risk on Option B; FX risk for LATAM
+  operators with USD cloud spend).
+- **§9 Open questions** — 8 items the operator must
+  resolve before committing to any number (region, hire
+  order, fine-tune model size, training framework, cloud
+  primary/fallback, funding lane choice, experiment-tracker
+  selection, GUI engineering line).
+- **§10 Headline 12-month budget** — full table covering
+  4 FTE + compute + Anthropic + observability + contingency.
+  **LATAM mid-band ~$520k/year; US ceiling ~$1.13M/year.**
+
+The plan does NOT commit to any of these numbers — they're
+**honest estimates** ready for sharpening when the operator
+goes out to hire, apply for grants, or sign cloud contracts.
+
+#### Honest carve-outs
+
+- All US salary figures are fully-loaded (~30% overhead);
+  European / LATAM rates are 40-60% lower for equivalent
+  seniority.
+- Cloud per-GPU-hour quotes are based on 2026-05 public
+  rates; spot prices and grant terms shift quarterly.
+- The 16,000 GPU-hour budget refines to ±25% based on
+  model size and dataset complexity — re-quote before
+  signing.
+- HELYX substrate, Cogn8ty, immortal-nars/prolog, and
+  Knowledge Foundry are **operator-side concerns** that
+  share some libraries with refineforge but are not part
+  of refineforge proper. Each gets its own resourcing
+  plan in the operator's project portfolio.
+
+#### Build gate before any spending decision
+
+The plan's §9 lists 8 open questions the operator must
+resolve. Decisions go into a v0.1 of `resourcing-plan.md`
+BEFORE the first hire offer / grant application / cloud
+contract.
+
 ### Added — `docs/plans/gui-plan.md` enterprise plan for refineforge-studio (plan only, no code)
 
 Pure docs commit. Lays the contract for an eventual

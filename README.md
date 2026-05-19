@@ -31,6 +31,7 @@ Read in this order — each doc is short and points at the next.
 | [docs/escalation-criteria.md](docs/escalation-criteria.md) | **CONTRACT v0.3** (operator-signed; v0.2 superseded same-day with Q1/Q3/Q4 revisions). 9 categories that always escalate to the human during `refine autonomous` runs. Enforced by `crates/refineforge-escalation` |
 | [docs/plans/autonomous-driver-plan.md](docs/plans/autonomous-driver-plan.md) | Enterprise build plan for `refine autonomous`: 5 phases, ~2 weeks, $50-150 API budget, risks + mitigations. **All plan phases 0-5 + 3.5 + 3.6 + 3.7 + 3.8 closed** under criteria v0.3. Phase 4 acceptance gate exercised against real Anthropic ($0.35 spend); v0.2.0 + v0.2.1 released and tagged; only Nix-flake first-build verification remains (needs a Nix-capable runner) |
 | [docs/plans/gui-plan.md](docs/plans/gui-plan.md) | **PLAN ONLY (no code yet).** Enterprise build plan for `refineforge-studio`, a professional Tauri-based production GUI exposing the four sections + operator console + autonomous driver. 9 phases, ~15 weeks, 6 named open questions to resolve before Phase 0 |
+| [docs/plans/resourcing-plan.md](docs/plans/resourcing-plan.md) | **PLAN ONLY.** People (4 specialists), compute (16,000 GPU-hours for the fine-tune line), tools, libraries, and three funding options (A grants / B customer-funded / C direct cash) with concrete numbers. 12-month headline budget: ~$520k LATAM mid-band, ~$1.13M US ceiling. 8 open questions to resolve before staffing decisions |
 | [docs/HELYX-CASE-STUDY.md](docs/HELYX-CASE-STUDY.md) | Pointer to the external worked example (helyx-proofforge) |
 
 ## What this is
@@ -153,7 +154,8 @@ refineforge/
     ├── HELYX-CASE-STUDY.md     # link to external worked example
     └── plans/
         ├── autonomous-driver-plan.md  # 5-phase build plan; all phases shipped + 3.5/3.6/3.7/3.8
-        └── gui-plan.md               # 9-phase plan for refineforge-studio (no code yet)
+        ├── gui-plan.md               # 9-phase plan for refineforge-studio (no code yet)
+        └── resourcing-plan.md        # people/compute/tools/funding; 12-mo budget; A/B/C options
 ```
 
 ## Quick start
