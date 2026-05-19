@@ -10,6 +10,87 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — `docs/why-rust.md`: the load-bearing trade-off (PyTorch vs Rust at the substrate)
+
+Pure docs commit. Captures the operator's strategic
+articulation:
+
+> **"PyTorch is good for humans. Rust is good for machines."**
+> — Galo Serrano Abad, NANTAR AI ROBOTICS
+
+Reviewer-grade answer to the inevitable "why didn't you use
+PyTorch?" question. The slogan is the compressed form; the
+new doc is the long form for reviewers who want to verify
+the reasoning before signing onto the substrate.
+
+#### Why this exists
+
+HELYX has its own `helyx-autograd`, `helyx-nn`, `helyx-jepa`,
+`helyx-train`, `helyx-inference`, `helyx-distill`. That's a
+major strategic bet — it costs the entire PyTorch ecosystem
+in exchange for memory safety, determinism, capability-typed
+effect tracking, bit-exact reproducibility, and a single
+trust-base for verified-core + neural components. The
+question "why?" needs an answer that survives serious review;
+this doc is that answer.
+
+#### Eight sections (~330 lines)
+
+1. **The trade-off in one paragraph.** PyTorch optimizes for
+   the human researcher; Rust optimizes for the machine
+   running trust-critical inference. Python's strengths
+   become liabilities under the eleven ceiling properties.
+2. **PyTorch's legitimate strengths (no strawmen).** REPL +
+   notebooks, ecosystem, reference impls, hiring pool,
+   dynamic shapes + autograd flexibility, debugging. These
+   are real wins for human productivity that the Rust bet
+   doesn't address.
+3. **Why Rust is good for machines — the ceiling properties.**
+   Five HELYX ceiling commitments that Python + PyTorch
+   **cannot satisfy at the language level**:
+   - Provably correct (Lean → Rust extraction; no Python
+     analog)
+   - Bit-exact reproducible (NumPy/PyTorch leak floats
+     across BLAS backends; Rust + direct CUDA/Metal gives
+     opt-in determinism per kernel)
+   - Capability-typed (Rust effect types; Python has no
+     language-level analog)
+   - Reproducible build (Cargo.lock vs `pip freeze`'s
+     famous non-reproducibility)
+   - Continuously evolvable without breaking trust
+     (mechanical semver vs Python's "prayer-driven"
+     evolution)
+4. **The cost — honestly accounted.** Acknowledges the
+   one-engineer-vs-PyTorch-contributors gap. Notes the
+   break-even isn't "feature count" but "ceiling
+   properties for trust-critical production AI."
+5. **Specific consequences for HELYX + refineforge.** No
+   FFI boundary; `refineforge-bitexact` coherent with
+   Substrate H; `refine autonomous` operates on one
+   workspace not two; single-binary distribution; same
+   `cargo test` discipline everywhere.
+6. **What this is NOT an argument for/against.** Not a
+   general "Rust > Python" position; not an argument
+   PyTorch is bad; not a religious stance; not a refusal
+   to interop at integration boundaries.
+7. **Reviewer FAQ.** Honest answers to the obvious
+   follow-ups: pre-trained weight loading, training at
+   scale, missing model architectures, research velocity
+   competition, one-operator sustainability. Notably
+   acknowledges the training-vs-deployment asymmetry:
+   PyTorch for training, Rust for everything downstream.
+8. **The slogan, one more time.** Closes with the
+   operator's one-liner restated as the executive
+   summary.
+
+#### Cross-references
+
+- `README.md` doc-map row added pointing at the new doc.
+- `STRUCTURE.md` docs table row added.
+
+No source / test changes. `cargo nextest run --workspace`
+still 383/383.
+
 ### Added — HELYX-AUDIT-001: the first refineforge claim against HELYX (production substrate)
 
 **Refineforge's first signed artifact in the HELYX namespace.**

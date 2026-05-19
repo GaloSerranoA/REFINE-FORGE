@@ -486,6 +486,7 @@ the bundle exporter once had is documented in `CHANGELOG.md`).
 | `security.md` | DevOps (Section 3) | Threat model, supply chain, **shipped** signing chain, vuln reporting |
 | `reproducible-build.md` | DevOps (Section 3) | Bit-identical-rebuild methodology, Nix flake (**authored — first-build pending**), verification protocol |
 | `bit-exact-reproducibility.md` | CUDA engineer (Section 4) | Sources of CUDA non-determinism + per-source mitigations + gate primitive |
+| `why-rust.md` | reviewers, prospective adopters | The trade-off behind HELYX + refineforge's Rust-native ML stack. One-liner: "PyTorch is good for humans. Rust is good for machines." Eight sections: honest accounting of PyTorch's strengths, the five ceiling properties Python can't satisfy, the cost being acknowledged, what this is NOT an argument for, reviewer FAQ |
 | `escalation-criteria.md` | **all sections** | **CONTRACT v0.3** — 9 categories that always escalate to the human during `refine autonomous` runs. Operator-signed |
 | `plans/autonomous-driver-plan.md` | maintainers, operators | 5-phase enterprise build plan for `refine autonomous`. All plan phases + 3.5-3.8 shipped; Phase 4 acceptance-gate exercised against real Anthropic ($0.35 spend); v0.2.0 + v0.2.1 released |
 | `plans/gui-plan.md` | maintainers, operators | 9-phase enterprise plan for `refineforge-studio` production GUI (Tauri 2.x + Solid). PLAN ONLY — no code; 6 open questions to resolve before Phase 0 |
