@@ -1,0 +1,32 @@
+claim_id: CLAIM-CRS-001
+title: "Workspace broadcast completeness"
+description: |
+  Consciousness-rs models a global-workspace ignition as a broadcast trace.
+  This claim verifies the structural slice that a constructed ignition trace
+  records one broadcast event for the ignition it represents.
+
+  Honest scope: this is a model-level invariant for the CRS integration
+  contract. It does not claim phenomenal consciousness.
+
+scope: model-only
+status: proven
+authors:
+  - consciousness-rs
+  - refineforge
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.Consciousness.Claims
+  file: lean/Refineforge/Consciousness/Claims.lean
+  theorems:
+    - workspace_broadcast_complete
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: "Structural CRS claim; no phenomenal-consciousness claim."

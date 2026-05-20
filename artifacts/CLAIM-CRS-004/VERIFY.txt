@@ -1,0 +1,27 @@
+refineforge proof bundle: CLAIM-CRS-004
+============================================
+
+This bundle contains every source file required to reproduce the
+Lean verification. Every file is hashed in manifest.json (SHA-256).
+Paths in the manifest use the repo-relative form; on disk they are
+flattened with `/` replaced by `__` so the bundle stays a single
+directory.
+
+To independently verify this bundle:
+
+  1. Install elan: https://github.com/leanprover/elan
+  2. Reconstruct the source layout. For each entry KEY in
+     manifest.json `files`:
+       - read the on-disk file `<KEY with '/' → '__'>`
+       - write it to `<KEY>` relative to a fresh working directory
+     A short shell loop does this:
+       for k in $(jq -r '.files | keys[]' manifest.json); do
+         mkdir -p "$(dirname "$k")"
+         cp "${k//\//__}" "$k"
+       done
+  3. Run:  cd lean && lake build
+  4. Re-hash this bundle with `refine bundle verify <this-dir>`
+     and confirm every entry in manifest.json matches.
+
+Pinned Lean toolchain: leanprover/lean4:v4.29.1
+Bundle schema: 1

@@ -1,0 +1,32 @@
+claim_id: CLAIM-CRS-003
+title: "Narrative log append-only step"
+description: |
+  Consciousness-rs narrative identity is represented as an append-only log.
+  This claim verifies the structural slice that one append step increments
+  the modeled length by exactly one.
+
+  Honest scope: this claim models append-only shape, not persistence durability
+  across every possible storage backend.
+
+scope: model-only
+status: proven
+authors:
+  - consciousness-rs
+  - refineforge
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.Consciousness.Claims
+  file: lean/Refineforge/Consciousness/Claims.lean
+  theorems:
+    - narrative_append_only
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: "Structural CRS claim; append-step model only."

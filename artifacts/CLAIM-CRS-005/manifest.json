@@ -1,0 +1,20 @@
+{
+  "claim_id": "CLAIM-CRS-005",
+  "created_at": "2026-05-20T04:50:04.592139900Z",
+  "lean_toolchain": "leanprover/lean4:v4.29.1",
+  "files": {
+    "claims/CLAIM-CRS-005.yaml": "de44542180163d89e1ea4b3156eb72647781186a390789de57f0df4e06b78047",
+    "docs/refinement/CLAIM-CRS-005.md": "4fb76ddeb766b6d9fc817c89a914e971ec22becac63b4418955952f09cfceebc",
+    "lean/Refineforge.lean": "fd1a18cacaaa52e2407ee4310406b42adca9d5840e2bca0f777ac2cca4f9fa18",
+    "lean/Refineforge/Consciousness/Claims.lean": "6a565bdef5b5b21d8413dbbc02f0df89c79c318badfce25cf3ad143a1b2f11bb",
+    "lean/Refineforge/Counter.lean": "e8f2e8097d1b47434a5146cd219741b0119ca513f99b6b945179cde1a72d5a7e",
+    "lean/Refineforge/Example.lean": "5c1ea46029bc96b8f6edc97313a4f1f15f47c30ce558abe1e56b890e3ca95b17",
+    "lean/Refineforge/Helyx.lean": "df18dd8f14b96b4f2ca96a066771828b87df14abbc363186d3589a40f6fbf8f5",
+    "lean/Refineforge/Helyx/Audit.lean": "e8669b97c8bf818dc4aa721ca1a8129e22cb21ce4cc78f3b60e7b0a442a7c0e0",
+    "lean/lake-manifest.json": "a6ca02c28984491153b391f57f9bba9ee7b8b8ecd9466b39258177ad6e9edc6c",
+    "lean/lakefile.toml": "7cb8ca5099c850288731f77eee6ae594e58c576b34b59f7d5bebc3598c5ea3b5",
+    "lean/lean-toolchain": "7dc000621e0046d1aada809e2b7177e64454645cf4c741e9daaf79c99ec2e7a2"
+  },
+  "report_sha256": "bb71a01ddf0174372414d1f4ef58272cd5164dafe68ca13e3670f7d9c1ecb6d5",
+  "bundle_schema": 1
+}

@@ -1,0 +1,32 @@
+claim_id: CLAIM-CRS-002
+title: "Workspace capacity bound"
+description: |
+  Consciousness-rs treats global-workspace capacity as an explicit bound on
+  selected content. This claim verifies the structural slice that content is
+  accepted only when the stated capacity relation holds.
+
+  Honest scope: this is a model-level invariant for the CRS integration
+  contract. It does not prove a biological workspace theory.
+
+scope: model-only
+status: proven
+authors:
+  - consciousness-rs
+  - refineforge
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.Consciousness.Claims
+  file: lean/Refineforge/Consciousness/Claims.lean
+  theorems:
+    - workspace_capacity_bound
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: "Structural CRS claim; bounded-content model only."

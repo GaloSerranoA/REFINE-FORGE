@@ -1,0 +1,32 @@
+claim_id: CLAIM-CRS-005
+title: "Phi-proxy determinism"
+description: |
+  Consciousness-rs reports Phi-proxy as a deterministic metric label rather
+  than as IIT Phi. This claim verifies the structural slice that the modeled
+  Phi-proxy function returns the same value for the same inputs.
+
+  Honest scope: this claim proves deterministic proxy behavior only. It does
+  not prove integrated information or consciousness.
+
+scope: model-only
+status: proven
+authors:
+  - consciousness-rs
+  - refineforge
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.Consciousness.Claims
+  file: lean/Refineforge/Consciousness/Claims.lean
+  theorems:
+    - phi_proxy_deterministic
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: "Structural CRS claim; metric proxy model only."
