@@ -46,6 +46,7 @@ pub fn run_one(
     project_root: &Path,
     entry: &CorpusEntry,
     strategy_name: &str,
+    weights_path: Option<&Path>,
     max_iterations: usize,
 ) -> Result<EntryResult> {
     let broken_path = project_root.join(&entry.broken_file);
@@ -85,7 +86,7 @@ pub fn run_one(
 
     // Build the strategy. We re-use the CLI's strategy registry to
     // avoid duplication.
-    let strategy = build_strategy(strategy_name)?;
+    let strategy = build_strategy(strategy_name, weights_path)?;
 
     let config = RepairConfig {
         max_iterations,
@@ -156,13 +157,23 @@ fn classify(o: &RepairOutcome) -> String {
     }
 }
 
-fn build_strategy(name: &str) -> Result<Box<dyn RepairStrategy>> {
+fn build_strategy(name: &str, weights_path: Option<&Path>) -> Result<Box<dyn RepairStrategy>> {
     Ok(match name {
         "mock" => Box::new(MockStrategy),
         "anthropic-mock" => refineforge_strategies::anthropic_mock_strategy(),
         "anthropic" => refineforge_strategies::anthropic_strategy_from_env()?,
+        "local-finetune" => {
+            let env_weights = std::env::var_os("REFINEFORGE_LOCAL_FINETUNE_WEIGHTS")
+                .map(std::path::PathBuf::from);
+            let path = weights_path.or(env_weights.as_deref()).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "local-finetune requires --weights-path <dir> or REFINEFORGE_LOCAL_FINETUNE_WEIGHTS"
+                )
+            })?;
+            refineforge_strategies::local_finetune_from_path(path)?
+        }
         other => anyhow::bail!(
-            "unknown strategy '{other}'; available: mock, anthropic-mock, anthropic"
+            "unknown strategy '{other}'; available: mock, anthropic-mock, anthropic, local-finetune"
         ),
     })
 }

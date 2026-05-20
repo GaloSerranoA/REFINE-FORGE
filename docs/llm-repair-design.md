@@ -27,7 +27,7 @@ is enforced by:
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ refine repair <CLAIM-ID> [--max-iterations N] [--strategy NAME] │
-│                          [--dry-run]                            │
+│                          [--weights-path DIR] [--dry-run]       │
 └──────────────────────────────────┬──────────────────────────────┘
                                    │
                   ┌────────────────▼────────────────┐
@@ -56,7 +56,8 @@ is enforced by:
               │  didOpen     │    │                  │
               │  didChange   │    │  impl:           │
               │  diagnostics │    │  - MockStrategy  │
-              │  shutdown    │    │  - (your LLM)    │
+              │  shutdown    │    │  - Anthropic     │
+              │              │    │  - local-finetune│
               └──────┬───────┘    └──────────────────┘
                      │
               ┌──────▼────────────────────┐
@@ -85,7 +86,7 @@ is enforced by:
 | `UnrecoverableError(reason)`     | Patch would introduce `sorry`/`admit`/axiom — rejected by gate       |
 | `MaxIterationsReached`           | Hit the iteration ceiling without converging                         |
 
-## 4. How to swap in a real LLM strategy
+## 4. Strategy contract
 
 The trait is small:
 
@@ -100,6 +101,63 @@ pub trait RepairStrategy {
     fn name(&self) -> &'static str;
 }
 ```
+
+`refineforge-strategies` ships these strategy surfaces:
+
+| Strategy | Invocation | Notes |
+|---|---|---|
+| `mock` | `refine repair CLAIM --strategy mock` | Declines every diagnostic. |
+| `anthropic` | `ANTHROPIC_API_KEY=... refine repair CLAIM --strategy anthropic` | Real Anthropic API transport with usage capture. |
+| `local-finetune` | `refine repair CLAIM --strategy local-finetune --weights-path DIR` | Local runtime-command bridge for a fine-tuned checkpoint. |
+
+`local-finetune` also works in `refine autonomous --auto-repair` and
+`refine-eval` with the same `--weights-path` option. The env fallback
+is `REFINEFORGE_LOCAL_FINETUNE_WEIGHTS`.
+
+## 5. Local fine-tuned model bridge
+
+The weights path is a directory containing
+`refineforge-local-finetune.json`:
+
+```json
+{
+  "runtime": "command",
+  "model_id": "qwen-proof-repair-v1",
+  "command": ["path/to/infer-once", "--weights", "path/to/weights"]
+}
+```
+
+For each diagnostic, refineforge writes a JSON request to the command's
+stdin and expects either a raw patch object or an envelope:
+
+```json
+{
+  "patch": {
+    "start_line": 0,
+    "start_char": 1,
+    "end_line": 0,
+    "end_char": 2,
+    "new_text": "trivial",
+    "rationale": "model patch"
+  },
+  "usage": {"input_tokens": 120, "output_tokens": 32},
+  "stop_reason": "end_turn"
+}
+```
+
+`{}` and `"patch": null` are clean declines. Usage is accumulated in
+the same `UsageStats` shape the autonomous report already surfaces.
+
+The native candle backend is still future work. It should replace the
+command runtime after a real checkpoint fixes the architecture,
+tokenizer, and safetensors layout.
+
+## 6. Historical Anthropic swap-in notes
+
+The Anthropic path is now implemented in
+`refineforge-strategies::{AnthropicStrategy, ReqwestTransport}`. The
+older manual recipe below is kept as design context for future
+provider-backed strategies.
 
 To wire up Anthropic's Claude as a strategy:
 
@@ -181,7 +239,7 @@ the prompt are the only per-request payload.
 See [Anthropic prompt caching docs](https://docs.anthropic.com/) and
 the project-level `CLAUDE.md` for the load-bearing rules.
 
-## 5. What's deliberately NOT in the skeleton
+## 7. What's deliberately NOT in the skeleton
 
 - **Concurrency / async runtime.** The LSP client is sync (sync
   subprocess stdio + reader thread + `mpsc::channel`). Async would
@@ -195,14 +253,15 @@ the project-level `CLAUDE.md` for the load-bearing rules.
   semantic regression elsewhere is not detected. The honest answer
   is "rerun `refine lean check-all` after a repair session and
   review the diff manually." A future version could automate this.
-- **Cost / token budgeting.** No per-session token caps. Add when
-  you have a real strategy that hits the API.
+- **Provider-neutral cost caps.** Anthropic repair attempts are
+  cost-gated in autonomous mode; local fine-tune token counts are
+  recorded, but local compute-to-USD accounting is not yet modeled.
 - **Conversation memory across iterations.** Each call to
   `propose_patch` is stateless. A smarter strategy could keep a
   per-session conversation with the model and feed back which
   patches were rejected by the gate, but that's not the v1 trait.
 
-## 6. Trusted code base (in addition to the framework's general TCB)
+## 8. Trusted code base (in addition to the framework's general TCB)
 
 - `lake` and the Lean LSP server (same trust assumption as
   `refine lean check` — we trust Lean to honestly report
@@ -211,8 +270,10 @@ the project-level `CLAUDE.md` for the load-bearing rules.
   strategy name so audit logs can pinpoint which model made which
   proposal.
 - The strategy's network stack (TLS, HTTP) — same as any API client.
+- For `local-finetune`, the weights directory, tokenizer/runtime
+  command, and the command process itself become part of the trust base.
 
-## 7. Tests
+## 9. Tests
 
 What ships:
 
@@ -224,6 +285,7 @@ What ships:
 | `lsp::tests::path_to_uri_uses_forward_slashes`             | URI generation is cross-platform-safe                                       |
 | `strategy::tests::mock_strategy_declines_all_proposals`    | `MockStrategy` is honest about doing nothing                                |
 | `strategy::tests::patch_apply_*` (4)                       | `Patch::apply` correctly handles single-line, multi-line, insert, OOB cases |
+| `local_finetune_manifest_command_returns_patch_and_usage`  | `local-finetune` resolves a weights manifest, invokes a command, parses a patch, and records usage |
 
 What does NOT ship in CI (requires `lake` on PATH):
 
@@ -235,7 +297,7 @@ Manual smoke tests covered both `AlreadyClean` outcomes for
 EXAMPLE-001 and EXAMPLE-002 on the developer machine; production
 CI would need a Lean-bearing job to exercise the LSP path.
 
-## 8. Open questions for the next iteration
+## 10. Open questions for the next iteration
 
 1. **Patch scope.** Should patches be allowed to span multiple
    files? Current API says no.
@@ -251,3 +313,6 @@ CI would need a Lean-bearing job to exercise the LSP path.
 4. **Per-iteration timeout.** Currently `collect_diagnostics`
    timeout is 20s. Some Lean files take much longer to elaborate.
    Make this configurable.
+5. **Native checkpoint loading.** Which candle architecture and
+   tokenizer path should replace the command runtime once the first
+   trained checkpoint exists?

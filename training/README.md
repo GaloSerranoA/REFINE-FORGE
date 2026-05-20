@@ -13,7 +13,7 @@ Owned by **Section 2: ML Training Engineer** ([../ARCHITECTURE.md](../ARCHITECTU
 |---|---|---|
 | `configs/` | ML engineer | example experiment + sweep YAMLs (real training NOT executed) |
 | `scripts/` | ML engineer / DevOps | stub trainer scripts used by tests + as a template for the real one |
-| `data/` | ML engineer | training datasets (e.g. mathlib-mutations corpus). **Empty in this commit** — populating it is the Mathlib mutation pipeline (Section 2 phase 1 item 3, multi-week work). |
+| `data/` | ML engineer | training datasets (e.g. mathlib-mutations corpus). Contains only `lean-proof-repair-smoke.jsonl`, a two-row local smoke fixture. The real Mathlib corpus is still Phase 2 work. |
 | `runs/` | runtime | `refine-train` writes per-experiment run directories here. Gitignored content; structure is documented below. |
 
 ## Quick start (assumes you have a real training backend installed)
@@ -62,6 +62,17 @@ Each emits 10 HF-style progress lines, writes a dummy
 The end-to-end test in
 [`crates/refineforge-trainer/tests/end_to_end.rs`](../crates/refineforge-trainer/tests/end_to_end.rs)
 uses these stubs to verify the full pipeline without needing a model.
+
+The fine-tuning plan also ships a concrete smoke experiment:
+
+```bash
+refine-train run training/configs/lean-proof-repair-smoke-stub.yaml --dry-run
+refine-train run training/configs/lean-proof-repair-smoke-stub.yaml
+```
+
+This uses `training/data/lean-proof-repair-smoke.jsonl` and the
+PowerShell stub backend. It is not a model-training result; it proves
+the local orchestration lane is wired before a real axolotl run exists.
 
 ## What the scaffold does NOT do (honesty)
 

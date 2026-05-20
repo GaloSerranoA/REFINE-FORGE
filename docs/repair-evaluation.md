@@ -112,6 +112,17 @@ refine-eval \
     --output eval/runs/2026-05-18-anthropic.json
 ```
 
+For a local fine-tuned checkpoint, pass the runtime directory:
+
+```bash
+refine-eval \
+    --corpus eval/corpus-tutorial.jsonl \
+    --strategy local-finetune \
+    --weights-path training/runs/<experiment-id>/checkpoints/<checkpoint> \
+    --max-iterations 5 \
+    --output eval/runs/2026-05-18-local-finetune.json
+```
+
 Output is a JSON file with per-attempt:
 - claim_id (or synthetic-id)
 - mutation applied
@@ -138,7 +149,7 @@ shape:
 | `anthropic` (claude-opus-4-7) | tutorial-40 | TBD | TBD | TBD |
 | `anthropic` (claude-opus-4-7) | mathlib-5000 | TBD | TBD | TBD |
 | `local-llm` (Qwen-Coder-32B) | mathlib-5000 | TBD | TBD | TBD |
-| `fine-tuned` (refineforge-prover-v1) | mathlib-5000 | TBD | TBD | TBD |
+| `local-finetune` (refineforge-prover-v1) | mathlib-5000 | TBD | TBD | TBD |
 
 Updating these numbers is part of Section 2's deliverable. The
 table itself must include the **commit hash of the corpus**, the
@@ -203,5 +214,5 @@ must emit CIs automatically.
 | Mathlib mutation pipeline → mathlib-5000 corpus | ML | Section 2 phase 1, item 3 |
 | First baseline numbers in this doc | ML | After Section 2 phase 1 |
 | Local-LLM strategy (Ollama/llama.cpp) | ML | Section 2 phase 2 |
-| Fine-tuned strategy + held-out eval | ML | Section 2 phase 2 |
+| `local-finetune` strategy + held-out eval | ML | Section 2 phase 2 |
 | Distribution-shift evals (cross-snapshot) | ML | Section 2 phase 3 |

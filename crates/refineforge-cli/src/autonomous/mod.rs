@@ -218,6 +218,7 @@ pub fn run_cli(
     root: &Path,
     claim_id: &str,
     strategy: &str,
+    weights_path: Option<&Path>,
     max_cost_usd: f64,
     operator: Option<&str>,
     dry_run: bool,
@@ -240,6 +241,9 @@ pub fn run_cli(
     }
     if let Some(op) = operator {
         println!("operator: {}", op);
+    }
+    if let Some(path) = weights_path {
+        println!("weights_path: {}", path.display());
     }
     println!("criteria version: v{}", CRITERIA_VERSION);
     println!();
@@ -285,6 +289,7 @@ pub fn run_cli(
         claim_id: claim_id.to_string(),
         claim,
         strategy: strategy.to_string(),
+        weights_path: weights_path.map(|p| p.to_path_buf()),
         operator: operator.map(|s| s.to_string()),
         dry_run,
         project_ctx,

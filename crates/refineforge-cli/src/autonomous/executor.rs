@@ -94,6 +94,7 @@ pub struct Executor<G: GitOps> {
     /// system steps.
     pub claim: Option<Claim>,
     pub strategy: String,
+    pub weights_path: Option<PathBuf>,
     pub operator: Option<String>,
     pub dry_run: bool,
     pub project_ctx: ProjectContext,
@@ -125,6 +126,7 @@ impl<G: GitOps> Executor<G> {
             claim_id: "TEST-CLAIM".into(),
             claim: None,
             strategy: "mock".into(),
+            weights_path: None,
             operator: None,
             dry_run: true,
             project_ctx: ProjectContext::test_default(),
@@ -465,7 +467,7 @@ impl<G: GitOps> Executor<G> {
                 elapsed_ms: started.elapsed().as_millis() as u64,
             };
         }
-        let (strategy, usage_handle) = match resolve_strategy(strategy_name) {
+        let (strategy, usage_handle) = match resolve_strategy(strategy_name, self.weights_path.as_deref()) {
             Ok(s) => s,
             Err(e) => {
                 return StepOutcome::Failed {
@@ -567,6 +569,7 @@ impl<G: GitOps> Executor<G> {
 /// caller treat strategy-resolution uniformly.
 pub fn resolve_strategy(
     name: &str,
+    weights_path: Option<&Path>,
 ) -> Result<
     (
         Box<dyn RepairStrategy>,
@@ -584,8 +587,17 @@ pub fn resolve_strategy(
         "anthropic-mock" => Ok(refineforge_strategies::anthropic_mock_strategy_with_usage()),
         "anthropic" => refineforge_strategies::anthropic_strategy_from_env_with_usage()
             .map_err(|e| e.to_string()),
+        "local-finetune" => {
+            let env_weights = std::env::var_os("REFINEFORGE_LOCAL_FINETUNE_WEIGHTS")
+                .map(PathBuf::from);
+            let path = weights_path.or(env_weights.as_deref()).ok_or_else(|| {
+                "local-finetune requires --weights-path <dir> or REFINEFORGE_LOCAL_FINETUNE_WEIGHTS".to_string()
+            })?;
+            refineforge_strategies::local_finetune_from_path_with_usage(path)
+                .map_err(|e| e.to_string())
+        }
         other => Err(format!(
-            "unknown strategy `{}` (known: mock, anthropic-mock, anthropic)",
+            "unknown strategy `{}` (known: mock, anthropic-mock, anthropic, local-finetune)",
             other
         )),
     }
@@ -875,22 +887,63 @@ mod tests {
 
     #[test]
     fn resolve_strategy_recognises_mock() {
-        let s = resolve_strategy("mock");
+        let s = resolve_strategy("mock", None);
         assert!(s.is_ok());
     }
 
     #[test]
     fn resolve_strategy_recognises_anthropic_mock() {
-        let s = resolve_strategy("anthropic-mock");
+        let s = resolve_strategy("anthropic-mock", None);
         assert!(s.is_ok());
     }
 
     #[test]
     fn resolve_strategy_rejects_unknown() {
-        match resolve_strategy("definitely-not-a-real-strategy") {
+        match resolve_strategy("definitely-not-a-real-strategy", None) {
             Err(e) => assert!(e.contains("unknown strategy"), "got: {}", e),
             Ok(_) => panic!("expected Err for unknown strategy"),
         }
+    }
+
+    #[test]
+    fn resolve_strategy_requires_weights_for_local_finetune() {
+        match resolve_strategy("local-finetune", None) {
+            Err(e) => assert!(e.contains("--weights-path"), "got: {}", e),
+            Ok(_) => panic!("expected Err for missing local-finetune weights"),
+        }
+    }
+
+    #[test]
+    fn resolve_strategy_recognises_local_finetune_with_manifest() {
+        let td = tempfile::tempdir().unwrap();
+        let weights = td.path().join("weights");
+        std::fs::create_dir(&weights).unwrap();
+
+        #[cfg(windows)]
+        let command = vec![
+            "cmd".to_string(),
+            "/C".to_string(),
+            "echo".to_string(),
+            "{}".to_string(),
+        ];
+        #[cfg(not(windows))]
+        let command = vec!["printf".to_string(), "{}".to_string()];
+
+        std::fs::write(
+            weights.join("refineforge-local-finetune.json"),
+            serde_json::json!({
+                "runtime": "command",
+                "model_id": "fixture",
+                "command": command
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let (strategy, usage) =
+            resolve_strategy("local-finetune", Some(weights.as_path())).unwrap();
+        assert_eq!(strategy.name(), "local-finetune");
+        assert_eq!(usage.lock().unwrap().calls, 0);
     }
 
     #[test]
