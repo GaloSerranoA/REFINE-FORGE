@@ -3,7 +3,7 @@
 //!
 //! Architecture:
 //!
-//! ```
+//! ```text
 //!  AnthropicStrategy<T>   ─uses─►   T: AnthropicTransport
 //!         │                                │
 //!         │ build_request                  │ send (HTTP)
@@ -42,7 +42,7 @@ pub trait AnthropicTransport: Send + Sync {
 /// uses [`MockTransport::declines`] so it always returns `None`
 /// and the repair loop reports `NoProposal` — same observable
 /// behaviour as `mock`, but exercises the full prompt construction
-/// + response parsing pipeline (which the real transport then
+/// and response parsing pipeline (which the real transport then
 /// reuses unchanged).
 pub struct MockTransport {
     pub canned_text: String,

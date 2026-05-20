@@ -246,6 +246,7 @@ pub fn run_cli(
     claim_id: &str,
     max_iterations: usize,
     strategy_name: &str,
+    weights_path: Option<&Path>,
     dry_run: bool,
 ) -> Result<()> {
     let strategy: Box<dyn RepairStrategy> = match strategy_name {
@@ -256,8 +257,20 @@ pub fn run_cli(
         // Real Anthropic API call via ReqwestTransport with retry +
         // prompt caching. Needs ANTHROPIC_API_KEY in the environment.
         "anthropic" => refineforge_strategies::anthropic_strategy_from_env()?,
+        // Local fine-tuned model runtime. Needs a weights directory
+        // with refineforge-local-finetune.json, or the env fallback.
+        "local-finetune" => {
+            let env_weights = std::env::var_os("REFINEFORGE_LOCAL_FINETUNE_WEIGHTS")
+                .map(PathBuf::from);
+            let path = weights_path.or(env_weights.as_deref()).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "local-finetune requires --weights-path <dir> or REFINEFORGE_LOCAL_FINETUNE_WEIGHTS"
+                )
+            })?;
+            refineforge_strategies::local_finetune_from_path(path)?
+        }
         other => anyhow::bail!(
-            "unknown strategy '{other}'; available: mock, anthropic-mock, anthropic (real, needs ANTHROPIC_API_KEY). See crates/refineforge-strategies/README.md."
+            "unknown strategy '{other}'; available: mock, anthropic-mock, anthropic (real, needs ANTHROPIC_API_KEY), local-finetune (needs --weights-path). See crates/refineforge-strategies/README.md."
         ),
     };
     let config = RepairConfig {

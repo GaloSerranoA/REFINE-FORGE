@@ -1,0 +1,52 @@
+# Local-only smoke for the fine-tuning lane. This validates
+# refineforge-trainer orchestration against a Lean proof-repair SFT-shaped
+# dataset without invoking axolotl, GPUs, or paid APIs.
+
+id: 2026-05-20-lean-proof-repair-smoke-stub
+
+description: |
+  Smoke run for the Mathlib/KF/Cogn8ty/refineforge fine-tuning pipeline.
+  The backend is the repository's deterministic stub trainer; this proves
+  config, dataset-path substitution, checkpoint capture, progress parsing,
+  and report generation before a real axolotl run exists.
+
+base_model:
+  name: "Qwen/Qwen2.5-Coder-1.5B"
+  source: huggingface
+
+dataset:
+  path: training/data/lean-proof-repair-smoke.jsonl
+  format: jsonl
+  fields:
+    input: prompt
+    output: response
+
+backend:
+  kind: custom
+  command: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File training/scripts/stub-trainer.ps1 {run_dir} -Steps 5
+
+hyperparameters:
+  learning_rate: 0.0002
+  batch_size: 2
+  gradient_accumulation: 1
+  num_epochs: 1
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+
+checkpoint:
+  dir: checkpoints
+  save_steps: 5
+  keep_last: 2
+
+monitoring:
+  log_file: train.log
+  progress_format: huggingface
+  metrics_to_track:
+    - loss
+    - learning_rate
+
+retry:
+  max_attempts: 1
+  backoff_seconds: 0
+  resume_from_checkpoint: true

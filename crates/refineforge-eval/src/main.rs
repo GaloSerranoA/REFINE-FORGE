@@ -46,9 +46,13 @@ struct Cli {
     corpus: PathBuf,
 
     /// Strategy name passed through to `refine repair` (mock,
-    /// anthropic-mock, anthropic).
+    /// anthropic-mock, anthropic, local-finetune).
     #[arg(long, default_value = "mock")]
     strategy: String,
+
+    /// Local fine-tuned weights/runtime directory for --strategy local-finetune.
+    #[arg(long)]
+    weights_path: Option<PathBuf>,
 
     /// Max iterations per corpus entry.
     #[arg(long, default_value_t = 3)]
@@ -88,6 +92,7 @@ fn main() -> Result<()> {
             &cli.project_root,
             entry,
             &cli.strategy,
+            cli.weights_path.as_deref(),
             cli.max_iterations,
         );
         match &result {

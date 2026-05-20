@@ -69,6 +69,9 @@ enum Cmd {
         /// Strategy name (built-in: "mock")
         #[arg(long, default_value = "mock")]
         strategy: String,
+        /// Local fine-tuned weights/runtime directory for --strategy local-finetune
+        #[arg(long)]
+        weights_path: Option<PathBuf>,
         /// Don't write changes to disk
         #[arg(long)]
         dry_run: bool,
@@ -83,6 +86,9 @@ enum Cmd {
         /// — the last requires ANTHROPIC_API_KEY in the env)
         #[arg(long, default_value = "mock")]
         strategy: String,
+        /// Local fine-tuned weights/runtime directory for --strategy local-finetune
+        #[arg(long)]
+        weights_path: Option<PathBuf>,
         /// Cap cumulative API spend; fails closed when exceeded.
         /// Estimated $0.07/repair-attempt for `--strategy anthropic`.
         #[arg(long, default_value_t = 10.0)]
@@ -258,11 +264,20 @@ fn main() -> Result<()> {
             claim_id,
             max_iterations,
             strategy,
+            weights_path,
             dry_run,
-        } => repair::run_cli(&cli.root, &claim_id, max_iterations, &strategy, dry_run),
+        } => repair::run_cli(
+            &cli.root,
+            &claim_id,
+            max_iterations,
+            &strategy,
+            weights_path.as_deref(),
+            dry_run,
+        ),
         Cmd::Autonomous {
             claim_id,
             strategy,
+            weights_path,
             max_cost_usd,
             operator,
             dry_run,
@@ -275,6 +290,7 @@ fn main() -> Result<()> {
             &cli.root,
             &claim_id,
             &strategy,
+            weights_path.as_deref(),
             max_cost_usd,
             operator.as_deref(),
             dry_run,
