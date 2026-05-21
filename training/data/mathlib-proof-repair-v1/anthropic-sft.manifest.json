@@ -1,0 +1,32 @@
+{
+  "complete": true,
+  "duplicate_output_lines": 0,
+  "estimated_spend_usd": 5.390637,
+  "extra_output_rows": 0,
+  "fallback_teacher_responses": 0,
+  "files": {
+    "all": "anthropic-sft.jsonl",
+    "heldout": "anthropic-sft.heldout.jsonl",
+    "manifest": "anthropic-sft.manifest.json",
+    "train": "anthropic-sft.train.jsonl",
+    "val": "anthropic-sft.val.jsonl"
+  },
+  "input_rows": 1000,
+  "invalid_patch_rows": 0,
+  "invalid_patch_rows_before_normalization": 0,
+  "missing_rows": 0,
+  "normalized_patch_rows": 0,
+  "output": "training\\data\\mathlib-proof-repair-v1\\anthropic-sft.jsonl",
+  "rows": 1000,
+  "source": "training\\data\\mathlib-proof-repair-v1\\all.jsonl",
+  "splits": {
+    "heldout": 100,
+    "train": 800,
+    "val": 100
+  },
+  "teacher_models": {
+    "claude-sonnet-4-6": 1000
+  },
+  "unique_ids": 1000,
+  "valid_patch_rows": 1000
+}
