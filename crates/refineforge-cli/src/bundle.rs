@@ -435,7 +435,37 @@ fn extract_signer_identity(
 #[cfg(test)]
 mod signature_tests {
     use super::*;
+    use std::ffi::{OsStr, OsString};
     use std::io::Write;
+    use std::sync::{Mutex, MutexGuard};
+
+    static COSIGN_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct CosignEnvGuard {
+        previous: Option<OsString>,
+        _lock: MutexGuard<'static, ()>,
+    }
+
+    impl CosignEnvGuard {
+        fn set(value: impl AsRef<OsStr>) -> Self {
+            let lock = COSIGN_ENV_LOCK.lock().unwrap();
+            let previous = std::env::var_os("REFINEFORGE_COSIGN_BIN");
+            std::env::set_var("REFINEFORGE_COSIGN_BIN", value);
+            Self {
+                previous,
+                _lock: lock,
+            }
+        }
+    }
+
+    impl Drop for CosignEnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var("REFINEFORGE_COSIGN_BIN", value),
+                None => std::env::remove_var("REFINEFORGE_COSIGN_BIN"),
+            }
+        }
+    }
 
     fn write_executable_stub(dir: &std::path::Path, name: &str, body: &str) -> std::path::PathBuf {
         // On Windows we write a .cmd shim that runs the body as bash
@@ -501,10 +531,9 @@ mod signature_tests {
             verify_signature: true,
             ..Default::default()
         };
-        std::env::set_var("REFINEFORGE_COSIGN_BIN", "this-binary-does-not-exist-12345");
+        let _cosign_env = CosignEnvGuard::set("this-binary-does-not-exist-12345");
         let err = verify_signature_impl(&bundle, &bundle.join("manifest.json"), &opts)
             .expect_err("must error");
-        std::env::remove_var("REFINEFORGE_COSIGN_BIN");
         let msg = err.to_string();
         assert!(msg.contains("could not invoke") && msg.contains("Install cosign"),
                 "msg should hint at cosign install: {msg}");
@@ -522,14 +551,13 @@ mod signature_tests {
         #[cfg(not(windows))]
         let body = "if [ \"$1\" = \"version\" ]; then echo '{\"GitVersion\":\"v2.4.1\"}'; else exit 0; fi";
         let stub = write_executable_stub(td.path(), "cosign-stub", body);
-        std::env::set_var("REFINEFORGE_COSIGN_BIN", &stub);
+        let _cosign_env = CosignEnvGuard::set(stub.as_os_str());
         let opts = VerifyOptions {
             verify_signature: true,
             ..Default::default()
         };
         let status = verify_signature_impl(&bundle, &bundle.join("manifest.json"), &opts)
             .expect("stub success");
-        std::env::remove_var("REFINEFORGE_COSIGN_BIN");
         assert_eq!(status.cosign_version, "v2.4.1");
         assert_eq!(status.oidc_issuer, DEFAULT_OIDC_ISSUER);
     }
@@ -545,14 +573,13 @@ mod signature_tests {
         #[cfg(not(windows))]
         let body = "if [ \"$1\" = \"version\" ]; then echo '{\"GitVersion\":\"v2.4.1\"}'; else echo 'signature mismatch' >&2; exit 1; fi";
         let stub = write_executable_stub(td.path(), "cosign-stub-fail", body);
-        std::env::set_var("REFINEFORGE_COSIGN_BIN", &stub);
+        let _cosign_env = CosignEnvGuard::set(stub.as_os_str());
         let opts = VerifyOptions {
             verify_signature: true,
             ..Default::default()
         };
         let err = verify_signature_impl(&bundle, &bundle.join("manifest.json"), &opts)
             .expect_err("must error");
-        std::env::remove_var("REFINEFORGE_COSIGN_BIN");
         let msg = err.to_string();
         assert!(msg.contains("rejected the signature"), "msg: {msg}");
         assert!(msg.contains("signature mismatch"), "msg should surface cosign stderr: {msg}");
@@ -570,7 +597,7 @@ mod signature_tests {
         #[cfg(not(windows))]
         let body = "if [ \"$1\" = \"version\" ]; then echo '{\"GitVersion\":\"v2.4.1\"}'; else echo \"verify args: $@\"; exit 0; fi";
         let stub = write_executable_stub(td.path(), "cosign-stub-echo", body);
-        std::env::set_var("REFINEFORGE_COSIGN_BIN", &stub);
+        let _cosign_env = CosignEnvGuard::set(stub.as_os_str());
         let opts = VerifyOptions {
             verify_signature: true,
             identity_regex: Some("custom-identity-pattern".into()),
@@ -578,7 +605,6 @@ mod signature_tests {
         };
         let status = verify_signature_impl(&bundle, &bundle.join("manifest.json"), &opts)
             .expect("must succeed");
-        std::env::remove_var("REFINEFORGE_COSIGN_BIN");
         assert_eq!(status.oidc_issuer, "https://custom.issuer");
     }
 }

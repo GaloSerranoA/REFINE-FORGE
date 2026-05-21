@@ -34,7 +34,8 @@ Read in this order — each doc is short and points at the next.
 | [docs/plans/autonomous-driver-plan.md](docs/plans/autonomous-driver-plan.md) | Enterprise build plan for `refine autonomous`: 5 phases, ~2 weeks, $50-150 API budget, risks + mitigations. **All plan phases 0-5 + 3.5 + 3.6 + 3.7 + 3.8 closed** under criteria v0.3. Phase 4 acceptance gate exercised against real Anthropic ($0.35 spend); v0.2.0 + v0.2.1 released and tagged; only Nix-flake first-build verification remains (needs a Nix-capable runner) |
 | [docs/plans/gui-plan.md](docs/plans/gui-plan.md) | **PLAN ONLY (no code yet).** Enterprise build plan for `refineforge-studio`, a professional Tauri-based production GUI exposing the four sections + operator console + autonomous driver. 9 phases, ~15 weeks, 6 named open questions to resolve before Phase 0 |
 | [docs/plans/resourcing-plan.md](docs/plans/resourcing-plan.md) | **PLAN ONLY (v0.2).** Operator-side resourcing: 1 human operator + 1 part-time maintainer (or operator's own time) + compute. **refineforge IS the four specialists**, not headcount. 16,000 GPU-hours for the fine-tune via Option A grants (~$5-10k cash outlay). 12-month budget: **~$12-52k LATAM mid-band; ~$35-108k US ceiling.** v0.1 (commit `2f60d9c`) had the framing inverted; superseded |
-| [docs/plans/finetuning-plan.md](docs/plans/finetuning-plan.md) | **PLAN ONLY.** End-to-end fine-tuning pipeline: Knowledge-Foundry (sft_pair mode + new `lean_proof_repair` probe set) → Mathlib mutation corpus (N≥1000) → axolotl fine-tune (Qwen2.5-Coder-1.5B → 13B via Option A grants) → `refine --strategy local-finetune` via candle. 8 phases, ~8-12 weeks elapsed, ~$5-11k cash. Acceptance gate: fine-tuned ≥ claude-opus-4-7 baseline OR documented gap. Embedded probe-set spec ready for the operator to copy into Knowledge-Foundry |
+| [docs/plans/finetuning-plan.md](docs/plans/finetuning-plan.md) | **PLAN + contract sketch (v0.2).** End-to-end proof-repair fine-tuning pipeline: Mathlib mutation corpus (N≥1000) → Knowledge-Foundry `lean_proof_repair` SFT mode + claim-level gates → Cogn8ty `brain_reason` consistency filter → axolotl fine-tune → `refine --strategy local-finetune`. 8 phases, ~8-12 weeks elapsed, ~$5-20k cash. Acceptance gate: fine-tuned ≥ claude-opus-4-7 baseline OR documented gap. |
+| [docs/plans/finetuning-execution-2026-05-20.md](docs/plans/finetuning-execution-2026-05-20.md) | **Execution ledger.** Records what is actually local: KF Lean probe/gates, Cogn8ty gate contract, trainer smoke fixture, and the refineforge `local-finetune` command-manifest bridge. Also records real blockers: no N≥1000 Mathlib corpus, no full teacher run, no live Cogn8ty corpus pass, no real checkpoint, no acceptance comparison. |
 | [docs/HELYX-CASE-STUDY.md](docs/HELYX-CASE-STUDY.md) | Pointer to the external worked example (helyx-proofforge) |
 
 ## What this is
@@ -128,7 +129,7 @@ refineforge/
 ├── training/                   # Section 2: training experiments
 │   ├── configs/                # example experiment + sweep YAMLs
 │   ├── scripts/                # stub-trainer for tests; backend shims
-│   ├── data/                   # training datasets (empty; mathlib mut. pipeline pending)
+│   ├── data/                   # smoke fixture only; real mathlib corpus pending
 │   └── runs/                   # refine-train per-experiment output (gitignored)
 ├── kernels/                    # Section 4: GPU kernels + bit-exact gates
 │   ├── configs/                # per-kernel gate YAMLs
@@ -159,7 +160,8 @@ refineforge/
         ├── autonomous-driver-plan.md  # 5-phase build plan; all phases shipped + 3.5/3.6/3.7/3.8
         ├── gui-plan.md               # 9-phase plan for refineforge-studio (no code yet)
         ├── resourcing-plan.md        # people/compute/tools/funding; 12-mo budget; A/B/C options
-        └── finetuning-plan.md        # 8-phase fine-tune via KF + axolotl + candle (no code yet)
+        ├── finetuning-plan.md        # 8-phase fine-tune via KF + Cogn8ty + axolotl
+        └── finetuning-execution-2026-05-20.md # local execution ledger + blockers
 ```
 
 ## Quick start
@@ -254,19 +256,20 @@ Where each thing currently lives:
 | Proof template generator (`refine new`)    | ✅ implemented      |
 | Rust source scan (name-presence check)     | ✅ implemented      |
 | Refinement-argument template               | ✅ `docs/refinement-template.md` |
-| LLM repair loop (LSP client)               | ✅ shipped: `mock`, `anthropic-mock`, **`anthropic`** (real HTTP with retry + prompt caching) |
-| `refineforge-strategies` workspace member  | ✅ `AnthropicStrategy` + `ReqwestTransport` (real HTTP, retry-with-backoff, error mapping; 18 unit tests) |
+| LLM repair loop (LSP client)               | ✅ shipped: `mock`, `anthropic-mock`, **`anthropic`** (real HTTP with retry + prompt caching), and `local-finetune` (command-manifest runtime bridge) |
+| `refineforge-strategies` workspace member  | ✅ `AnthropicStrategy` + `ReqwestTransport` plus `LocalFinetuneStrategy` command-manifest bridge. Native checkpoint loading is still blocked on the final model/tokenizer layout. |
 | `refineforge-eval` (`refine-eval` binary)  | ✅ corpus-driven evaluation harness with JSON output; ships a 3-entry tutorial corpus under [`eval/corpus/`](eval/corpus) |
 | `refineforge-trainer` (`refine-train` binary) | ✅ training-experiment orchestration (axolotl / HF Trainer / custom); run tracking, checkpoint resume, failure recovery, JSON reports. Does NOT perform training itself — backend does. See [`training/README.md`](training/README.md) |
 | `refineforge-bitexact` (`refine-bitexact` binary) | ✅ bit-exact reproducibility gate: runs kernel N times, hashes outputs, fails if any disagree. Stub scripts prove the gate catches non-determinism. Real CUDA kernels are the CUDA engineer's domain. See [`kernels/README.md`](kernels/README.md). |
 | `refineforge-escalation` (library) | ✅ Phases 1 + 2 + 3.5 of [`docs/plans/autonomous-driver-plan.md`](docs/plans/autonomous-driver-plan.md) under criteria v0.3. Pure-functional engine (`Action` + `ProjectContext` → `Decision::Proceed`/`Escalate`); `Packet` markdown renderer with v0.3 `batch:` support; `DecisionOutcome` parser (`APPROVED:`/`REJECTED:`/`EDIT_AND_RESUBMIT:`/partial form); `GitOps` trait (subprocess `git` + `MockGitOps`); indefinite `await_decision` (no auto-reject); ProjectContext loaders (claim YAML + lake-manifest.json + Cargo.lock). 170 tests; 2 POSIX-only e2e git tests gated `#[cfg(unix)]` |
-| `refine autonomous` driver (in `refineforge-cli`) | ✅ Phases 3 MVP + 3.5 + 3.6 + 3.7 + 3.8 + Phase 4 audit. `Planner` + `Executor<G: GitOps>` + `WorkRunConfig` + `run_worklist`; real `runner::run`/`scan::scan_claim`/`bundle::export` library calls; `Repair` step with `resolve_strategy` (mock / anthropic-mock / **anthropic** real HTTP) + cost-gate ($0.07/attempt upfront); `RunTrainingExperiment`/`RunBitExactGate` subprocess-shell; `--auto-repair` + `--await-decisions` + `--inject-counter-idealisation` + `--inject-training` + `--inject-bitexact` flags. **Phase 3.8 cross-run await-resume**: existing APPROVED packets survive re-runs. Live LLM auto-repair confirmed end-to-end ([60d2a81](#)). EXAMPLE-002 forced-Counter dogfood passes as integration test AND was exercised against real Anthropic in the Phase 4 audit ($0.35 spend) |
+| `refine autonomous` driver (in `refineforge-cli`) | ✅ Phases 3 MVP + 3.5 + 3.6 + 3.7 + 3.8 + Phase 4 audit. `Planner` + `Executor<G: GitOps>` + `WorkRunConfig` + `run_worklist`; real `runner::run`/`scan::scan_claim`/`bundle::export` library calls; `Repair` step with `resolve_strategy` (mock / anthropic-mock / **anthropic** real HTTP / `local-finetune` command-manifest bridge) + cost-gate ($0.07/attempt upfront for Anthropic); `RunTrainingExperiment`/`RunBitExactGate` subprocess-shell; `--auto-repair` + `--await-decisions` + `--inject-counter-idealisation` + `--inject-training` + `--inject-bitexact` flags. **Phase 3.8 cross-run await-resume**: existing APPROVED packets survive re-runs. Live LLM auto-repair confirmed end-to-end ([60d2a81](#)). EXAMPLE-002 forced-Counter dogfood passes as integration test AND was exercised against real Anthropic in the Phase 4 audit ($0.35 spend) |
 | Verifier Docker image                      | ✅ `containers/Dockerfile.verifier` — multi-stage build, elan + Lean v4.29.1 preinstalled |
 | Multi-arch CI matrix                       | ✅ Ubuntu + macOS + Windows with elan / lake / cargo caches |
 | Sigstore signing in CI + `--verify-signature` | ✅ keyless cosign sign-blob on main + tags; verifier-side `refine bundle verify --verify-signature` (cosign subprocess) |
 | Release scripting (`release/release.{sh,ps1}`) | ✅ semver check, CHANGELOG check, version bump, test run, tag + optional cosign tag-commit sig |
 | Nix flake for hermetic builds              | ⚠️ authored (`flake.nix`); first-build verification pending (see [docs/reproducible-build.md](docs/reproducible-build.md) §8) |
 | Mathlib mutation pipeline (corpus at N≥1000) | not yet             |
+| `local-finetune` runtime bridge            | ✅ command-manifest strategy shipped; real checkpoint integration pending |
 | Fine-tuned proof-repair model              | not yet (6+ month research commitment) |
 | Syn-based scan (parse, not regex)          | not yet             |
 
