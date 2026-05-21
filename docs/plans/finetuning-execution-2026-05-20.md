@@ -2,6 +2,10 @@
 
 Source plan: `D:\AI-PROJECTS-GALO\PROJECTS\refineforge\docs\plans\finetuning-plan.md`
 
+Update: `docs/plans/finetuning-execution-2026-05-20-corpus-run.md` closes
+the first real Mathlib corpus lane after this original status note was written:
+1000 Mathlib mutation rows plus 1000 finalized Anthropic SFT rows.
+
 Execution mode: single Codex session, no agents. Root `refineforge` was dirty, so
 refineforge code/config work was kept in the sibling worktree
 `D:\AI-PROJECTS-GALO\PROJECTS\refineforge-finetuning-exec` on branch
@@ -96,21 +100,16 @@ refineforge trainer smoke:
 
 These are real blockers, not local scaffolding gaps:
 
-1. **Phase 2 Mathlib corpus:** no `N >= 1000` verified broken/fixed Mathlib
-   corpus exists locally. Only the two-row smoke fixture exists.
-2. **Phase 3 paid teacher generation:** `ANTHROPIC_API_KEY` is present in the
-   environment, but the paid teacher run was not started because there is no
-   Mathlib corpus to route and no operator-selected `N` beyond the plan's
-   choices.
-3. **Phase 3.5 live Cogn8ty pass:** the bridge and tests exist, but port
-   `127.0.0.1:7742` was closed and no corpus exists for a full pass.
-4. **Phase 4 baseline:** no consistency-filtered held-out eval split exists, so
-   no honest `claude-opus-4-7` baseline can be produced yet.
-5. **Phase 5 real fine-tune:** no axolotl job was launched; there is no full
-   dataset, GPU allocation, or checkpoint target.
-6. **Phase 7 acceptance:** no fine-tuned checkpoint exists, so local-finetune vs
+1. **Phase 3.5 live Cogn8ty pass:** the bridge, tests, and corpus exist, but
+   port `127.0.0.1:7742` was closed for the live full-corpus pass.
+2. **Phase 4 baseline:** no consistency-filtered held-out eval result exists,
+   so no honest `claude-opus-4-7` baseline can be produced yet.
+3. **Phase 5 real fine-tune:** no axolotl job was launched; there is a full
+   dataset, but no local Axolotl/PyTorch runtime, GPU allocation, or checkpoint
+   target.
+4. **Phase 7 acceptance:** no fine-tuned checkpoint exists, so local-finetune vs
    baseline acceptance cannot run.
-7. **Phase 8 release/trust-base signoff:** blocked until real weights exist.
+5. **Phase 8 release/trust-base signoff:** blocked until real weights exist.
 
 ## Local Defaults Chosen
 

@@ -1,0 +1,23 @@
+{
+  "diagnostic": "unknown identifier `__refineforge_missing_proof__`",
+  "files": {
+    "all": "all.jsonl",
+    "heldout": "heldout.jsonl",
+    "train": "train.jsonl",
+    "val": "val.jsonl"
+  },
+  "generated_at": "2026-05-20T18:36:07.615731+00:00",
+  "generator": "generate_mathlib_repair_corpus.py",
+  "max_proof_chars": 1200,
+  "mutation": "replace_proof_with_unknown_identifier",
+  "seed": 20260520,
+  "source_commit": "1563983d15a6074e0ccae939e29379738554942e",
+  "source_repo": "https://github.com/leanprover-community/mathlib4",
+  "splits": {
+    "heldout": 100,
+    "train": 800,
+    "val": 100
+  },
+  "total_candidates_seen": 85234,
+  "total_examples": 1000
+}

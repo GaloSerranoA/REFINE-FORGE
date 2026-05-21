@@ -18,6 +18,8 @@ lean/lake-manifest.json
 .vscode/
 *.swp
 .DS_Store
+__pycache__/
+*.pyc
 
 # generated artifacts are committed selectively; ignore by default
 /artifacts/*/manifest.json.tmp
@@ -35,3 +37,4 @@ result-*
 
 # Trainer run outputs
 /training/runs/*/
+/training/data/**/anthropic-sft.raw-*.jsonl

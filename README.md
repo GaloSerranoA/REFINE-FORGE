@@ -34,8 +34,9 @@ Read in this order — each doc is short and points at the next.
 | [docs/plans/autonomous-driver-plan.md](docs/plans/autonomous-driver-plan.md) | Enterprise build plan for `refine autonomous`: 5 phases, ~2 weeks, $50-150 API budget, risks + mitigations. **All plan phases 0-5 + 3.5 + 3.6 + 3.7 + 3.8 closed** under criteria v0.3. Phase 4 acceptance gate exercised against real Anthropic ($0.35 spend); v0.2.0 + v0.2.1 released and tagged; only Nix-flake first-build verification remains (needs a Nix-capable runner) |
 | [docs/plans/gui-plan.md](docs/plans/gui-plan.md) | **PLAN ONLY (no code yet).** Enterprise build plan for `refineforge-studio`, a professional Tauri-based production GUI exposing the four sections + operator console + autonomous driver. 9 phases, ~15 weeks, 6 named open questions to resolve before Phase 0 |
 | [docs/plans/resourcing-plan.md](docs/plans/resourcing-plan.md) | **PLAN ONLY (v0.2).** Operator-side resourcing: 1 human operator + 1 part-time maintainer (or operator's own time) + compute. **refineforge IS the four specialists**, not headcount. 16,000 GPU-hours for the fine-tune via Option A grants (~$5-10k cash outlay). 12-month budget: **~$12-52k LATAM mid-band; ~$35-108k US ceiling.** v0.1 (commit `2f60d9c`) had the framing inverted; superseded |
-| [docs/plans/finetuning-plan.md](docs/plans/finetuning-plan.md) | **PLAN + contract sketch (v0.2).** End-to-end proof-repair fine-tuning pipeline: Mathlib mutation corpus (N≥1000) → Knowledge-Foundry `lean_proof_repair` SFT mode + claim-level gates → Cogn8ty `brain_reason` consistency filter → axolotl fine-tune → `refine --strategy local-finetune`. 8 phases, ~8-12 weeks elapsed, ~$5-20k cash. Acceptance gate: fine-tuned ≥ claude-opus-4-7 baseline OR documented gap. |
-| [docs/plans/finetuning-execution-2026-05-20.md](docs/plans/finetuning-execution-2026-05-20.md) | **Execution ledger.** Records what is actually local: KF Lean probe/gates, Cogn8ty gate contract, trainer smoke fixture, and the refineforge `local-finetune` command-manifest bridge. Also records real blockers: no N≥1000 Mathlib corpus, no full teacher run, no live Cogn8ty corpus pass, no real checkpoint, no acceptance comparison. |
+| [docs/plans/finetuning-plan.md](docs/plans/finetuning-plan.md) | **PLAN + local corpus artifacts (v0.2).** End-to-end proof-repair fine-tuning pipeline: Mathlib mutation corpus (N≥1000) → Knowledge-Foundry `lean_proof_repair` SFT mode + claim-level gates → Cogn8ty `brain_reason` consistency filter → axolotl fine-tune → `refine --strategy local-finetune`. The first real Mathlib corpus and Anthropic SFT split are under `training/data/mathlib-proof-repair-v1/`; real training/checkpoint acceptance remains pending. |
+| [docs/plans/finetuning-execution-2026-05-20.md](docs/plans/finetuning-execution-2026-05-20.md) | **Execution ledger.** Records the local KF Lean probe/gates, Cogn8ty gate contract, trainer smoke fixture, and `local-finetune` bridge. Updated by the corpus addendum; remaining blockers are live Cogn8ty corpus pass, real checkpoint, and acceptance comparison. |
+| [docs/plans/finetuning-execution-2026-05-20-corpus-run.md](docs/plans/finetuning-execution-2026-05-20-corpus-run.md) | **Corpus execution addendum.** Records the 1000-row Mathlib mutation corpus, finalized 1000-row Anthropic SFT split, source commit, spend estimate, and current training/runtime blockers. |
 | [docs/HELYX-CASE-STUDY.md](docs/HELYX-CASE-STUDY.md) | Pointer to the external worked example (helyx-proofforge) |
 
 ## What this is
@@ -129,7 +130,7 @@ refineforge/
 ├── training/                   # Section 2: training experiments
 │   ├── configs/                # example experiment + sweep YAMLs
 │   ├── scripts/                # stub-trainer for tests; backend shims
-│   ├── data/                   # smoke fixture only; real mathlib corpus pending
+│   ├── data/                   # smoke fixture + mathlib-proof-repair-v1 corpus
 │   └── runs/                   # refine-train per-experiment output (gitignored)
 ├── kernels/                    # Section 4: GPU kernels + bit-exact gates
 │   ├── configs/                # per-kernel gate YAMLs
@@ -268,7 +269,7 @@ Where each thing currently lives:
 | Sigstore signing in CI + `--verify-signature` | ✅ keyless cosign sign-blob on main + tags; verifier-side `refine bundle verify --verify-signature` (cosign subprocess) |
 | Release scripting (`release/release.{sh,ps1}`) | ✅ semver check, CHANGELOG check, version bump, test run, tag + optional cosign tag-commit sig |
 | Nix flake for hermetic builds              | ⚠️ authored (`flake.nix`); first-build verification pending (see [docs/reproducible-build.md](docs/reproducible-build.md) §8) |
-| Mathlib mutation pipeline (corpus at N≥1000) | not yet             |
+| Mathlib mutation pipeline (corpus at N≥1000) | ✅ shipped: `training/data/mathlib-proof-repair-v1/` has 1000 Mathlib mutation rows plus finalized Anthropic SFT train/val/heldout splits |
 | `local-finetune` runtime bridge            | ✅ command-manifest strategy shipped; real checkpoint integration pending |
 | Fine-tuned proof-repair model              | not yet (6+ month research commitment) |
 | Syn-based scan (parse, not regex)          | not yet             |

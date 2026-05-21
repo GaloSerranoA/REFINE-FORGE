@@ -13,7 +13,7 @@ Owned by **Section 2: ML Training Engineer** ([../ARCHITECTURE.md](../ARCHITECTU
 |---|---|---|
 | `configs/` | ML engineer | example experiment + sweep YAMLs (real training NOT executed) |
 | `scripts/` | ML engineer / DevOps | stub trainer scripts used by tests + as a template for the real one |
-| `data/` | ML engineer | training datasets (e.g. mathlib-mutations corpus). Contains only `lean-proof-repair-smoke.jsonl`, a two-row local smoke fixture. The real Mathlib corpus is still Phase 2 work. |
+| `data/` | ML engineer | training datasets. Contains the two-row smoke fixture plus `mathlib-proof-repair-v1/`, a 1000-row Mathlib-derived mutation corpus and finalized Anthropic SFT split. |
 | `runs/` | runtime | `refine-train` writes per-experiment run directories here. Gitignored content; structure is documented below. |
 
 ## Quick start (assumes you have a real training backend installed)
@@ -63,7 +63,7 @@ The end-to-end test in
 [`crates/refineforge-trainer/tests/end_to_end.rs`](../crates/refineforge-trainer/tests/end_to_end.rs)
 uses these stubs to verify the full pipeline without needing a model.
 
-The fine-tuning plan also ships a concrete smoke experiment:
+The fine-tuning plan ships a concrete smoke experiment:
 
 ```bash
 refine-train run training/configs/lean-proof-repair-smoke-stub.yaml --dry-run
@@ -73,6 +73,33 @@ refine-train run training/configs/lean-proof-repair-smoke-stub.yaml
 This uses `training/data/lean-proof-repair-smoke.jsonl` and the
 PowerShell stub backend. It is not a model-training result; it proves
 the local orchestration lane is wired before a real axolotl run exists.
+
+## Mathlib proof-repair corpus
+
+`training/data/mathlib-proof-repair-v1/` contains the first real corpus lane:
+
+- `all.jsonl`: 1000 Mathlib-derived broken/fixed Lean repair examples.
+- `train.jsonl`, `val.jsonl`, `heldout.jsonl`: 800/100/100 mutation splits.
+- `anthropic-sft.jsonl`: 1000 Anthropic-backed SFT rows from the mutation corpus.
+- `anthropic-sft.train.jsonl`, `anthropic-sft.val.jsonl`,
+  `anthropic-sft.heldout.jsonl`: finalized 800/100/100 SFT splits.
+- `manifest.json` and `anthropic-sft.manifest.json`: source commit, counts,
+  spend estimate, and validation summary.
+
+Generation and retry tooling lives in repo-root `scripts/`:
+
+```bash
+python scripts/generate_mathlib_repair_corpus.py --help
+python scripts/anthropic_teacher_generate.py --help
+```
+
+The real LoRA/QLoRA config entry point is:
+
+```bash
+refine-train run training/configs/mathlib-proof-repair-anthropic-qwen-1.5b-lora.yaml --dry-run
+```
+
+Actual training still depends on a local Axolotl/PyTorch runtime and GPU.
 
 ## What the scaffold does NOT do (honesty)
 
@@ -95,13 +122,13 @@ the local orchestration lane is wired before a real axolotl run exists.
 
 1. ✅ AnthropicStrategy + eval harness (shipped earlier)
 2. ✅ Training orchestration scaffold (this commit)
-3. ⚠️ **Mathlib mutation pipeline → mathlib-5000 corpus** (multi-week)
-4. ⚠️ First fine-tune run + held-out eval (depends on 3)
+3. ✅ **Mathlib mutation pipeline → first N=1000 corpus**
+4. ⚠️ First fine-tune run + held-out eval (depends on Axolotl/PyTorch + GPU)
 5. ⚠️ Distribution-shift evals (depends on 4)
 
-Items 3-5 are real engineering work that needs a person with GPU
-access and weeks of focused time. The scaffold here is the runway
-they land on.
+Items 4-5 are real engineering work that needs a person with GPU
+access and focused time. The scaffold and first real corpus are now
+in place.
 
 ## Cost-discipline reminder
 

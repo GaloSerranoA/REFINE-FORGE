@@ -1,0 +1,58 @@
+# Axolotl recipe for the Mathlib proof-repair SFT data.
+# Paths are repo-root relative when launched through `refine-train`.
+
+base_model: Qwen/Qwen2.5-Coder-1.5B-Instruct
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+
+load_in_8bit: false
+load_in_4bit: true
+strict: false
+
+datasets:
+  - path: training/data/mathlib-proof-repair-v1/anthropic-sft.train.jsonl
+    type:
+      field_instruction: prompt
+      field_output: response
+      format: "{instruction}"
+
+val_set_size: 0.1
+output_dir: training/runs/2026-05-20-qwen-1.5b-mathlib-proof-repair-anthropic/axolotl-output
+
+sequence_len: 2048
+sample_packing: false
+pad_to_sequence_len: true
+
+adapter: qlora
+lora_model_dir:
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_linear: true
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 8
+micro_batch_size: 1
+num_epochs: 2
+optimizer: paged_adamw_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+warmup_steps: 20
+
+bf16: auto
+fp16:
+tf32: true
+
+gradient_checkpointing: true
+logging_steps: 1
+save_steps: 50
+eval_steps: 50
+save_total_limit: 3
+
+special_tokens:
+  pad_token: "<|endoftext|>"
