@@ -13,6 +13,27 @@
 > This document is the trust-critical bridge from that model to the
 > Rust binary the project actually ships.
 
+## Claim assurance levels
+
+`status: proven` means the referenced Lean theorem builds without
+`sorry`, `admit`, or project-local axioms. It does not, by itself,
+mean the Rust implementation is verified.
+
+The implementation assurance comes from `scope:`:
+
+- `model-only` - Lean proves a mathematical model. The claim must
+  not cite Rust implementation files as evidence.
+- `tutorial` / `tutorial-production-shaped` - Lean plus Rust
+  demonstrate the refinement workflow for examples. These are
+  educational or pattern claims unless reviewed otherwise.
+- `model+refined` - Lean theorem, this refinement document, Rust
+  implementation citations, and human review all agree on the same
+  invariant.
+
+A claim may move from `model-only` to implementation-refined scope
+only after the escalation process records the review packet and the
+claim's `review.human_operator` is populated by a real human.
+
 ## 1. What the Lean model says
 
 In `lean/<YourLib>/<Module>.lean` we define:
@@ -124,3 +145,7 @@ Once every box is checked AND a second engineer has independently
 checked at least the **[needs human]** items above, the claim
 YAML's `review:` section may be populated and the claim's `status:`
 field may be upgraded to indicate full refinement.
+
+Do not populate `review.human_operator` with an AI system,
+placeholder, or automated process name. Use `null` until a real
+human signs.

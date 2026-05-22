@@ -779,6 +779,7 @@ fn push_bundle_gates(
 
 pub fn audit_docs_in_dir(root: &Path) -> Result<Vec<String>> {
     let mut issues = Vec::new();
+    let has_kernel_sources = has_kernel_source_files(root);
     for rel in [
         "README.md",
         "SECURITY.md",
@@ -820,6 +821,21 @@ pub fn audit_docs_in_dir(root: &Path) -> Result<Vec<String>> {
                 "{rel}: signed-bundle claim lacks first-run truth boundary"
             ));
         }
+        if text.contains("Every release tagged `v*` is signed in CI") {
+            issues.push(format!(
+                "{rel}: Sigstore release claim must wait for the first real GitHub OIDC signed-bundle run"
+            ));
+        }
+        if rel == "ARCHITECTURE.md"
+            && !has_kernel_sources
+            && !(text.contains("kernels/src")
+                && text.contains("actual CUDA kernels")
+                && text.contains("empty"))
+        {
+            issues.push(format!(
+                "{rel}: kernels/src is empty but architecture lacks an explicit empty-kernel-source boundary"
+            ));
+        }
         for (line_idx, line) in text.lines().enumerate() {
             if line.contains("Nix flake")
                 && line.contains("✅ shipped")
@@ -834,6 +850,24 @@ pub fn audit_docs_in_dir(root: &Path) -> Result<Vec<String>> {
         }
     }
     Ok(issues)
+}
+
+fn has_kernel_source_files(root: &Path) -> bool {
+    let dir = root.join("kernels").join("src");
+    if !dir.exists() {
+        return false;
+    }
+
+    walkdir::WalkDir::new(dir)
+        .into_iter()
+        .filter_map(std::result::Result::ok)
+        .any(|entry| {
+            entry.file_type().is_file()
+                && matches!(
+                    entry.path().extension().and_then(|ext| ext.to_str()),
+                    Some("cu" | "cuh" | "hip" | "metal" | "cpp" | "rs")
+                )
+        })
 }
 
 fn push_docs_audit_gate(root: &Path, report: &mut ReleaseReport) -> Result<()> {
@@ -1151,6 +1185,45 @@ mod tests {
         .unwrap();
         let issues = audit_docs_in_dir(td.path()).unwrap();
         assert!(issues.is_empty(), "issues: {issues:?}");
+    }
+
+    #[test]
+    fn docs_audit_rejects_unbounded_sigstore_release_claim() {
+        let td = tempfile::tempdir().unwrap();
+        std::fs::write(
+            td.path().join("SECURITY.md"),
+            "Every release tagged `v*` is signed in CI via Sigstore.",
+        )
+        .unwrap();
+
+        let issues = audit_docs_in_dir(td.path()).unwrap();
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.contains("first real GitHub OIDC")),
+            "issues: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn docs_audit_rejects_empty_kernel_src_without_architecture_boundary() {
+        let td = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(td.path().join("kernels").join("src")).unwrap();
+        std::fs::write(
+            td.path().join("ARCHITECTURE.md"),
+            "Section 4 owns GPU kernels.",
+        )
+        .unwrap();
+
+        let issues = audit_docs_in_dir(td.path()).unwrap();
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.contains("kernels/src") && issue.contains("empty")),
+            "issues: {issues:?}"
+        );
     }
 
     #[test]

@@ -29,4 +29,4 @@ policy:
 review:
   human_operator: null
   reviewed_on: null
-  notes: "Structural CRS claim; append-step model only."
+  notes: "Structural CRS claim; append-step model only; does not prove the Rust implementation or storage durability."

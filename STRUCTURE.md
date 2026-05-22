@@ -7,6 +7,15 @@ and [`docs/methodology.md`](docs/methodology.md). For the engineering
 discipline split (Lean Specialist / ML Engineer / DevOps / CUDA Engineer) read
 [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`ROLES.md`](ROLES.md).
 
+## Four-section implementation status
+
+| Part | Role | Primary local surface | Boundary |
+|---:|---|---|---|
+| 1 | Lean 4 / verification | `lean/`, `claims/`, `crates/refineforge-cli`, templates, bundle artifacts | Lean proves the model; refinement docs and claim linting carry the human-reviewed Rust link |
+| 2 | Release / infrastructure / DevOps | `.github/workflows/ci.yml`, `release/`, `containers/Dockerfile.verifier`, SBOM/provenance evidence | Local release-readiness works; real hosted OIDC signing still requires a remote CI run |
+| 3 | ML / training engine | `crates/refineforge-trainer`, `training/`, local-finetune bridge in `refineforge-strategies` | HELYX/Axolotl/custom backends train; Refine-Forge audits data, orchestrates runs, tracks checkpoints, and promotes accepted artifacts |
+| 4 | GPU / kernel Rust | `crates/refineforge-bitexact`, `kernels/`, `docs/bit-exact-reproducibility.md` | `helyx-kernels` owns actual kernels; Refine-Forge owns deterministic gate evidence, input manifests, and expected-output baselines |
+
 ## Top-level layout
 
 ```
@@ -22,7 +31,7 @@ refineforge/
 ├── .gitignore
 ├── .github/
 │   ├── CODEOWNERS              # path → section mapping (advisory until remote)
-│   └── workflows/ci.yml        # Section 3: multi-arch CI + Sigstore signing
+│   └── workflows/ci.yml        # Section 3: OS CI + runner-arch evidence + Sigstore signing
 ├── claims/                     # claim registry (one YAML per claim)
 ├── lean/                       # Lake project: formal models + theorems
 ├── crates/                     # Rust workspace members (9)
@@ -36,12 +45,13 @@ refineforge/
 │   ├── refineforge-derive/     # Section 1: #[derive(LeanModel)] proc-macro
 │   └── example-counter/        # EXAMPLE-002 tutorial impl (uses LeanModel)
 ├── training/
-│   ├── configs/                # example experiment + sweep YAMLs
-│   ├── scripts/                # stub-trainer.sh/.ps1 for tests
-│   ├── data/                   # training datasets (empty)
+│   ├── configs/                # example, Axolotl, and HELYX-compatible experiment YAMLs
+│   ├── scripts/                # stub-trainer.sh/.ps1 plus backend shims
+│   ├── data/                   # smoke fixture + mathlib-proof-repair-v1 corpus
 │   └── runs/                   # refine-train per-experiment runs (gitignored)
 ├── kernels/                    # Section 4: GPU kernels + bit-exact gates
-│   ├── configs/                # per-kernel gate YAMLs
+│   ├── configs/                # per-kernel gate YAMLs + HELYX-compatible smoke
+│   ├── fixtures/               # deterministic input bytes hashed into reports
 │   ├── scripts/                # stub-deterministic + stub-nondeterministic
 │   ├── src/                    # actual .cu source (empty; CUDA engineer fills)
 │   └── runs/                   # refine-bitexact per-gate reports (gitignored)
@@ -54,7 +64,7 @@ refineforge/
 ├── autonomous/                 # `refine autonomous` per-run RunReport JSONs (gitignored)
 ├── containers/                 # Section 3: Dockerfile.verifier and friends
 ├── release/                    # Section 3: release.sh / release.ps1 + signed-tag artifacts
-└── docs/                       # methodology, policies, refinement docs
+└── docs/                       # methodology, policies, refinement, release, verification docs
 ```
 
 ## Lean side (`lean/`)
@@ -100,10 +110,23 @@ review:                    # operator-filled at sign-off
   notes: null
 ```
 
+`human_operator: null` is deliberate: it records absent human review instead
+of inventing a reviewer. `refine lint check-all` enforces that the `review`
+block and `human_operator` key are present, rejects placeholder or AI reviewer
+names, and keeps CRS claims at `scope: model-only` with an explicit
+`Honest scope` disclosure until a real implementation refinement exists.
+
 | File | Claim |
 |---|---|
 | `claims/example.yaml` | EXAMPLE-001 (Lean-only tutorial) |
 | `claims/example-counter.yaml` | EXAMPLE-002 (refined tutorial) |
+| `claims/example-capability-revocation.yaml` | EXAMPLE-003 (production-shaped capability-revocation dogfood) |
+| `claims/CLAIM-CRS-001.yaml` | CRS model-only workspace broadcast claim |
+| `claims/CLAIM-CRS-002.yaml` | CRS model-only workspace capacity claim |
+| `claims/CLAIM-CRS-003.yaml` | CRS model-only narrative append-step claim |
+| `claims/CLAIM-CRS-004.yaml` | CRS model-only ethical-gate routing claim |
+| `claims/CLAIM-CRS-005.yaml` | CRS model-only Phi-proxy determinism claim |
+| `claims/helyx-audit-001.yaml` | HELYX audit-chain model-only case-study claim |
 
 ## Rust workspace (`crates/`)
 
@@ -141,7 +164,11 @@ Section 1 because changing this surface affects every consumer.
 Single proc-macro: `LeanModel` derive that generates a `pub const
 LEAN_MODEL: &'static str` containing the Lean structure declaration
 equivalent to the Rust struct. Type mapping table in the crate's
-module-level docs.
+module-level docs and `crates/refineforge-derive/README.md`.
+
+Support label: `supported-documentation-aid`. `LeanModel` does not
+generate proofs, prove Rust correctness, or replace a human-reviewed
+refinement argument.
 
 Supported field types: `u8/u16/u32/u64/usize` → `Nat`; `i8/i16/i32/i64/isize`
 → `Int`; `bool` → `Bool`; `String`/`&str` → `String`; `[u8; N]` →
@@ -235,6 +262,15 @@ determinism; it detects and records the absence of determinism.
 Custom serde Deserialize for `OutputSource` accepts `output: stdout`
 (bare scalar) and `output: {file: "..."}` (map) without YAML !tag syntax.
 
+The enterprise contract fields are `template_version`, `producer`,
+`kernel_id`, `profile`, `expected_sha256`, `input_files`, and `tags`.
+`profile: helyx_cuda` is intentionally stricter than the generic gate:
+it requires `producer: helyx-kernels`, a `helyx.*` kernel id, at least
+five runs, a 64-char lowercase expected SHA-256, deterministic CUDA env
+vars, and hardware metadata for GPU / CUDA / driver. Input files are
+sorted and hashed into `input_manifest`, so CI artifacts identify both
+the output bytes and the inputs used to produce them.
+
 Modules: `experiment` (KernelExperiment YAML + validation),
 `hash` (streaming SHA-256 of bytes / files; `all_equal`),
 `manifest` (input-file SHA-256 manifest), `lint` (strict CUDA/HELYX
@@ -247,6 +283,8 @@ Unit tests cover schema loading, strict lint profiles, input manifests,
 baseline enforcement, run-all aggregation, hashing, reports, and runner
 failure capture. POSIX-only e2e tests use the shipped stub scripts
 (deterministic → Pass; non-deterministic → Fail; dry-run → no execution).
+The Windows-compatible HELYX smoke fixture lives at
+[`kernels/configs/helyx-bitexact-smoke.yaml`](kernels/configs/helyx-bitexact-smoke.yaml).
 
 ### `crates/refineforge-trainer/` — training orchestration (Section 2)
 
@@ -490,6 +528,9 @@ the bundle exporter once had is documented in `CHANGELOG.md`).
 | `no-sorry-policy.md` | maintainers | Exactly what the policy gate catches, what it misses, when overrides are legitimate |
 | `refinement-template.md` | claim authors | Empty skeleton to copy into `docs/refinement/<CLAIM-ID>.md` |
 | `refinement/EXAMPLE-002.md` | claim authors | Answer-key showing a filled-in refinement argument with a real idealisation |
+| `verification/proof-inventory.md` | reviewers, maintainers | Current Lean-backed claim inventory: theorem shape, scope, and implementation-link status |
+| `release/release-readiness-inventory.md` | DevOps (Section 3) | Release infrastructure truth table: shipped-local, stub-tested, CI-pending, blocked, and planned surfaces |
+| `release/ci-audit-report.md` | DevOps (Section 3) | CI/release audit report template and current local blocker record |
 | `llm-repair-design.md` | ML engineer (Section 2) | Architecture of the repair loop + four-step swap-in recipe for a real LLM strategy |
 | `repair-evaluation.md` | ML engineer (Section 2) | Benchmark methodology, mutation taxonomy, training/eval separation rules |
 | `security.md` | DevOps (Section 3) | Threat model, supply chain, reviewer-side signature verification, first-CI-signing boundary, vuln reporting |
@@ -504,27 +545,30 @@ the bundle exporter once had is documented in `CHANGELOG.md`).
 | `plans/finetuning-plan.md` | operator, KF maintainer | 8-phase fine-tuning plan: KF sft_pair mode + new `lean_proof_repair` probe set → Mathlib mutation corpus N≥1000 → axolotl fine-tune via Option A grants → `refine --strategy local-finetune` via candle. ~8-12 weeks elapsed, ~$5-11k cash. Embedded probe-set spec ready to copy into Knowledge-Foundry |
 | `HELYX-CASE-STUDY.md` | adopters | Pointer to the external worked example (`helyx-proofforge`) |
 
-## Workspace test counts (current)
+## Verification snapshots
 
-`cargo nextest run --workspace` → **383/383 pass**. Per-crate
-breakdown via `cargo nextest list --workspace` (each crate's
-lib + bin targets counted separately per nextest convention):
+Historical v0.2.0 full-workspace snapshot:
 
-| Crate | Tests | Δ since v0.2.0 tag |
-|---|---:|---:|
-| `refineforge-escalation` | 170 | — |
-| `refineforge-trainer` | 74 | — |
-| `refineforge-cli` | 62 | +2 (Phase 3.8 cross-run preserve) |
-| `refineforge-bitexact` | 32 | — |
-| `refineforge-strategies` | 21 | +3 (stop_reason) |
-| `refineforge-repair-api` | 11 | — |
-| `example-counter` | 9 | — |
-| `refineforge-eval` | 4 | — |
-| `refineforge-derive` | (proc-macro, consumed via example-counter) | — |
+- `cargo nextest run --workspace` → **383/383 pass** at commit `6486c6a`.
+- Per-crate nextest breakdown at that snapshot: refineforge-escalation 170,
+  refineforge-trainer 74, refineforge-cli 62, refineforge-bitexact 32,
+  refineforge-strategies 21, refineforge-repair-api 11, example-counter 9,
+  refineforge-eval 4; refineforge-derive is a proc-macro consumed by
+  example-counter tests.
 
-v0.2.0 tag is at commit `6486c6a` (378 tests). Phase 3.8 +
-Phase 4 audit landed post-tag under `[Unreleased]` — see
-CHANGELOG.
+Latest local Part 4 verification on `master` (2026-05-22):
+
+- `cargo test -p refineforge-bitexact`
+- `cargo test -p refineforge-cli`
+- `cargo run -p refineforge-bitexact -- lint kernels/configs/helyx-bitexact-smoke.yaml`
+- `cargo run -p refineforge-bitexact -- run kernels/configs/helyx-bitexact-smoke.yaml`
+- `cargo run -p refineforge-cli --bin refine -- release ready --version 0.2.2 --allow-dirty --skip-docker --skip-signature ...`
+
+The HELYX smoke gate passed with expected and observed SHA-256
+`d5ca9a70b50179b497870748df66099e49197509f40ae6785513648a87eb2e03`.
+Workspace-wide `cargo fmt --all -- --check` still has unrelated
+pre-existing formatting drift outside the bitexact slice; scoped
+`cargo fmt --package refineforge-bitexact -- --check` passed.
 
 ## How the pieces connect
 

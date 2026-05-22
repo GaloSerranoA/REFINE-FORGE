@@ -26,6 +26,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Record runner architecture
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          echo "runner.os=${{ runner.os }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "runner.arch=${{ runner.arch }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          rustc -Vv | tee -a "$GITHUB_STEP_SUMMARY"
+          uname -a | tee -a "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Record runner architecture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "runner.os=${{ runner.os }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "runner.arch=${{ runner.arch }}" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          rustc -Vv | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
       # ─── Caches ──────────────────────────────────────────────────────
       # elan + the toolchain binaries (~300 MB; biggest single-time cost)
       - name: Cache elan + Lean toolchain
@@ -176,6 +194,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Record runner architecture
+        shell: bash
+        run: |
+          echo "runner.os=${{ runner.os }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "runner.arch=${{ runner.arch }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          rustc -Vv | tee -a "$GITHUB_STEP_SUMMARY"
+          uname -a | tee -a "$GITHUB_STEP_SUMMARY" || true
+
       - name: Build verifier container
         run: docker build -t refineforge-verifier:ci -f containers/Dockerfile.verifier .
 
@@ -196,6 +222,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Record runner architecture
+        shell: bash
+        run: |
+          echo "runner.os=${{ runner.os }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "runner.arch=${{ runner.arch }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          rustc -Vv | tee -a "$GITHUB_STEP_SUMMARY"
+          uname -a | tee -a "$GITHUB_STEP_SUMMARY" || true
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v14
@@ -234,6 +268,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Record runner architecture
+        shell: bash
+        run: |
+          echo "runner.os=${{ runner.os }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "runner.arch=${{ runner.arch }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          rustc -Vv | tee -a "$GITHUB_STEP_SUMMARY"
+          uname -a | tee -a "$GITHUB_STEP_SUMMARY" || true
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -289,6 +331,14 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+
+      - name: Record runner architecture
+        shell: bash
+        run: |
+          echo "runner.os=${{ runner.os }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "runner.arch=${{ runner.arch }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          rustc -Vv | tee -a "$GITHUB_STEP_SUMMARY"
+          uname -a | tee -a "$GITHUB_STEP_SUMMARY" || true
 
       - name: Download bundle artifacts (canonical builder)
         uses: actions/download-artifact@v4

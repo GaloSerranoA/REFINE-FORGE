@@ -10,6 +10,48 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Plan 1 / Plan 2 execution artifacts
+
+- Added `docs/verification/proof-inventory.md`, classifying each Lean-backed
+  claim by theorem shape, scope, and implementation-link status.
+- Added `docs/release/release-readiness-inventory.md` and
+  `docs/release/ci-audit-report.md` so release infrastructure has an explicit
+  shipped-local / stub-tested / CI-pending / blocked truth surface.
+- Added a blocked `EXAMPLE-003` human-review packet under
+  `release/evidence/verification-review-20260522/`, preserving
+  `review.human_operator: null` until a real human identity approves it.
+- Added `crates/refineforge-derive/README.md` documenting `LeanModel` as a
+  `supported-documentation-aid`, not a proof generator.
+
+### Changed — release and verification honesty gates
+
+- `docs/methodology.md`, `docs/refinement-template.md`, CRS refinement notes,
+  and CRS claim review notes now state the `status: proven` vs `scope:`
+  boundary more explicitly.
+- CI now records `runner.os`, `runner.arch`, `rustc -Vv`, and host
+  architecture in job summaries so architecture coverage is evidenced by
+  future artifacts instead of inferred from runner labels.
+- Security and reproducible-build docs now link to the release-readiness
+  inventory and keep Nix, Sigstore, Docker, and signer-identity extraction
+  boundaries explicit.
+
+### Added — honesty guardrails for known gaps
+
+- The claim schema now parses `review.human_operator`, `review.reviewed_on`,
+  and `review.notes` instead of ignoring review metadata.
+- `refine lint check-all` now fails when claim YAML omits the `review` block
+  or `review.human_operator`, and it rejects placeholder/AI reviewer names
+  such as `codex`, `assistant`, `tbd`, or `fake`.
+- CRS claims are now linted as explicitly model-only: `CLAIM-CRS-*` entries
+  must stay `scope: model-only`, include an `Honest scope` model disclosure,
+  and avoid Rust implementation source citations until a real refinement
+  exists.
+- The docs truth audit now fails on unconditional Sigstore release-signing
+  claims before the first real GitHub OIDC signed-bundle run, and it fails if
+  `kernels/src/` is empty while `ARCHITECTURE.md` no longer says so.
+- Signature verification tests now assert the current signer-identity extraction
+  placeholder instead of letting the fallback string drift silently.
+
 ### Added — GPU/kernel bit-exact enterprise gate
 
 - `KernelExperiment` now supports HELYX-compatible contract metadata:
@@ -17,12 +59,33 @@ CLI surface is declared stable.
   `input_files`, and sorted `tags`.
 - `expected_sha256` closes the stable-but-wrong gap: identical run hashes still
   fail when they do not match the declared baseline.
+- Input file manifests are hashed into reports so kernel evidence binds both
+  outputs and deterministic inputs.
 - `refine-bitexact lint` enforces strict CUDA / HELYX contract readiness before
-  execution.
+  execution, including the stricter `profile: helyx_cuda` contract for
+  `producer: helyx-kernels`.
+- `refine-bitexact run` now writes per-run `runs.jsonl` alongside the aggregate
+  `bitexact-report.json`.
 - `refine-bitexact run-all` discovers kernel configs deterministically, runs all
-  included gates, and writes aggregate CI summary JSON.
+  included gates, and writes aggregate CI summary JSON. Production discovery
+  skips demo `example-*` and `*-smoke.yaml` configs by default; CI can opt in
+  with `--include-examples`.
 - `kernels/configs/helyx-bitexact-smoke.yaml` provides a HELYX-compatible
   contract fixture while keeping real `helyx-kernels` implementation external.
+- CI now lints the HELYX smoke contract and keeps the real-kernel-count gate
+  separate from examples and smoke fixtures.
+
+### Changed — docs truth surface for the four enterprise sections
+
+- `README.md` now has a single four-section table mapping Lean, DevOps, ML, and
+  GPU/kernel ownership to the actual local Refine-Forge surfaces and HELYX
+  boundaries.
+- `STRUCTURE.md` now reflects the current `training/` and `kernels/` layouts,
+  the HELYX kernel contract fields, and the latest local Part 4 verification
+  snapshot.
+- The documentation now states the key boundary explicitly: Refine-Forge does
+  not implement real HELYX CUDA kernels; it owns the bit-exact gate, reports,
+  manifests, and CI/audit artifacts around `helyx-kernels`.
 
 ### Added — ML training engine HELYX-compatible orchestration
 

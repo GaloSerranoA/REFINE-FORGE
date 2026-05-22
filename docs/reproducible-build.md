@@ -21,6 +21,10 @@ Owned by the **Infrastructure / DevOps** section
 > `lean4-nix`'s documented API or `crane`'s evolving conventions.
 > Until that first green run lands, treat this doc as describing
 > the **intended state**, not the **proven state**.
+>
+> For the current shipped/stub-tested/CI-pending release
+> infrastructure inventory, see
+> [`docs/release/release-readiness-inventory.md`](release/release-readiness-inventory.md).
 
 ## 1. Why bit-identical matters
 

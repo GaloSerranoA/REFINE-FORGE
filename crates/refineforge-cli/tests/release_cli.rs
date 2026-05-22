@@ -68,5 +68,8 @@ fn ci_workflow_runs_release_evidence_and_container_smoke() {
     assert!(workflow.contains("bundle export EXAMPLE-003"));
     assert!(workflow.contains("Dockerfile.verifier"));
     assert!(workflow.contains("release/evidence"));
+    assert!(workflow.contains("Record runner architecture"));
+    assert!(workflow.contains("runner.arch"));
+    assert!(workflow.contains("rustc -Vv"));
     assert!(!workflow.contains("scan check-all || echo"));
 }

@@ -27,7 +27,11 @@ Read in this order — each doc is short and points at the next.
 | [docs/repair-evaluation.md](docs/repair-evaluation.md) | How we'll measure whether `refine repair` is any good — corpus design, mutation taxonomy, statistical reporting |
 | [docs/security.md](docs/security.md) | Threat model, supply chain, signed-bundle verification, first-CI-signing boundary, vuln reporting |
 | [docs/reproducible-build.md](docs/reproducible-build.md) | Bit-identical-rebuild methodology — Nix flake (authored), verification protocol |
+| [docs/verification/proof-inventory.md](docs/verification/proof-inventory.md) | Current Lean-backed claim inventory: theorem shape, scope, and implementation-link status |
+| [docs/release/release-readiness-inventory.md](docs/release/release-readiness-inventory.md) | Release infrastructure inventory: shipped-local, stub-tested, CI-pending, blocked, and planned surfaces |
+| [docs/release/ci-audit-report.md](docs/release/ci-audit-report.md) | CI/release audit report template and current local blocker record |
 | [docs/bit-exact-reproducibility.md](docs/bit-exact-reproducibility.md) | GPU kernel bit-exact reproducibility: non-determinism sources + mitigations + gate primitive |
+| [docs/superpowers/plans/2026-05-22-gpu-kernel-bitexact-track.md](docs/superpowers/plans/2026-05-22-gpu-kernel-bitexact-track.md) | Part 4 execution plan for the HELYX `helyx-kernels` → Refine-Forge `refineforge-bitexact` handoff |
 | [docs/escalation-criteria.md](docs/escalation-criteria.md) | **CONTRACT v0.3** (operator-signed; v0.2 superseded same-day with Q1/Q3/Q4 revisions). 9 categories that always escalate to the human during `refine autonomous` runs. Enforced by `crates/refineforge-escalation` |
 | [docs/why-rust.md](docs/why-rust.md) | Reviewer-grade answer to "why not PyTorch?" — the trade-off, the costs, the ceiling-property reasons. Anchors on the operator's one-liner: **"PyTorch is good for humans. Rust is good for machines."** |
 | [docs/ecosystem.md](docs/ecosystem.md) | **v0.2 (HELYX-centric reframe).** HELYX is the operator's LLM; the other three (Cogn8ty + Knowledge-Foundry + refineforge) are HELYX's infrastructure. **refineforge exists because the alternative was hiring four engineers to verify HELYX's load-bearing claims manually.** One-liner: **"HELYX is the LLM. Cogn8ty thinks for it, KF teaches it, refineforge proves it. Rust binds them."** v0.1 had flat-peers framing; superseded |
@@ -50,6 +54,20 @@ artifact a third party can independently re-verify.
 
 Fork this repo, replace the example claim with your own, and you have
 a verification pipeline.
+
+## Four enterprise sections
+
+Refine-Forge now carries the local automation surface for the four specialist
+roles the operator originally described. HELYX owns the real model/kernel
+implementation; Refine-Forge owns proof, release, orchestration, and evidence
+gates around those artifacts.
+
+| Part | Specialist role | Refine-Forge surface | HELYX boundary |
+|---:|---|---|---|
+| 1 | Lean 4 / verification engineer | `refine lean`, `refine scan`, bundle export/verify, template provenance, claim linting | Proves and packages claims about HELYX-adjacent Rust behavior |
+| 2 | Release / infrastructure / DevOps engineer | CI gates, release readiness, verifier container, SBOM/provenance evidence, docs truth audit, signed-bundle flow | Makes releases auditable; first real remote/OIDC signing still depends on hosted CI |
+| 3 | ML / training engineer | `refine-train` dataset audit, HELYX `helyx-train` backend orchestration, checkpoints, reports, local-finetune promotion | HELYX/Axolotl/custom backend trains; Refine-Forge owns audit/run evidence |
+| 4 | GPU / kernel Rust engineer | `refine-bitexact` lint/run/run-all, HELYX-compatible kernel metadata, input manifests, expected SHA-256 baselines, CI summary JSON | `helyx-kernels` implements kernels; Refine-Forge proves bit-exact gate evidence |
 
 ## What this is *not*
 
@@ -77,6 +95,11 @@ EXAMPLE-002 deliberately includes a real Lean-vs-Rust idealisation
 something non-trivial to argue. Read it as the answer-key for what
 [`docs/refinement-template.md`](docs/refinement-template.md) asks
 you to write for your own claims.
+
+`crates/refineforge-derive` is a supported documentation aid. Its
+`#[derive(LeanModel)]` macro emits a Lean structure declaration for
+review and refinement documentation; it does not generate proofs and
+does not replace a human-reviewed refinement argument.
 
 ## External worked example
 
@@ -209,6 +232,7 @@ cargo build --release
 | `refine lean check-all`                | Verify every claim                                                      |
 | `refine scan check <id>`               | Confirm a claim's `rust_source` entities exist in the cited Rust file   |
 | `refine scan check-all`                | Same, for every claim                                                   |
+| `refine lint check <id>` / `check-all` | Fast claim linter: Rust symbol drift, refinement-doc sections, explicit `review.human_operator`, fake reviewer names, and CRS model-only disclosure |
 | `refine bundle export <id>`            | Bundle the sources + manifest + report                                  |
 | `refine bundle verify <bundle-dir>`    | Re-hash every file in a bundle and confirm the manifest matches         |
 | `refine bundle verify <bundle-dir> --verify-signature` | Hashes + Sigstore signature (via cosign). See [SECURITY.md](SECURITY.md) |
@@ -222,9 +246,9 @@ cargo build --release
 | `refine-train monitor <run_dir>`       | Tail `progress.jsonl` and show latest metrics |
 | `refine-train report <run_dir>`        | Build / refresh `report.json` for a run |
 | `refine-train promote <run_dir>`       | Convert a successful training report + latest checkpoint into a `refineforge-local-finetune.json` runtime directory plus `promotion-report.json` |
-| `refine-bitexact lint <kernel.yaml>`   | Lint a kernel experiment for strict CUDA / HELYX contract readiness |
+| `refine-bitexact lint <kernel.yaml> [--json] [--output <path>]` | Lint a kernel experiment for strict CUDA / HELYX contract readiness before execution |
 | `refine-bitexact run <kernel.yaml>`    | Bit-exact reproducibility gate: run kernel N times, fail if SHA-256 hashes disagree or miss `expected_sha256`. See [`kernels/README.md`](kernels/README.md) and [`docs/bit-exact-reproducibility.md`](docs/bit-exact-reproducibility.md) |
-| `refine-bitexact run-all <dir>`        | Deterministically discover kernel YAMLs, run every included gate, and write aggregate CI summary JSON |
+| `refine-bitexact run-all <dir> [--include-examples] [--summary-json <path>]` | Deterministically discover kernel YAMLs, run every included gate, and write aggregate CI summary JSON. By default, demo `example-*` and `*-smoke.yaml` configs are skipped so CI does not confuse examples with production kernels. |
 | `refine templates`                     | List scaffolding templates                                              |
 | `refine new --template <t> --module <M> <ID>` | Scaffold a new claim from a template                             |
 
@@ -261,6 +285,7 @@ Where each thing currently lives:
 | Verification bundle exporter + verifier    | ✅ implemented      |
 | Proof template generator (`refine new`)    | ✅ implemented      |
 | Rust source scan (name-presence check)     | ✅ implemented      |
+| Claim honesty linter                       | ✅ explicit `review.human_operator`, no fake AI reviewer placeholders, CRS `model-only` disclosure, Rust-symbol drift, refinement-doc sections |
 | Refinement-argument template               | ✅ `docs/refinement-template.md` |
 | LLM repair loop (LSP client)               | ✅ shipped: `mock`, `anthropic-mock`, **`anthropic`** (real HTTP with retry + prompt caching), and `local-finetune` (command-manifest runtime bridge) |
 | `refineforge-strategies` workspace member  | ✅ `AnthropicStrategy` + `ReqwestTransport` plus `LocalFinetuneStrategy` command-manifest bridge. Native checkpoint loading is still blocked on the final model/tokenizer layout. |
@@ -279,12 +304,14 @@ Where each thing currently lives:
 | Fine-tuned proof-repair model              | not yet (6+ month research commitment) |
 | Syn-based scan (parse, not regex)          | not yet             |
 
-**Workspace test count (historical v0.2.0 snapshot):** `cargo nextest run --workspace` → **383/383 pass**. Per-crate
-breakdown (lib + bin tests counted separately per nextest convention): refineforge-escalation 170,
-refineforge-trainer 74, refineforge-cli 62, refineforge-bitexact 32, refineforge-strategies 21,
-refineforge-repair-api 11, example-counter 9, refineforge-eval 4. (refineforge-derive ships as a
-proc-macro consumed by example-counter's `#[derive(LeanModel)]` test.) Released as v0.2.0 at commit
-`6486c6a`; Phase 3.8 + Phase 4 audit landed post-tag under `[Unreleased]`.
+**Verification snapshot (2026-05-22, local `master`):** `cargo test -p refineforge-bitexact`,
+`cargo test -p refineforge-cli`, `refine-bitexact lint kernels/configs/helyx-bitexact-smoke.yaml`,
+`refine-bitexact run kernels/configs/helyx-bitexact-smoke.yaml`, and
+`refine release ready --version 0.2.2 --allow-dirty --skip-docker --skip-signature`
+all pass. The HELYX smoke gate observed stable SHA-256
+`d5ca9a70b50179b497870748df66099e49197509f40ae6785513648a87eb2e03`.
+Historical v0.2.0 full-workspace nextest snapshot remains `383/383` at commit
+`6486c6a`; newer Part 3 and Part 4 work is tracked under `[Unreleased]`.
 
 ## License
 

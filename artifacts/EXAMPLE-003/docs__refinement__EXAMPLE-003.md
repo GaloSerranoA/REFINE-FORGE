@@ -51,6 +51,9 @@ fields. The fields are private, so callers construct values through
 `#[derive(LeanModel)]` generates the structural Lean skeleton for the
 Rust struct. The hand-written Lean model is more precise because it
 also defines the finite `Right` domain and the authorization semantics.
+`LeanModel` is a supported documentation aid only: it does not prove
+the Rust implementation correct, does not generate theorems, and does
+not replace this human-reviewed refinement document.
 
 ### 3.3 `authorizes` mapping
 

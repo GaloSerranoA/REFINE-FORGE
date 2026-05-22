@@ -26,6 +26,8 @@ pub struct Claim {
     pub lean: LeanInfo,
     #[serde(default)]
     pub policy: Policy,
+    #[serde(default)]
+    pub review: ReviewInfo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +56,16 @@ pub struct Policy {
     pub no_admit: bool,
     #[serde(default = "default_true")]
     pub no_axioms_beyond_lean_core: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ReviewInfo {
+    #[serde(default)]
+    pub human_operator: Option<String>,
+    #[serde(default)]
+    pub reviewed_on: Option<String>,
+    #[serde(default)]
+    pub notes: String,
 }
 
 impl Default for Policy {

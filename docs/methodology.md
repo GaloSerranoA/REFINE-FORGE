@@ -55,6 +55,27 @@ artifacts:
 The refinement argument is **the** trust-critical artifact. Lean
 checks (1) and (2) automatically; (3) requires a competent reviewer.
 
+## Claim assurance levels
+
+`status: proven` means the referenced Lean theorem builds without
+`sorry`, `admit`, or project-local axioms. It does not, by itself,
+mean the Rust implementation is verified.
+
+The implementation assurance comes from `scope:`:
+
+- `model-only` - Lean proves a mathematical model. The claim must
+  not cite Rust implementation files as evidence.
+- `tutorial` / `tutorial-production-shaped` - Lean plus Rust
+  demonstrate the refinement workflow for examples. These are
+  educational or pattern claims unless reviewed otherwise.
+- `model+refined` - Lean theorem, refinement document, Rust
+  implementation citations, and human review all agree on the same
+  invariant.
+
+A claim may move from `model-only` to implementation-refined scope
+only after the escalation process records the review packet and the
+claim's `review.human_operator` is populated by a real human.
+
 ## Sequencing of trust
 
 A customer or funder verifying a refineforge-backed claim should

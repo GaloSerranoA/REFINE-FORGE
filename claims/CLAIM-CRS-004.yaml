@@ -30,4 +30,4 @@ policy:
 review:
   human_operator: null
   reviewed_on: null
-  notes: "Structural CRS claim; safety routing model only."
+  notes: "Structural CRS claim; safety routing model only; does not prove the Rust implementation or a complete ethics system."

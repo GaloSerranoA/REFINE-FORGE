@@ -28,8 +28,10 @@ otherwise.
 
 ## Verifying a release
 
-Every release tagged `v*` is signed in CI via Sigstore (Fulcio + Rekor),
-keyless. To verify a bundle you downloaded:
+Reviewer-side Sigstore verification is implemented, but this checkout has not
+yet produced a live GitHub OIDC signed-bundle artifact. Once the first real CI
+signing run lands, release tags can be verified via Sigstore (Fulcio + Rekor),
+keyless. To verify a signed bundle you downloaded:
 
 ```bash
 # Install cosign once:
@@ -75,6 +77,8 @@ refineforge **does not defend against**:
   — that's what refinement-doc review is for).
 
 Full enumeration in [docs/security.md](docs/security.md) §1.
+The current release-infrastructure truth table is maintained in
+[docs/release/release-readiness-inventory.md](docs/release/release-readiness-inventory.md).
 
 ## Signing chain (current state)
 
@@ -102,3 +106,9 @@ The cosign command-line invocations + flag combinations follow the
 documented `cosign sign-blob` / `cosign verify-blob` API for
 cosign v2.4.x; any future-version drift would surface as a flag
 mismatch on first real CI run.
+
+`extract_signer_identity()` intentionally returns `None` today after cosign
+validates the signature and identity regex. Reports therefore show the
+fallback string `(identity matched but couldn't extract)` until a real X.509
+SAN parser or stable cosign JSON output path is added. This is a reporting
+gap, not a signature-validation bypass.

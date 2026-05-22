@@ -226,6 +226,11 @@ field. Especially: `proven` (model-only) → `proven` (model+refined),
 which is the moment a claim becomes marketable as a verified
 artifact about the running system.
 
+`status: proven` means the referenced Lean theorem builds under the
+project policy. It does not by itself prove Rust behavior. The trust
+increase comes from `scope:` plus the refinement document and a real
+human review.
+
 **Escalate when:**
 - AI wants `proven` (model-only) → `proven` (model + refined)
   on any claim.

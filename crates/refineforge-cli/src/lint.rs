@@ -6,6 +6,7 @@ use std::path::Path;
 
 use crate::claim::{self, Claim};
 use crate::scan::{self, ScanStatus};
+use serde_yaml::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LintSeverity {
@@ -54,6 +55,9 @@ pub fn lint_claim(root: &Path, _claim_path: &Path, c: &Claim) -> Result<LintRepo
         claim_id: c.claim_id.clone(),
         issues: Vec::new(),
     };
+
+    validate_review_metadata(_claim_path, c, &mut report)?;
+    validate_scope_disclosure(c, &mut report);
 
     let scan_report = scan::scan_claim(root, c)?;
     match scan_report.status {
@@ -200,6 +204,97 @@ fn expects_refinement_doc(c: &Claim) -> bool {
     status.contains("refined") || (status == "proven" && !c.rust_source.is_empty())
 }
 
+fn validate_review_metadata(claim_path: &Path, c: &Claim, report: &mut LintReport) -> Result<()> {
+    if claim_path.exists() {
+        let text = std::fs::read_to_string(claim_path)?;
+        let yaml: Value = serde_yaml::from_str(&text)?;
+        let Some(review) = yaml_get(&yaml, "review") else {
+            report.error(
+                "missing review block; use review.human_operator: null until a human signs off"
+                    .into(),
+            );
+            return Ok(());
+        };
+        match yaml_get(review, "human_operator") {
+            None => report.error(
+                "missing review.human_operator; use null instead of omitting review status".into(),
+            ),
+            Some(Value::Null) => {}
+            Some(Value::String(operator)) => {
+                if is_placeholder_human_operator(operator) {
+                    report.error(format!(
+                        "review.human_operator uses placeholder/AI identity `{operator}`; keep null until a real human signs"
+                    ));
+                }
+            }
+            Some(_) => report
+                .error("review.human_operator must be null or a real human identity string".into()),
+        }
+    }
+
+    if let Some(operator) = &c.review.human_operator {
+        if is_placeholder_human_operator(operator) {
+            report.error(format!(
+                "review.human_operator uses placeholder/AI identity `{operator}`; keep null until a real human signs"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_scope_disclosure(c: &Claim, report: &mut LintReport) {
+    if !c.claim_id.starts_with("CLAIM-CRS-") {
+        return;
+    }
+
+    let scope = c.scope.trim().to_ascii_lowercase();
+    if scope != "model-only" && scope != "model_only" {
+        report.error("CRS claims must stay scope: model-only until a human-reviewed implementation refinement exists".into());
+    }
+
+    let description = c.description.to_ascii_lowercase();
+    let notes = c.review.notes.to_ascii_lowercase();
+    if !description.contains("honest scope")
+        || !(description.contains("model") || notes.contains("model"))
+    {
+        report.error("CRS model-only claims must disclose the model-only limitation in description/review notes with `Honest scope`".into());
+    }
+
+    if !c.rust_source.is_empty() {
+        report.error(
+            "CRS model-only claims may not cite Rust implementation sources without upgrading scope and review".into(),
+        );
+    }
+}
+
+fn yaml_get<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
+    let Value::Mapping(map) = value else {
+        return None;
+    };
+    map.get(Value::String(key.to_string()))
+}
+
+fn is_placeholder_human_operator(operator: &str) -> bool {
+    let normalized = operator.trim().to_ascii_lowercase();
+    normalized.is_empty()
+        || matches!(
+            normalized.as_str(),
+            "ai" | "assistant"
+                | "bot"
+                | "claude"
+                | "codex"
+                | "fake"
+                | "llm"
+                | "none"
+                | "null"
+                | "placeholder"
+                | "tbd"
+                | "todo"
+                | "unknown"
+        )
+}
+
 fn print_report(report: &LintReport) {
     println!("claim: {}", report.claim_id);
     if report.issues.is_empty() {
@@ -218,7 +313,7 @@ fn print_report(report: &LintReport) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::claim::{Claim, LeanInfo, Policy, RustSource};
+    use crate::claim::{Claim, LeanInfo, Policy, ReviewInfo, RustSource};
     use std::path::Path;
 
     fn base_claim(id: &str, status: &str, rust_path: &str) -> Claim {
@@ -241,6 +336,7 @@ mod tests {
                 theorems: vec!["test_theorem".into()],
             },
             policy: Policy::default(),
+            review: ReviewInfo::default(),
         }
     }
 
@@ -258,6 +354,14 @@ mod tests {
         let dir = root.join("docs").join("refinement");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(format!("{claim_id}.md")), body).unwrap();
+    }
+
+    fn write_claim_yaml(root: &Path, name: &str, body: &str) -> std::path::PathBuf {
+        let dir = root.join("claims");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, body).unwrap();
+        path
     }
 
     fn complete_refinement_doc() -> &'static str {
@@ -325,5 +429,73 @@ mod tests {
         let report = lint_claim(td.path(), &td.path().join("claims/test.yaml"), &claim).unwrap();
 
         assert!(!report.has_errors(), "{:?}", report.issues);
+    }
+
+    #[test]
+    fn lint_flags_missing_explicit_human_operator_field() {
+        let td = tempfile::tempdir().unwrap();
+        let path = write_claim_yaml(
+            td.path(),
+            "missing-review.yaml",
+            "claim_id: TEST-LINT-005\nreview:\n  reviewed_on: null\n",
+        );
+        let claim = base_claim("TEST-LINT-005", "proven", "src/none.rs");
+
+        let report = lint_claim(td.path(), &path, &claim).unwrap();
+
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|issue| issue.message.contains("review.human_operator")),
+            "{report:?}"
+        );
+        assert!(report.has_errors());
+    }
+
+    #[test]
+    fn lint_rejects_ai_placeholder_human_operator() {
+        let td = tempfile::tempdir().unwrap();
+        let path = write_claim_yaml(
+            td.path(),
+            "fake-reviewer.yaml",
+            "claim_id: TEST-LINT-006\nreview:\n  human_operator: codex\n  reviewed_on: null\n",
+        );
+        let claim = base_claim("TEST-LINT-006", "proven", "src/none.rs");
+
+        let report = lint_claim(td.path(), &path, &claim).unwrap();
+
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|issue| issue.message.contains("placeholder")),
+            "{report:?}"
+        );
+        assert!(report.has_errors());
+    }
+
+    #[test]
+    fn lint_rejects_crs_claim_without_model_only_scope() {
+        let td = tempfile::tempdir().unwrap();
+        let path = write_claim_yaml(
+            td.path(),
+            "CLAIM-CRS-999.yaml",
+            "claim_id: CLAIM-CRS-999\nreview:\n  human_operator: null\n",
+        );
+        let mut claim = base_claim("CLAIM-CRS-999", "proven", "src/none.rs");
+        claim.scope = "model+refined".into();
+        claim.description = "No disclosure.".into();
+
+        let report = lint_claim(td.path(), &path, &claim).unwrap();
+
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|issue| issue.message.contains("model-only")),
+            "{report:?}"
+        );
+        assert!(report.has_errors());
     }
 }

@@ -364,7 +364,7 @@ fn print_report(r: &ScanReport) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::claim::{LeanInfo, Policy, RustSource};
+    use crate::claim::{LeanInfo, Policy, ReviewInfo, RustSource};
 
     fn claim_with_source(types: Vec<&str>, functions: Vec<&str>) -> Claim {
         Claim {
@@ -386,6 +386,7 @@ mod tests {
                 theorems: vec![],
             },
             policy: Policy::default(),
+            review: ReviewInfo::default(),
         }
     }
 

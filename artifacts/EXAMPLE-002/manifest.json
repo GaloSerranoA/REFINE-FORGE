@@ -1,16 +1,21 @@
 {
   "claim_id": "EXAMPLE-002",
-  "created_at": "2026-05-18T18:05:23.398906900Z",
+  "created_at": "2026-05-22T20:09:19.575806400Z",
   "lean_toolchain": "leanprover/lean4:v4.29.1",
   "files": {
     "claims/example-counter.yaml": "fc0e05de93b1fa43c14c38de877881602b0e07e40332a7dd16db2a16af6ebbb5",
     "docs/refinement/EXAMPLE-002.md": "5d677937d9762ce26d866abfadd4aa893ba99c36a363790a9f7dd4d46c6d7e0a",
-    "lean/Refineforge.lean": "d78ff85cade910537074e92a93e8696fc987d143f4de3ef6bec2994735e9a0c9",
+    "lean/Refineforge.lean": "5fe3aa082e5a786ee5e72da49f43fac0475bead6056da1e55d15313a78459bf5",
+    "lean/Refineforge/CapabilityRevocation.lean": "2607e7f2e7750f80029c97200d07036d1c8bde6aa90956c20579b6fe8c011e06",
+    "lean/Refineforge/Consciousness/Claims.lean": "6a565bdef5b5b21d8413dbbc02f0df89c79c318badfce25cf3ad143a1b2f11bb",
     "lean/Refineforge/Counter.lean": "e8f2e8097d1b47434a5146cd219741b0119ca513f99b6b945179cde1a72d5a7e",
     "lean/Refineforge/Example.lean": "5c1ea46029bc96b8f6edc97313a4f1f15f47c30ce558abe1e56b890e3ca95b17",
+    "lean/Refineforge/Helyx.lean": "df18dd8f14b96b4f2ca96a066771828b87df14abbc363186d3589a40f6fbf8f5",
+    "lean/Refineforge/Helyx/Audit.lean": "e8669b97c8bf818dc4aa721ca1a8129e22cb21ce4cc78f3b60e7b0a442a7c0e0",
+    "lean/lake-manifest.json": "a6ca02c28984491153b391f57f9bba9ee7b8b8ecd9466b39258177ad6e9edc6c",
     "lean/lakefile.toml": "7cb8ca5099c850288731f77eee6ae594e58c576b34b59f7d5bebc3598c5ea3b5",
     "lean/lean-toolchain": "7dc000621e0046d1aada809e2b7177e64454645cf4c741e9daaf79c99ec2e7a2"
   },
-  "report_sha256": "60954384ae55be6c7af874b5fec489a84c4c646a072d8385453d14eb6fccde92",
+  "report_sha256": "2fc82a9c92c753eecd44a2706d860a434ddb806afc82a55a16179b7eb1110ccd",
   "bundle_schema": 1
 }

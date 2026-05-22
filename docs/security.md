@@ -5,10 +5,11 @@ supply-chain integrity, signing chain, and vulnerability-reporting
 policy. It is owned by the **Infrastructure / DevOps** section
 (see [ARCHITECTURE.md](../ARCHITECTURE.md) §3).
 
-> **Status (0.1.0):** This is the *design* doc. The bundle exporter
-> already produces SHA-256-sealed bundles, but they are not signed
-> and the build is not yet hermetic. The work to close those gaps is
-> Section 3 phase 2 in the architecture's sequencing.
+> **Status (Unreleased):** Reviewer-side bundle signature verification
+> is implemented through `cosign verify-blob`, and CI signing is
+> authored but still pending its first real GitHub OIDC run. The Nix
+> flake is authored but first locked-build verification is still
+> pending.
 
 ## 1. Threat model
 
@@ -70,6 +71,10 @@ reproducibility-critical work, the DevOps section's
 [reproducible-build.md](reproducible-build.md) pins every input by
 content hash via the authored Nix flake. First-build verification is
 still pending on a Nix-capable runner.
+
+For the current shipped/stub-tested/CI-pending release infrastructure
+inventory, see
+[`release/release-readiness-inventory.md`](release/release-readiness-inventory.md).
 
 ## 3. Signing chain (reviewer-side shipped; first CI signing pending)
 

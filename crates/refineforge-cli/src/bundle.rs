@@ -35,8 +35,7 @@ pub struct Manifest {
 const BUNDLE_SCHEMA: u32 = 1;
 
 fn sha256_file(p: &Path) -> Result<String> {
-    let data =
-        std::fs::read(p).with_context(|| format!("hashing {}", p.display()))?;
+    let data = std::fs::read(p).with_context(|| format!("hashing {}", p.display()))?;
     let mut h = Sha256::new();
     h.update(&data);
     Ok(hex::encode(h.finalize()))
@@ -54,8 +53,7 @@ pub fn export(root: &Path, claim_id: &str, out: Option<PathBuf>) -> Result<()> {
     let (claim_path, c) = claim::load(root, claim_id)?;
     let report = runner::run(root, &c)?;
     let out_dir = out.unwrap_or_else(|| root.join("artifacts").join(claim_id));
-    std::fs::create_dir_all(&out_dir)
-        .with_context(|| format!("creating {}", out_dir.display()))?;
+    std::fs::create_dir_all(&out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
 
     // Walk lean/ for every source file lake needs to build the library.
     // Lake build will import the whole library root, so we cannot ship
@@ -124,9 +122,8 @@ pub fn export(root: &Path, claim_id: &str, out: Option<PathBuf>) -> Result<()> {
             .replace('\\', "/");
         let h = sha256_file(src)?;
         let dst = out_dir.join(encode_rel(&rel));
-        std::fs::copy(src, &dst).with_context(|| {
-            format!("copying {} -> {}", src.display(), dst.display())
-        })?;
+        std::fs::copy(src, &dst)
+            .with_context(|| format!("copying {} -> {}", src.display(), dst.display()))?;
         files.insert(rel, h);
     }
 
@@ -240,8 +237,7 @@ pub fn verify_with_options(bundle: &Path, opts: &VerifyOptions) -> Result<()> {
         }
     }
 
-    let report_data = std::fs::read(bundle.join("report.json"))
-        .context("reading report.json")?;
+    let report_data = std::fs::read(bundle.join("report.json")).context("reading report.json")?;
     let mut h = Sha256::new();
     h.update(&report_data);
     let got = hex::encode(h.finalize());
@@ -359,16 +355,19 @@ fn verify_signature_impl(
             String::from_utf8_lossy(&version_out.stderr)
         ));
     }
-    let cosign_version = parse_cosign_version(&version_out.stdout)
-        .unwrap_or_else(|| "(unknown)".to_string());
+    let cosign_version =
+        parse_cosign_version(&version_out.stdout).unwrap_or_else(|| "(unknown)".to_string());
 
     // Real verification: cosign checks signature, cert chain to
     // Fulcio CA, cert identity claim, and Rekor inclusion proof.
     let verify_out = std::process::Command::new(&cosign)
         .arg("verify-blob")
-        .arg("--bundle").arg(&sigbundle)
-        .arg("--certificate-identity-regexp").arg(&identity_regex)
-        .arg("--certificate-oidc-issuer").arg(&oidc_issuer)
+        .arg("--bundle")
+        .arg(&sigbundle)
+        .arg("--certificate-identity-regexp")
+        .arg(&identity_regex)
+        .arg("--certificate-oidc-issuer")
+        .arg(&oidc_issuer)
         .arg(manifest_path)
         .output()
         .with_context(|| format!("invoking `{cosign} verify-blob`"))?;
@@ -405,11 +404,7 @@ fn parse_cosign_version(stdout: &[u8]) -> Option<String> {
 /// bundle. cosign's `verify-blob` doesn't emit this in machine-
 /// readable form, so we parse the cert directly. Returns None on
 /// any failure (signature was still validated by the verify call).
-fn extract_signer_identity(
-    cosign: &str,
-    sigbundle: &Path,
-    manifest_path: &Path,
-) -> Option<String> {
+fn extract_signer_identity(cosign: &str, sigbundle: &Path, manifest_path: &Path) -> Option<String> {
     // `cosign verify-blob --bundle <b> ... -o json` is not currently
     // supported; the simplest cross-version path is to dump the
     // certificate via `cosign verify-blob --output-certificate` to
@@ -471,7 +466,10 @@ mod signature_tests {
         // On Windows we write a .cmd shim that runs the body as bash
         // would. On POSIX we write a chmod +x sh script.
         #[cfg(windows)]
-        let (full, content) = (dir.join(format!("{name}.cmd")), format!("@echo off\r\n{body}\r\n"));
+        let (full, content) = (
+            dir.join(format!("{name}.cmd")),
+            format!("@echo off\r\n{body}\r\n"),
+        );
         #[cfg(not(windows))]
         let (full, content) = (dir.join(name), format!("#!/bin/sh\n{body}\n"));
 
@@ -501,8 +499,11 @@ mod signature_tests {
             report_sha256: "0".repeat(64),
             bundle_schema: BUNDLE_SCHEMA,
         };
-        std::fs::write(bundle.join("manifest.json"), serde_json::to_vec_pretty(&m).unwrap())
-            .unwrap();
+        std::fs::write(
+            bundle.join("manifest.json"),
+            serde_json::to_vec_pretty(&m).unwrap(),
+        )
+        .unwrap();
         bundle
     }
 
@@ -535,8 +536,10 @@ mod signature_tests {
         let err = verify_signature_impl(&bundle, &bundle.join("manifest.json"), &opts)
             .expect_err("must error");
         let msg = err.to_string();
-        assert!(msg.contains("could not invoke") && msg.contains("Install cosign"),
-                "msg should hint at cosign install: {msg}");
+        assert!(
+            msg.contains("could not invoke") && msg.contains("Install cosign"),
+            "msg should hint at cosign install: {msg}"
+        );
     }
 
     #[test]
@@ -549,7 +552,8 @@ mod signature_tests {
         #[cfg(windows)]
         let body = "if \"%1\"==\"version\" (echo {\"GitVersion\":\"v2.4.1\"}) else (exit /b 0)";
         #[cfg(not(windows))]
-        let body = "if [ \"$1\" = \"version\" ]; then echo '{\"GitVersion\":\"v2.4.1\"}'; else exit 0; fi";
+        let body =
+            "if [ \"$1\" = \"version\" ]; then echo '{\"GitVersion\":\"v2.4.1\"}'; else exit 0; fi";
         let stub = write_executable_stub(td.path(), "cosign-stub", body);
         let _cosign_env = CosignEnvGuard::set(stub.as_os_str());
         let opts = VerifyOptions {
@@ -560,6 +564,21 @@ mod signature_tests {
             .expect("stub success");
         assert_eq!(status.cosign_version, "v2.4.1");
         assert_eq!(status.oidc_issuer, DEFAULT_OIDC_ISSUER);
+        assert_eq!(
+            status.signer_identity,
+            "(identity matched but couldn't extract)"
+        );
+    }
+
+    #[test]
+    fn signer_identity_fallback_is_documented_as_reporting_gap() {
+        let security = include_str!("../../../SECURITY.md");
+        assert!(
+            security.contains("This is a reporting\r\ngap, not a signature-validation bypass.")
+                || security
+                    .contains("This is a reporting\ngap, not a signature-validation bypass."),
+            "SECURITY.md must keep the signer-identity fallback boundary explicit"
+        );
     }
 
     #[test]
@@ -582,7 +601,10 @@ mod signature_tests {
             .expect_err("must error");
         let msg = err.to_string();
         assert!(msg.contains("rejected the signature"), "msg: {msg}");
-        assert!(msg.contains("signature mismatch"), "msg should surface cosign stderr: {msg}");
+        assert!(
+            msg.contains("signature mismatch"),
+            "msg should surface cosign stderr: {msg}"
+        );
     }
 
     #[test]
