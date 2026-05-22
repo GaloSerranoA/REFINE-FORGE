@@ -14,6 +14,7 @@
 
 pub mod experiment;
 pub mod hash;
+pub mod lint;
 pub mod manifest;
 pub mod report;
 pub mod runner;

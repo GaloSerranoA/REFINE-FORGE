@@ -6,6 +6,7 @@
 
 mod experiment;
 mod hash;
+mod lint;
 mod manifest;
 mod report;
 mod runner;
@@ -49,6 +50,17 @@ enum Cmd {
     Report {
         run_dir: PathBuf,
     },
+    /// Lint one kernel-experiment YAML for enterprise readiness.
+    Lint {
+        /// Path to the kernel-experiment YAML.
+        experiment: PathBuf,
+        /// Emit JSON to stdout instead of human text.
+        #[arg(long)]
+        json: bool,
+        /// Optional path to write the JSON lint report.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -56,6 +68,11 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Run { experiment, dry_run } => cmd_run(&cli.runs_root, &experiment, dry_run),
         Cmd::Report { run_dir } => cmd_report(&run_dir),
+        Cmd::Lint {
+            experiment,
+            json,
+            output,
+        } => cmd_lint(&experiment, json, output.as_deref()),
     }
 }
 
@@ -124,4 +141,31 @@ fn cmd_report(run_dir: &Path) -> Result<()> {
     let v: serde_json::Value = serde_json::from_str(&content)?;
     println!("{}", serde_json::to_string_pretty(&v)?);
     Ok(())
+}
+
+fn cmd_lint(exp_path: &Path, json: bool, output: Option<&Path>) -> Result<()> {
+    let exp = experiment::KernelExperiment::load(exp_path)?;
+    let report = lint::lint_experiment(&exp);
+    let json_text = serde_json::to_string_pretty(&report)?;
+    if let Some(path) = output {
+        std::fs::write(path, &json_text)
+            .with_context(|| format!("writing {}", path.display()))?;
+    }
+    if json {
+        println!("{json_text}");
+    } else {
+        println!(
+            "lint {:?}: {} issue(s) for {}",
+            report.status,
+            report.issues.len(),
+            report.experiment_id
+        );
+        for issue in &report.issues {
+            println!("  {}: {}", issue.field, issue.message);
+        }
+    }
+    match report.status {
+        lint::LintStatus::Pass => Ok(()),
+        lint::LintStatus::Fail => Err(anyhow::anyhow!("bit-exact lint FAILED")),
+    }
 }
