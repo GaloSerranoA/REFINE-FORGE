@@ -1,21 +1,21 @@
 {
   "claim_id": "EXAMPLE-003",
-  "created_at": "2026-05-22T02:32:06.484776500Z",
+  "created_at": "2026-05-22T02:40:39.289591Z",
   "lean_toolchain": "leanprover/lean4:v4.29.1",
   "files": {
     "claims/example-capability-revocation.yaml": "a5aa43c006e3539a47273dfb14a12ee9660aace57dfa7b097c61e8bb195ed330",
     "docs/refinement/EXAMPLE-003.md": "5bb06175da0f2f70b4bec7bb1bac3b26fbd8b81f16bfd124bdc80a7b4c44dc81",
-    "lean/Refineforge.lean": "9c3371142063d8e85812701a5f5972c46cf2dbf8437169ca2dcd193aeef9b00a",
+    "lean/Refineforge.lean": "5fe3aa082e5a786ee5e72da49f43fac0475bead6056da1e55d15313a78459bf5",
     "lean/Refineforge/CapabilityRevocation.lean": "2607e7f2e7750f80029c97200d07036d1c8bde6aa90956c20579b6fe8c011e06",
-    "lean/Refineforge/Consciousness/Claims.lean": "84f378c136d886d0e3d74534e8665367ef93ae6cf6b71a73705437910c767936",
-    "lean/Refineforge/Counter.lean": "6d629801cf7a15f4e541a804fc838a65657f20f0f7dccd6c985271d46a714c64",
-    "lean/Refineforge/Example.lean": "fd273b9d4817c6a6acb86e0c08ff0e59554ea26bb853996552942e51899f1abd",
-    "lean/Refineforge/Helyx.lean": "a6d5fd19a0b0bfc655d5e647e9ea43ee67d67b3555fbd91d482d1d3d18b63679",
-    "lean/Refineforge/Helyx/Audit.lean": "f1ccda77b887550b308180549e95ac3d292cf373279dcebd63ebeb336d01d43e",
+    "lean/Refineforge/Consciousness/Claims.lean": "6a565bdef5b5b21d8413dbbc02f0df89c79c318badfce25cf3ad143a1b2f11bb",
+    "lean/Refineforge/Counter.lean": "e8f2e8097d1b47434a5146cd219741b0119ca513f99b6b945179cde1a72d5a7e",
+    "lean/Refineforge/Example.lean": "5c1ea46029bc96b8f6edc97313a4f1f15f47c30ce558abe1e56b890e3ca95b17",
+    "lean/Refineforge/Helyx.lean": "df18dd8f14b96b4f2ca96a066771828b87df14abbc363186d3589a40f6fbf8f5",
+    "lean/Refineforge/Helyx/Audit.lean": "e8669b97c8bf818dc4aa721ca1a8129e22cb21ce4cc78f3b60e7b0a442a7c0e0",
     "lean/lake-manifest.json": "a6ca02c28984491153b391f57f9bba9ee7b8b8ecd9466b39258177ad6e9edc6c",
-    "lean/lakefile.toml": "54506b9c610a71beb6d7d05f8756da73c7b3303e226b65e43389b4e233026eac",
-    "lean/lean-toolchain": "b15a57f8ea4c890197465ce1156667ae13d9ed4ab8a9f263a920bf010d967d82"
+    "lean/lakefile.toml": "7cb8ca5099c850288731f77eee6ae594e58c576b34b59f7d5bebc3598c5ea3b5",
+    "lean/lean-toolchain": "7dc000621e0046d1aada809e2b7177e64454645cf4c741e9daaf79c99ec2e7a2"
   },
-  "report_sha256": "74f208994183b1c8f8351e54b9cb7478043cc8c15081dc75eb343dd94a61db4d",
+  "report_sha256": "ab2295e77e8467f4e57e706167442ad74f8b99133fc39eb4536eb55f6ab28fcf",
   "bundle_schema": 1
 }

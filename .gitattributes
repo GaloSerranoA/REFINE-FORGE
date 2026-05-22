@@ -1,0 +1,7 @@
+# Verification bundles contain byte-level hashes. Keep their text inputs and
+# emitted artifacts stable on Windows checkouts.
+/.gitattributes text eol=lf
+claims/** text eol=lf
+docs/refinement/** text eol=lf
+lean/** text eol=lf
+artifacts/** text eol=lf
