@@ -5,6 +5,7 @@
 //! The CLI in `main.rs` is a thin dispatch over these modules.
 
 pub mod checkpoint;
+pub mod dataset;
 pub mod experiment;
 pub mod failure;
 pub mod progress;

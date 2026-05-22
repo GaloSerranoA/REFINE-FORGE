@@ -16,6 +16,7 @@
 //! Owned by Section 2 ([../../ARCHITECTURE.md](../../ARCHITECTURE.md)).
 
 mod checkpoint;
+mod dataset;
 mod experiment;
 mod failure;
 mod progress;
@@ -48,6 +49,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Dataset utilities.
+    Data {
+        #[command(subcommand)]
+        cmd: DataCmd,
+    },
     /// Run one experiment (with retries per its `retry` config).
     Run {
         /// Path to the experiment YAML.
@@ -90,15 +96,87 @@ enum Cmd {
     },
 }
 
+#[derive(Subcommand)]
+enum DataCmd {
+    /// Audit proof-repair SFT JSONL before training.
+    Audit {
+        /// Path to the JSONL dataset.
+        path: PathBuf,
+        /// Expected non-comment row count.
+        #[arg(long)]
+        expect_rows: Option<usize>,
+        /// Expected split count, e.g. --expect-split train=800.
+        #[arg(long = "expect-split")]
+        expect_splits: Vec<String>,
+        /// Optional path for JSON audit output.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
+        Cmd::Data { cmd } => cmd_data(cmd),
         Cmd::Run { experiment, dry_run } => cmd_run(&cli.runs_root, &experiment, dry_run),
         Cmd::Sweep { sweep, fail_fast } => cmd_sweep(&cli.runs_root, &sweep, fail_fast),
         Cmd::Monitor { run_dir, tail, no_follow } => cmd_monitor(&run_dir, tail, no_follow),
         Cmd::Report { run_dir } => cmd_report(&run_dir),
         Cmd::Checkpoints { run_dir } => cmd_checkpoints(&run_dir),
     }
+}
+
+fn cmd_data(cmd: DataCmd) -> Result<()> {
+    match cmd {
+        DataCmd::Audit {
+            path,
+            expect_rows,
+            expect_splits,
+            output,
+        } => {
+            let expectations = dataset::AuditExpectations {
+                rows: expect_rows,
+                splits: parse_split_expectations(&expect_splits)?,
+            };
+            let audit = dataset::audit_jsonl(&path, &expectations)?;
+            println!(
+                "dataset audit OK: rows={} unique_ids={} valid_patches={} sha256={}",
+                audit.total_rows, audit.unique_ids, audit.valid_patch_rows, audit.sha256
+            );
+            if !audit.split_counts.is_empty() {
+                let parts: Vec<String> = audit
+                    .split_counts
+                    .iter()
+                    .map(|(split, count)| format!("{split}={count}"))
+                    .collect();
+                println!("  splits: {}", parts.join(", "));
+            }
+            if let Some(out) = output {
+                dataset::write_audit_json(&audit, &out)?;
+                println!("  wrote {}", out.display());
+            }
+            Ok(())
+        }
+    }
+}
+
+fn parse_split_expectations(items: &[String]) -> Result<std::collections::BTreeMap<String, usize>> {
+    let mut out = std::collections::BTreeMap::new();
+    for item in items {
+        let Some((split, count)) = item.split_once('=') else {
+            anyhow::bail!("--expect-split must be NAME=COUNT, got {item:?}");
+        };
+        if split.trim().is_empty() {
+            anyhow::bail!("--expect-split name may not be empty");
+        }
+        out.insert(
+            split.to_string(),
+            count
+                .parse::<usize>()
+                .with_context(|| format!("parsing split count in {item:?}"))?,
+        );
+    }
+    Ok(out)
 }
 
 fn cmd_run(runs_root: &Path, exp_path: &Path, dry_run: bool) -> Result<()> {
