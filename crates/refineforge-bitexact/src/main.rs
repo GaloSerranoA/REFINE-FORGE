@@ -101,7 +101,8 @@ fn cmd_run(runs_root: &Path, exp_path: &Path, dry_run: bool) -> Result<()> {
             (None, None) => eprintln!("  [{}] (no hash, no error — bug)", r.run_index),
         }
     }
-    let report = report::Report::build(&exp, runs);
+    let input_manifest = manifest::build_input_manifest(&exp.input_files)?;
+    let report = report::Report::build_with_input_manifest(&exp, runs, input_manifest);
     report.write(&paths.run_dir)?;
     eprintln!();
     eprintln!("{}", report.summary);

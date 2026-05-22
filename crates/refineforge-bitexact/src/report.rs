@@ -12,6 +12,7 @@ use std::path::Path;
 
 use crate::experiment::KernelExperiment;
 use crate::hash::all_equal;
+use crate::manifest::InputArtifact;
 use crate::runner::RunResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -30,20 +31,42 @@ pub struct Report {
     pub summary: String,
     pub runs: Vec<RunResult>,
     pub unique_hashes: Vec<String>,
+    pub expected_sha256: Option<String>,
+    pub observed_sha256: Option<String>,
+    pub input_manifest: Vec<InputArtifact>,
 }
 
 impl Report {
     pub fn build(exp: &KernelExperiment, runs: Vec<RunResult>) -> Self {
+        Self::build_with_input_manifest(exp, runs, vec![])
+    }
+
+    pub fn build_with_input_manifest(
+        exp: &KernelExperiment,
+        runs: Vec<RunResult>,
+        input_manifest: Vec<InputArtifact>,
+    ) -> Self {
         let hashes: Vec<String> = runs.iter().filter_map(|r| r.output_hash.clone()).collect();
         let any_error = runs.iter().any(|r| r.error.is_some());
-        let outcome = if hashes.len() == runs.len() && all_equal(&hashes) && !any_error {
+        let mut unique: Vec<String> = hashes.iter().cloned().collect();
+        unique.sort();
+        unique.dedup();
+        let observed_sha256 = (unique.len() == 1).then(|| unique[0].clone());
+        let expected_sha256 = exp.expected_sha256.clone();
+        let baseline_matches = match (&expected_sha256, &observed_sha256) {
+            (Some(expected), Some(observed)) => expected == observed,
+            (Some(_), None) => false,
+            (None, _) => true,
+        };
+        let outcome = if hashes.len() == runs.len()
+            && all_equal(&hashes)
+            && !any_error
+            && baseline_matches
+        {
             Outcome::Pass
         } else {
             Outcome::Fail
         };
-        let mut unique: Vec<String> = hashes.iter().cloned().collect();
-        unique.sort();
-        unique.dedup();
         let summary = match &outcome {
             Outcome::Pass => format!(
                 "PASS: all {} runs produced identical SHA-256 = {}",
@@ -52,12 +75,29 @@ impl Report {
             ),
             Outcome::Fail => {
                 let err_count = runs.iter().filter(|r| r.error.is_some()).count();
-                format!(
-                    "FAIL: {} runs, {} errored, {} unique hash(es)",
-                    runs.len(),
-                    err_count,
-                    unique.len()
-                )
+                if let (Some(expected), Some(observed)) = (&expected_sha256, &observed_sha256) {
+                    if expected != observed {
+                        format!(
+                            "FAIL: expected SHA-256 {}, observed {}",
+                            &expected[..16.min(expected.len())],
+                            &observed[..16.min(observed.len())]
+                        )
+                    } else {
+                        format!(
+                            "FAIL: {} runs, {} errored, {} unique hash(es)",
+                            runs.len(),
+                            err_count,
+                            unique.len()
+                        )
+                    }
+                } else {
+                    format!(
+                        "FAIL: {} runs, {} errored, {} unique hash(es)",
+                        runs.len(),
+                        err_count,
+                        unique.len()
+                    )
+                }
             }
         };
         Self {
@@ -67,6 +107,9 @@ impl Report {
             summary,
             runs,
             unique_hashes: unique,
+            expected_sha256,
+            observed_sha256,
+            input_manifest,
         }
     }
 
@@ -81,10 +124,11 @@ impl Report {
 #[cfg(test)]
 mod tests {
     use super::*;
-use crate::experiment::{KernelProfile, OutputSource};
+    use crate::experiment::{KernelProfile, OutputSource};
+    use crate::manifest::InputArtifact;
     use std::collections::BTreeMap;
 
-    fn exp() -> KernelExperiment {
+    fn exp_with_expected(expected_sha256: Option<&str>) -> KernelExperiment {
         KernelExperiment {
             id: "t".into(),
             template_version: None,
@@ -95,12 +139,16 @@ use crate::experiment::{KernelProfile, OutputSource};
             command: "echo x".into(),
             runs: 3,
             output: OutputSource::Stdout,
-            expected_sha256: None,
+            expected_sha256: expected_sha256.map(String::from),
             input_files: vec![],
             tags: vec![],
             env: BTreeMap::new(),
             hardware: BTreeMap::new(),
         }
+    }
+
+    fn exp() -> KernelExperiment {
+        exp_with_expected(None)
     }
 
     fn run(idx: usize, hash: Option<&str>, error: Option<&str>) -> RunResult {
@@ -149,6 +197,36 @@ use crate::experiment::{KernelProfile, OutputSource};
         let r = Report::build(&exp(), runs);
         assert_eq!(r.outcome, Outcome::Fail);
         assert!(r.summary.contains("1 errored"));
+    }
+
+    #[test]
+    fn fail_when_expected_hash_does_not_match_observed_hash() {
+        let runs = vec![
+            run(0, Some("aaa"), None),
+            run(1, Some("aaa"), None),
+            run(2, Some("aaa"), None),
+        ];
+        let r = Report::build(&exp_with_expected(Some("bbb")), runs);
+        assert_eq!(r.outcome, Outcome::Fail);
+        assert_eq!(r.expected_sha256.as_deref(), Some("bbb"));
+        assert_eq!(r.observed_sha256.as_deref(), Some("aaa"));
+        assert!(r.summary.contains("expected SHA-256"), "{}", r.summary);
+    }
+
+    #[test]
+    fn records_input_manifest_in_report() {
+        let inputs = vec![InputArtifact {
+            path: "kernels/fixtures/input.bin".into(),
+            sha256: "abc".into(),
+            size_bytes: 3,
+        }];
+        let r = Report::build_with_input_manifest(
+            &exp(),
+            vec![run(0, Some("aaa"), None), run(1, Some("aaa"), None)],
+            inputs.clone(),
+        );
+        assert_eq!(r.outcome, Outcome::Pass);
+        assert_eq!(r.input_manifest, inputs);
     }
 
     #[test]
