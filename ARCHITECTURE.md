@@ -1,6 +1,6 @@
-# Architecture — Three Sections
+# Architecture — Four Sections
 
-refineforge is organised around three engineering disciplines, each
+refineforge is organised around four engineering disciplines, each
 owning a distinct slice of the platform. The boundaries are not
 cosmetic: each section produces artifacts the others consume through
 a small, stable interface, and each can ship without the others
@@ -11,6 +11,7 @@ being complete.
 | 1       | Lean 4 specialist (foundations)    | highest  | The proof engineering core                            |
 | 2       | ML training engineer (intelligence)| second   | The repair-strategy implementations and the model     |
 | 3       | Infrastructure / DevOps (surface)  | third    | Reproducible builds, signed bundles, distribution     |
+| 4       | CUDA / GPU kernel engineer         | fourth   | Deterministic kernels and bit-exact gates             |
 
 Read these in order. Each section is self-contained; later sections
 depend on the earlier ones through narrow interfaces.
@@ -380,23 +381,24 @@ path forward, assuming one or two engineers at a time:
 | +3 mo | 1 engineer-month  | Section 2 phase 1: AnthropicStrategy + eval harness   |
 | +6 mo | 1 engineer-month  | Section 3 phase 2: sigstore signing + Nix builds      |
 | +9 mo | 2 engineer-months | Section 2 phase 2: mathlib mutation + fine-tuning     |
+| later | hardware-bound    | Section 4: real kernels + self-hosted GPU runners     |
 
-If all three sections start at once with one engineer, every section
-is 30% done and nothing ships. If they start in priority order and
-each ships before the next starts, refineforge grows credibility
+If all four sections start at once with one engineer, every section
+is partially done and nothing ships. If they start in priority order
+and each ships before the next starts, refineforge grows credibility
 incrementally.
 
 ---
 
 ## What this is *not*
 
-This three-section structure is **not** a hiring document. It is a
+This four-section structure is **not** a hiring document. It is a
 boundary document. The boundaries hold whether one person wears all
-three hats or three engineers own one each. The point is that the
-Lean specialist never has to think about sigstore, the DevOps
-engineer never has to think about whether `Valid` captures the
-domain, and the ML engineer can swap models without touching the
-proof code.
+four hats or four engineers own one each. The point is that the Lean
+specialist never has to think about sigstore, the DevOps engineer
+never has to think about whether `Valid` captures the domain, the ML
+engineer can swap models without touching the proof code, and the
+GPU engineer can harden kernels without changing claim semantics.
 
 It is also **not** a roadmap to "AI proves Lean automatically."
 Section 2 makes the repair loop usable. It does not make the

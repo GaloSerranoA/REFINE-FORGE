@@ -4,7 +4,7 @@ Every file in the repo, what owns it, and how the pieces connect.
 
 If you only have time for two files, read [`README.md`](README.md)
 and [`docs/methodology.md`](docs/methodology.md). For the engineering
-discipline split (Lean Specialist / ML Engineer / DevOps) read
+discipline split (Lean Specialist / ML Engineer / DevOps / CUDA Engineer) read
 [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`ROLES.md`](ROLES.md).
 
 ## Top-level layout
@@ -12,7 +12,7 @@ discipline split (Lean Specialist / ML Engineer / DevOps) read
 ```
 refineforge/
 ├── README.md                   # entry point — what / why / quick start
-├── ARCHITECTURE.md             # three-section structure (Lean / ML / DevOps)
+├── ARCHITECTURE.md             # four-section structure (Lean / ML / DevOps / CUDA)
 ├── ROLES.md                    # short version of ARCHITECTURE — who owns what
 ├── CHANGELOG.md                # version history
 ├── SECURITY.md                 # vuln reporting + how to verify a signed bundle

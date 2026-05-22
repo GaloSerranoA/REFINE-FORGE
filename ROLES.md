@@ -1,10 +1,10 @@
 # Roles
 
-refineforge is organised around three engineering disciplines. Full
+refineforge is organised around four engineering disciplines. Full
 detail lives in [ARCHITECTURE.md](ARCHITECTURE.md); this file is the
 short version a contributor reads before picking up an issue.
 
-## The three roles
+## The four roles
 
 | Role | Owns | Stable interface to other roles |
 |---|---|---|
@@ -41,11 +41,14 @@ The architecture is explicit about priority order
    Cheapest credibility win.
 3. **Section 2 phase 1 third** — `AnthropicStrategy` + eval harness.
    Validates the trait surface against a real provider.
-4. Later phases interleave: signing, hermetic builds, mutation
-   pipeline, fine-tuning.
+4. **Section 4 follows when real kernels or GPU CI exist** —
+   deterministic kernel authoring, bit-exact gates, and hardware
+   runner evidence.
+5. Later phases interleave: signing, hermetic builds, mutation
+   pipeline, fine-tuning, and GPU attestation.
 
-> *"If all three sections start at once with one engineer, every
-> section is 30 % done and nothing ships."* — ARCHITECTURE.md
+> *"If all four sections start at once with one engineer, every
+> section is partially done and nothing ships."* — ARCHITECTURE.md
 
 ## Mapping a task to a role
 
