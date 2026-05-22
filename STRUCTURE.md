@@ -11,10 +11,10 @@ discipline split (Lean Specialist / ML Engineer / DevOps / CUDA Engineer) read
 
 | Part | Role | Primary local surface | Boundary |
 |---:|---|---|---|
-| 1 | Lean 4 / verification | `lean/`, `claims/`, `crates/refineforge-cli`, templates, bundle artifacts | Lean proves the model; refinement docs and claim linting carry the human-reviewed Rust link |
-| 2 | Release / infrastructure / DevOps | `.github/workflows/ci.yml`, `release/`, `containers/Dockerfile.verifier`, SBOM/provenance evidence | Local release-readiness works; real hosted OIDC signing still requires a remote CI run |
-| 3 | ML / training engine | `crates/refineforge-trainer`, `training/`, local-finetune bridge in `refineforge-strategies` | HELYX/Axolotl/custom backends train; Refine-Forge audits data, orchestrates runs, tracks checkpoints, and promotes accepted artifacts |
-| 4 | GPU / kernel Rust | `crates/refineforge-bitexact`, `kernels/`, `docs/bit-exact-reproducibility.md` | `helyx-kernels` owns actual kernels; Refine-Forge owns deterministic gate evidence, input manifests, and expected-output baselines |
+| 1 | Lean 4 / verification | `lean/`, `claims/`, `crates/refineforge-cli`, `refine agent lean`, templates, bundle artifacts | Lean proves the model; refinement docs and claim linting carry the human-reviewed Rust link |
+| 2 | Release / infrastructure / DevOps | `.github/workflows/ci.yml`, `release/`, `containers/Dockerfile.verifier`, `refine agent devops`, SBOM/provenance evidence | Local release-readiness works; Docker/signature gates require `--allow-expensive` or hosted CI; real hosted OIDC signing still requires a remote CI run |
+| 3 | ML / training engine | `crates/refineforge-trainer`, `training/`, `refine agent train`, local-finetune bridge in `refineforge-strategies` | HELYX/Axolotl/custom backends train; Refine-Forge audits data, dry-runs by default, orchestrates runs, tracks checkpoints, and promotes accepted artifacts |
+| 4 | GPU / kernel Rust | `crates/refineforge-bitexact`, `kernels/`, `refine agent kernel`, `docs/bit-exact-reproducibility.md` | `helyx-kernels` owns actual kernels; Refine-Forge owns deterministic gate evidence, input manifests, and expected-output baselines |
 
 ## Top-level layout
 
@@ -60,9 +60,9 @@ refineforge/
 │   └── runs/                   # refine-eval JSON outputs (gitignored)
 ├── templates/                  # scaffolding for `refine new`
 ├── artifacts/                  # exported verification bundles (committed for EXAMPLE-001)
-├── agent-reports/              # local `refine agent` outputs (gitignored)
+├── agent-reports/              # local `refine agent` outputs with liveness/capability evidence (gitignored)
 ├── schemas/
-│   └── agent-report.schema.json # shared JSON contract for agent evidence
+│   └── agent-report.schema.json # shared JSON contract for liveness, capabilities, tools, commands, and trust
 ├── escalations/                # `refine autonomous` decision packets, one dir per CLAIM-ID
 ├── autonomous/                 # `refine autonomous` per-run RunReport JSONs (gitignored)
 ├── containers/                 # Section 3: Dockerfile.verifier and friends
@@ -438,7 +438,7 @@ crates/refineforge-cli/
 └── src/
     ├── main.rs             # clap entry point; dispatches to modules
     ├── agent/              # `refine agent` HELYX specialist control plane
-    │   ├── common.rs       # AgentReport, modes, trust levels, JSON/Markdown writers
+    │   ├── common.rs       # AgentReport, liveness, capabilities, tool checks, modes, trust, writers
     │   ├── lean.rs         # Lean/check/scan/lint evidence wrapper
     │   ├── devops.rs       # release-readiness evidence wrapper
     │   ├── train.rs        # refine-train evidence wrapper
@@ -460,11 +460,11 @@ crates/refineforge-cli/
 | Module | Lines | Tests |
 |---|---:|---:|
 | `main.rs` | ~150 | — |
-| `agent/common.rs` | ~250 | integration |
-| `agent/lean.rs` | ~70 | integration |
-| `agent/devops.rs` | ~90 | integration |
-| `agent/train.rs` | ~120 | integration |
-| `agent/kernel.rs` | ~120 | integration |
+| `agent/common.rs` | ~400 | integration |
+| `agent/lean.rs` | ~95 | integration |
+| `agent/devops.rs` | ~170 | integration |
+| `agent/train.rs` | ~265 | integration |
+| `agent/kernel.rs` | ~240 | integration |
 | `claim.rs` | ~150 | — |
 | `runner.rs` | ~140 | — |
 | `sorry_gate.rs` | ~180 | 7 |

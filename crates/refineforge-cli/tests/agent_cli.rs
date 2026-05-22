@@ -36,6 +36,19 @@ fn read_json(path: &Path) -> Value {
     serde_json::from_str(&content).unwrap()
 }
 
+fn assert_enterprise_report(report: &Value, expected_agent: &str) {
+    assert_eq!(report["liveness"]["state"], "alive");
+    assert_eq!(report["liveness"]["agent"], expected_agent);
+    assert!(
+        report["capabilities"].as_array().unwrap().len() >= 3,
+        "{expected_agent} report should declare enterprise capabilities"
+    );
+    assert!(
+        report["tool_checks"].as_array().unwrap().len() >= 1,
+        "{expected_agent} report should declare tool-gate checks"
+    );
+}
+
 fn write_stub(dir: &Path, name: &str, success: bool) -> std::path::PathBuf {
     #[cfg(windows)]
     let path = dir.join(format!("{name}.cmd"));
@@ -88,6 +101,28 @@ fn write_kernel_output_stub(dir: &Path) -> std::path::PathBuf {
     path
 }
 
+fn write_kernel_enterprise_stub(dir: &Path) -> std::path::PathBuf {
+    #[cfg(windows)]
+    let path = dir.join("refine-bitexact-enterprise.cmd");
+    #[cfg(not(windows))]
+    let path = dir.join("refine-bitexact-enterprise");
+
+    #[cfg(windows)]
+    let content = "@echo off\r\nif \"%1\"==\"lint\" (\r\n  echo {\"status\":\"pass\"} > \"%5\"\r\n  exit /b 0\r\n)\r\necho bitexact run ok\r\nexit /b 0\r\n";
+    #[cfg(not(windows))]
+    let content = "#!/bin/sh\nif [ \"$1\" = \"lint\" ]; then\n  echo '{\"status\":\"pass\"}' > \"$5\"\n  exit 0\nfi\necho bitexact run ok\nexit 0\n";
+
+    std::fs::write(&path, content).unwrap();
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).unwrap();
+    }
+    path
+}
+
 #[test]
 fn agent_lean_inspect_writes_report() {
     let td = tempfile::tempdir().unwrap();
@@ -105,6 +140,7 @@ fn agent_lean_inspect_writes_report() {
     assert_eq!(report["target"], "helyx");
     assert_eq!(report["status"], "passed");
     assert_eq!(report["trust_level"], "model-only");
+    assert_enterprise_report(&report, "lean");
     assert!(out.join("lean.md").exists());
 }
 
@@ -129,6 +165,7 @@ fn agent_devops_train_and_kernel_inspect_reports_are_truth_bounded() {
         assert_eq!(report["mode"], "inspect");
         assert_eq!(report["status"], "passed");
         assert_eq!(report["trust_level"], trust_level);
+        assert_enterprise_report(&report, name);
         assert!(
             report["artifacts"].as_array().unwrap().len() >= 1,
             "{name} report should record at least one inspected artifact"
@@ -152,9 +189,12 @@ fn agent_run_all_inspect_writes_dashboard_and_role_reports() {
     assert_eq!(summary["agent"], "run_all");
     assert_eq!(summary["target"], "helyx");
     assert_eq!(summary["status"], "passed");
+    assert_enterprise_report(&summary, "run_all");
     assert!(out.join("summary.md").exists());
     for name in ["lean", "devops", "train", "kernel"] {
-        assert!(out.join(format!("{name}.json")).exists());
+        let role_report_path = out.join(format!("{name}.json"));
+        assert!(role_report_path.exists());
+        assert_enterprise_report(&read_json(&role_report_path), name);
         assert!(out.join(format!("{name}.md")).exists());
     }
 }
@@ -260,4 +300,84 @@ fn agent_kernel_check_creates_output_dir_before_lint_command() {
     let report = read_json(&out.join("kernel.json"));
     assert_eq!(report["status"], "passed");
     assert_eq!(report["commands"][0]["status"], "passed");
+}
+
+#[test]
+fn agent_train_execute_runs_data_audit_and_dry_run_training() {
+    let td = tempfile::tempdir().unwrap();
+    let stub = write_stub(td.path(), "refine-train-execute", true);
+    let out = td.path().join("train-execute");
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .env("REFINEFORGE_REFINE_TRAIN_BIN", &stub)
+        .args([
+            "--root", ".", "agent", "train", "--mode", "execute", "--target", "helyx", "--out",
+        ])
+        .arg(&out)
+        .arg("--json")
+        .output()
+        .expect("run train execute");
+
+    assert_success(&output);
+    let report = read_json(&out.join("train.json"));
+    assert_eq!(report["status"], "passed");
+    let command_names: Vec<_> = report["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|cmd| cmd["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        command_names,
+        ["training-data-audit", "training-run-dry-run"]
+    );
+    let run_command = report["commands"][1]["command"].as_array().unwrap();
+    assert!(
+        run_command.iter().any(|arg| arg == "--dry-run"),
+        "execute mode should default to a safe trainer dry-run without --allow-expensive"
+    );
+    assert!(
+        report["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|artifact| artifact.as_str().unwrap().contains("training-runs")),
+        "training execute should record its runs_root artifact"
+    );
+}
+
+#[test]
+fn agent_kernel_execute_runs_lint_and_bitexact_gate() {
+    let td = tempfile::tempdir().unwrap();
+    let stub = write_kernel_enterprise_stub(td.path());
+    let out = td.path().join("kernel-execute");
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .env("REFINEFORGE_REFINE_BITEXACT_BIN", &stub)
+        .args([
+            "--root", ".", "agent", "kernel", "--mode", "execute", "--target", "helyx", "--out",
+        ])
+        .arg(&out)
+        .arg("--json")
+        .output()
+        .expect("run kernel execute");
+
+    assert_success(&output);
+    let report = read_json(&out.join("kernel.json"));
+    assert_eq!(report["status"], "passed");
+    let command_names: Vec<_> = report["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|cmd| cmd["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(command_names, ["bitexact-lint", "bitexact-run"]);
+    assert!(
+        report["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|artifact| artifact.as_str().unwrap().contains("kernel-runs")),
+        "kernel execute should record its runs_root artifact"
+    );
 }

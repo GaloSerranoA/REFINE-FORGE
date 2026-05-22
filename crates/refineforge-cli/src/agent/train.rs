@@ -1,12 +1,45 @@
 use super::common::{
-    existing_artifact, AgentMode, AgentReport, AgentStatus, CommandRecord, TrustLevel,
+    capability, existing_artifact, repo_tool_check, AgentMode, AgentReport, AgentStatus,
+    CommandRecord, TrustLevel,
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
-pub fn build(root: &Path, mode: AgentMode, target: &str, out_dir: &Path) -> AgentReport {
+pub fn build(
+    root: &Path,
+    mode: AgentMode,
+    target: &str,
+    out_dir: &Path,
+    allow_expensive: bool,
+) -> AgentReport {
     let mut report = AgentReport::new(super::common::AgentKind::Train, mode, target);
+    report.capabilities.extend([
+        capability(
+            "dataset-audit",
+            "available",
+            "validates proof-repair SFT JSONL before any training execution",
+        ),
+        capability(
+            "trainer-orchestration",
+            "available",
+            "invokes refine-train with explicit run directories and command evidence",
+        ),
+        capability(
+            "safe-execute-default",
+            "available",
+            "execute mode runs trainer dry-run unless --allow-expensive is set",
+        ),
+        capability(
+            "helyx-train-compatibility",
+            "tool_gated",
+            "HELYX backend execution is delegated to helyx-train when the config selects it",
+        ),
+    ]);
+    report.tool_checks.extend([
+        repo_tool_check(root, "refine-train", true),
+        repo_tool_check(root, "helyx-train", false),
+    ]);
     existing_artifact(
         root,
         "training/configs/lean-proof-repair-smoke-stub.yaml",
@@ -33,6 +66,7 @@ pub fn build(root: &Path, mode: AgentMode, target: &str, out_dir: &Path) -> Agen
     }
 
     let audit_json = out_dir.join("training-data-audit.json");
+    let runs_root = out_dir.join("training-runs");
     if let Err(err) = std::fs::create_dir_all(out_dir) {
         report.blockers.push(format!(
             "could not create training evidence directory {}: {err}",
@@ -56,26 +90,106 @@ pub fn build(root: &Path, mode: AgentMode, target: &str, out_dir: &Path) -> Agen
     let record = run_command(root, "training-data-audit", &spec);
     report.commands.push(record);
     report.artifacts.push(audit_json);
-    match report.commands.last().map(|c| c.status) {
-        Some(AgentStatus::Passed) => report.finish(
-            AgentStatus::Passed,
-            TrustLevel::MeasuredOnly,
-            "Training dataset audit passed. This is measured training readiness, not model improvement evidence.",
-        ),
-        Some(AgentStatus::Blocked) => report.finish(
-            AgentStatus::Blocked,
-            TrustLevel::Blocked,
-            "Training dataset audit could not run because refine-train was unavailable.",
-        ),
-        _ => report.finish(
-            AgentStatus::Failed,
-            TrustLevel::Blocked,
-            "Training dataset audit ran and failed. See command stderr/stdout evidence.",
-        ),
+
+    if mode == AgentMode::Execute
+        && report
+            .commands
+            .last()
+            .is_some_and(|c| c.status == AgentStatus::Passed)
+    {
+        let config = config_for_target(root, target);
+        let mut run_spec = train_command(root);
+        run_spec.args.extend([
+            "--runs-root".to_string(),
+            runs_root.display().to_string(),
+            "run".to_string(),
+            config.display().to_string(),
+        ]);
+        if !allow_expensive {
+            run_spec.args.push("--dry-run".to_string());
+        }
+        let name = if allow_expensive {
+            "training-run"
+        } else {
+            "training-run-dry-run"
+        };
+        let record = run_command(root, name, &run_spec);
+        report.commands.push(record);
+        report.artifacts.push(runs_root);
+        if !allow_expensive {
+            report.warnings.push(
+                "training execute used --dry-run; rerun with --allow-expensive for a live backend run."
+                    .to_string(),
+            );
+        }
+    } else if mode == AgentMode::Repair {
+        report.warnings.push(
+            "training repair mode is evidence-only; no dataset or checkpoint files were mutated."
+                .to_string(),
+        );
     }
+
+    finish_from_commands(&mut report, mode, allow_expensive);
     report
 }
 
+fn finish_from_commands(report: &mut AgentReport, mode: AgentMode, allow_expensive: bool) {
+    if report
+        .commands
+        .iter()
+        .any(|command| command.status == AgentStatus::Blocked)
+    {
+        report.finish(
+            AgentStatus::Blocked,
+            TrustLevel::Blocked,
+            "Training command could not run because a required trainer binary was unavailable.",
+        );
+    } else if report
+        .commands
+        .iter()
+        .any(|command| command.status == AgentStatus::Failed)
+    {
+        report.finish(
+            AgentStatus::Failed,
+            TrustLevel::Blocked,
+            "Training command ran and failed. See command stderr/stdout evidence.",
+        );
+    } else if mode == AgentMode::Execute {
+        report.finish(
+            AgentStatus::Passed,
+            TrustLevel::MeasuredOnly,
+            if allow_expensive {
+                "Training dataset audit and live trainer execution passed. Model quality still requires evaluation evidence."
+            } else {
+                "Training dataset audit and trainer dry-run passed. This proves orchestration readiness, not model improvement."
+            },
+        );
+    } else {
+        report.finish(
+            AgentStatus::Passed,
+            TrustLevel::MeasuredOnly,
+            "Training dataset audit passed. This is measured training readiness, not model improvement evidence.",
+        );
+    }
+}
+
+fn config_for_target(root: &Path, target: &str) -> PathBuf {
+    let target_path = PathBuf::from(target);
+    if matches!(
+        target_path.extension().and_then(|ext| ext.to_str()),
+        Some("yaml" | "yml")
+    ) {
+        return target_path;
+    }
+    let default = PathBuf::from("training/configs/lean-proof-repair-smoke-stub.yaml");
+    if root.join(&default).exists() {
+        default
+    } else {
+        target_path
+    }
+}
+
+#[derive(Clone)]
 struct CommandSpec {
     program: String,
     args: Vec<String>,

@@ -1,12 +1,39 @@
 use super::common::{
-    existing_artifact, AgentMode, AgentReport, AgentStatus, CommandRecord, TrustLevel,
+    capability, existing_artifact, repo_tool_check, AgentMode, AgentReport, AgentStatus,
+    CommandRecord, TrustLevel,
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
 pub fn build(root: &Path, mode: AgentMode, target: &str, out_dir: &Path) -> AgentReport {
     let mut report = AgentReport::new(super::common::AgentKind::Kernel, mode, target);
+    report.capabilities.extend([
+        capability(
+            "bitexact-contract-lint",
+            "available",
+            "validates HELYX-compatible kernel metadata before execution",
+        ),
+        capability(
+            "deterministic-run-gate",
+            "available",
+            "execute mode runs refine-bitexact and writes per-run evidence",
+        ),
+        capability(
+            "baseline-hash-enforcement",
+            "available",
+            "expected SHA-256 baselines fail stable-but-wrong outputs",
+        ),
+        capability(
+            "helyx-kernels-boundary",
+            "tool_gated",
+            "real CUDA kernels remain external; Refine-Forge owns the evidence gate",
+        ),
+    ]);
+    report.tool_checks.extend([
+        repo_tool_check(root, "refine-bitexact", true),
+        repo_tool_check(root, "helyx-kernels", false),
+    ]);
     existing_artifact(
         root,
         "kernels/configs/helyx-bitexact-smoke.yaml",
@@ -29,6 +56,8 @@ pub fn build(root: &Path, mode: AgentMode, target: &str, out_dir: &Path) -> Agen
     }
 
     let lint_json = out_dir.join("bitexact-lint.json");
+    let runs_root = out_dir.join("kernel-runs");
+    let config = config_for_target(root, target);
     if let Err(err) = std::fs::create_dir_all(out_dir) {
         report.blockers.push(format!(
             "could not create kernel evidence directory {}: {err}",
@@ -44,7 +73,7 @@ pub fn build(root: &Path, mode: AgentMode, target: &str, out_dir: &Path) -> Agen
     let mut spec = bitexact_command(root);
     spec.args.extend([
         "lint".to_string(),
-        "kernels/configs/helyx-bitexact-smoke.yaml".to_string(),
+        config.display().to_string(),
         "--json".to_string(),
         "--output".to_string(),
         lint_json.display().to_string(),
@@ -52,26 +81,87 @@ pub fn build(root: &Path, mode: AgentMode, target: &str, out_dir: &Path) -> Agen
     let record = run_command(root, "bitexact-lint", &spec);
     report.commands.push(record);
     report.artifacts.push(lint_json);
-    match report.commands.last().map(|c| c.status) {
-        Some(AgentStatus::Passed) => report.finish(
-            AgentStatus::Passed,
-            TrustLevel::MeasuredOnly,
-            "Bit-exact kernel lint passed. This records deterministic evidence readiness, not CUDA correctness.",
-        ),
-        Some(AgentStatus::Blocked) => report.finish(
-            AgentStatus::Blocked,
-            TrustLevel::Blocked,
-            "Bit-exact kernel lint could not run because refine-bitexact was unavailable.",
-        ),
-        _ => report.finish(
-            AgentStatus::Failed,
-            TrustLevel::Blocked,
-            "Bit-exact kernel lint ran and failed. See command stderr/stdout evidence.",
-        ),
+
+    if mode == AgentMode::Execute
+        && report
+            .commands
+            .last()
+            .is_some_and(|c| c.status == AgentStatus::Passed)
+    {
+        let mut run_spec = bitexact_command(root);
+        run_spec.args.extend([
+            "--runs-root".to_string(),
+            runs_root.display().to_string(),
+            "run".to_string(),
+            config.display().to_string(),
+        ]);
+        let record = run_command(root, "bitexact-run", &run_spec);
+        report.commands.push(record);
+        report.artifacts.push(runs_root);
+    } else if mode == AgentMode::Repair {
+        report.warnings.push(
+            "kernel repair mode is evidence-only; no kernel config or source files were mutated."
+                .to_string(),
+        );
     }
+
+    finish_from_commands(&mut report, mode);
     report
 }
 
+fn finish_from_commands(report: &mut AgentReport, mode: AgentMode) {
+    if report
+        .commands
+        .iter()
+        .any(|command| command.status == AgentStatus::Blocked)
+    {
+        report.finish(
+            AgentStatus::Blocked,
+            TrustLevel::Blocked,
+            "Bit-exact kernel command could not run because refine-bitexact was unavailable.",
+        );
+    } else if report
+        .commands
+        .iter()
+        .any(|command| command.status == AgentStatus::Failed)
+    {
+        report.finish(
+            AgentStatus::Failed,
+            TrustLevel::Blocked,
+            "Bit-exact kernel command ran and failed. See command stderr/stdout evidence.",
+        );
+    } else if mode == AgentMode::Execute {
+        report.finish(
+            AgentStatus::Passed,
+            TrustLevel::MeasuredOnly,
+            "Bit-exact kernel lint and run passed. This records deterministic gate evidence, not CUDA semantic correctness.",
+        );
+    } else {
+        report.finish(
+            AgentStatus::Passed,
+            TrustLevel::MeasuredOnly,
+            "Bit-exact kernel lint passed. This records deterministic evidence readiness, not CUDA correctness.",
+        );
+    }
+}
+
+fn config_for_target(root: &Path, target: &str) -> PathBuf {
+    let target_path = PathBuf::from(target);
+    if matches!(
+        target_path.extension().and_then(|ext| ext.to_str()),
+        Some("yaml" | "yml")
+    ) {
+        return target_path;
+    }
+    let default = PathBuf::from("kernels/configs/helyx-bitexact-smoke.yaml");
+    if root.join(&default).exists() {
+        default
+    } else {
+        target_path
+    }
+}
+
+#[derive(Clone)]
 struct CommandSpec {
     program: String,
     args: Vec<String>,

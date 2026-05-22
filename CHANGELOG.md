@@ -10,6 +10,20 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Changed — HELYX agent enterprise liveness
+
+- Agent reports now include explicit `liveness`, `capabilities`, and
+  `tool_checks` sections so every Lean, DevOps, training, kernel, and run-all
+  agent report proves which command surface emitted it and which capabilities
+  are available, tool-gated, or evidence-only.
+- `refine agent train --mode execute` now runs dataset audit plus
+  `refine-train run --dry-run` by default, writing its run root under the
+  agent evidence directory. `--allow-expensive` opts into a live backend run.
+- `refine agent kernel --mode execute` now runs the bit-exact lint gate first
+  and then executes `refine-bitexact run` into the agent evidence directory.
+- `refine agent devops` now exposes `--allow-expensive` so Docker verifier and
+  signature gates are skipped by default but can be requested explicitly.
+
 ### Added — HELYX agent control plane
 
 - Added `refine agent lean|devops|train|kernel|run-all` as CLI-first

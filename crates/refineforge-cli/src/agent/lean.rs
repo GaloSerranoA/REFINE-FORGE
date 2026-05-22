@@ -1,5 +1,6 @@
 use super::common::{
-    existing_artifact, AgentMode, AgentReport, AgentStatus, CommandRecord, TrustLevel,
+    capability, existing_artifact, repo_tool_check, AgentMode, AgentReport, AgentStatus,
+    CommandRecord, TrustLevel,
 };
 use crate::{lint, runner, scan};
 use std::path::Path;
@@ -7,6 +8,32 @@ use std::time::Instant;
 
 pub fn build(root: &Path, mode: AgentMode, target: &str) -> AgentReport {
     let mut report = AgentReport::new(super::common::AgentKind::Lean, mode, target);
+    report.capabilities.extend([
+        capability(
+            "proof-inventory",
+            "available",
+            "inspects Lean theorem inventory and claim linkage surfaces",
+        ),
+        capability(
+            "verification-gates",
+            "available",
+            "runs Lean, scanner, and claim-linter gates in check/repair/execute modes",
+        ),
+        capability(
+            "truth-bounded-claims",
+            "available",
+            "keeps CRS/model-only scopes separate from implementation correctness claims",
+        ),
+        capability(
+            "repair-boundary",
+            "evidence_only",
+            "repair mode runs the same verification gates and reports blockers for operator-directed fixes",
+        ),
+    ]);
+    report.tool_checks.extend([
+        repo_tool_check(root, "refine", true),
+        repo_tool_check(root, "lake", false),
+    ]);
     existing_artifact(root, "docs/verification/proof-inventory.md", &mut report);
     existing_artifact(root, "claims", &mut report);
     existing_artifact(root, "lean/Refineforge.lean", &mut report);

@@ -283,6 +283,9 @@ struct AgentCliOptions {
     /// Emit the JSON report to stdout after writing evidence files.
     #[arg(long)]
     json: bool,
+    /// Permit live/expensive gates instead of safe local dry-runs or skips.
+    #[arg(long)]
+    allow_expensive: bool,
 }
 
 impl AgentCliOptions {
@@ -292,6 +295,7 @@ impl AgentCliOptions {
             target: self.target,
             out_dir: self.out,
             emit_json: self.json,
+            allow_expensive: self.allow_expensive,
         }
     }
 }

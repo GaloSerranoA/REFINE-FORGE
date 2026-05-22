@@ -8,6 +8,9 @@
     "agent",
     "mode",
     "target",
+    "liveness",
+    "capabilities",
+    "tool_checks",
     "started_at",
     "finished_at",
     "status",
@@ -33,6 +36,79 @@
     "target": {
       "type": "string",
       "minLength": 1
+    },
+    "liveness": {
+      "type": "object",
+      "required": ["state", "checked_at", "agent", "mode", "target", "command_surface"],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "const": "alive"
+        },
+        "checked_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "agent": {
+          "enum": ["lean", "devops", "train", "kernel", "run_all"]
+        },
+        "mode": {
+          "enum": ["inspect", "check", "repair", "execute"]
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "command_surface": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": ["available", "tool_gated", "evidence_only"]
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "tool_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "required", "status", "detail"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": ["available", "skipped", "required", "not_checked"]
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
     },
     "started_at": {
       "type": "string",

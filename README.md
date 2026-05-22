@@ -70,6 +70,15 @@ gates around those artifacts.
 | 3 | ML / training engineer | `refine-train` dataset audit, HELYX `helyx-train` backend orchestration, checkpoints, reports, local-finetune promotion | HELYX/Axolotl/custom backend trains; Refine-Forge owns audit/run evidence |
 | 4 | GPU / kernel Rust engineer | `refine-bitexact` lint/run/run-all, HELYX-compatible kernel metadata, input manifests, expected SHA-256 baselines, CI summary JSON | `helyx-kernels` implements kernels; Refine-Forge proves bit-exact gate evidence |
 
+The four specialist roles are exposed as CLI agents:
+`refine agent lean|devops|train|kernel|run-all`. Every agent report now carries
+an explicit liveness record, capability inventory, tool-gate inventory, command
+evidence, artifacts, warnings, blockers, and a bounded trust level. `execute`
+mode runs the local role execution surface: Lean gates, release readiness,
+trainer dry-run by default, and the bit-exact kernel gate. Pass
+`--allow-expensive` only when live trainer backends or Docker/signature release
+gates should run.
+
 ## What this is *not*
 
 It is **not** "AI that proves your code automatically." It does not
@@ -243,7 +252,7 @@ cargo build --release
 | `refine bundle verify <bundle-dir> --verify-signature` | Hashes + Sigstore signature (via cosign). See [SECURITY.md](SECURITY.md) |
 | `refine repair <id>`                   | Bounded LLM repair loop against Lean's LSP server. Strategies: `mock` (declines all), `anthropic-mock` (canned), `anthropic` (real HTTP, needs `ANTHROPIC_API_KEY`), and `local-finetune` (needs a promoted weights/runtime directory). See [`docs/llm-repair-design.md`](docs/llm-repair-design.md) |
 | `refine autonomous <id> [flags]` | Drives a claim end-to-end (lean check → scan → bundle), escalating per criteria v0.3 via `crates/refineforge-escalation`. Flags: `--strategy mock\|anthropic-mock\|anthropic`, `--max-cost-usd N`, `--operator EMAIL`, `--dry-run`, `--auto-repair` (inject Repair after failed LeanCheck), `--await-decisions` (block-poll operator packet decisions; Phase 3.8 preserves APPROVED packets across re-runs), `--inject-counter-idealisation` (EXAMPLE-002 Cat 2 bait), `--inject-training PATH` (repeatable; appends `refine-train run PATH --dry-run` step), `--inject-bitexact PATH` (repeatable; appends `refine-bitexact run PATH` step). Anthropic `UsageStats` in the RunReport: per-call `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, and `stop_reasons` (`end_turn` / `max_tokens` / etc.). All plan §3 phases closed; see [docs/plans/autonomous-driver-plan.md](docs/plans/autonomous-driver-plan.md) |
-| `refine agent <lean\|devops\|train\|kernel\|run-all>` | CLI-first HELYX specialist agents. Modes: `inspect`, `check`, `repair`, `execute`; each writes JSON + Markdown evidence under `agent-reports/` using `schemas/agent-report.schema.json`. See [`docs/agents/README.md`](docs/agents/README.md) |
+| `refine agent <lean\|devops\|train\|kernel\|run-all>` | CLI-first HELYX specialist agents. Modes: `inspect`, `check`, `repair`, `execute`; each writes JSON + Markdown evidence with liveness, capability, tool-check, command, artifact, warning, blocker, and trust fields under `agent-reports/` using `schemas/agent-report.schema.json`. See [`docs/agents/README.md`](docs/agents/README.md) |
 | `refine escalations list [--claim X] [--age-gt N]` | Operator queue dashboard for `escalations/<CLAIM-ID>/*.md`; PENDING vs DECIDED sorted by age. Per criteria v0.3 the driver never auto-rejects |
 | `refine-eval --corpus … --strategy …`  | Drive `refine repair` against a JSONL corpus; emit JSON report. See [`docs/repair-evaluation.md`](docs/repair-evaluation.md) |
 | `refine-train data audit <jsonl>`      | Validate proof-repair SFT JSONL counts, split counts, patch JSON, duplicate ids, and SHA-256 before training |

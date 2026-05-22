@@ -14,6 +14,7 @@ pub struct AgentOptions {
     pub target: String,
     pub out_dir: PathBuf,
     pub emit_json: bool,
+    pub allow_expensive: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -63,6 +64,26 @@ pub fn run_all(root: &Path, opts: AgentOptions) -> Result<()> {
     }
 
     let mut summary = AgentReport::new(AgentKind::RunAll, opts.mode, opts.target.clone());
+    summary.capabilities.extend([
+        common::capability(
+            "role-orchestration",
+            "available",
+            "runs Lean, DevOps, training, and kernel agents into one evidence directory",
+        ),
+        common::capability(
+            "trust-floor-aggregation",
+            "available",
+            "combined trust level is the lowest trust level emitted by any role report",
+        ),
+        common::capability(
+            "ci-artifact-dashboard",
+            "available",
+            "writes JSON and Markdown reports suitable for CI artifact upload",
+        ),
+    ]);
+    summary
+        .tool_checks
+        .push(common::repo_tool_check(root, "refine", true));
     summary.artifacts.extend(
         ["lean.json", "devops.json", "train.json", "kernel.json"]
             .into_iter()
@@ -111,8 +132,20 @@ pub fn run_all(root: &Path, opts: AgentOptions) -> Result<()> {
 fn build_role_report(root: &Path, role: AgentRole, opts: &AgentOptions) -> AgentReport {
     match role {
         AgentRole::Lean => lean::build(root, opts.mode, &opts.target),
-        AgentRole::Devops => devops::build(root, opts.mode, &opts.target, &opts.out_dir),
-        AgentRole::Train => train::build(root, opts.mode, &opts.target, &opts.out_dir),
+        AgentRole::Devops => devops::build(
+            root,
+            opts.mode,
+            &opts.target,
+            &opts.out_dir,
+            opts.allow_expensive,
+        ),
+        AgentRole::Train => train::build(
+            root,
+            opts.mode,
+            &opts.target,
+            &opts.out_dir,
+            opts.allow_expensive,
+        ),
         AgentRole::Kernel => kernel::build(root, opts.mode, &opts.target, &opts.out_dir),
     }
 }

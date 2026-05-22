@@ -138,6 +138,52 @@ impl CommandRecord {
             stderr_tail: result.as_ref().err().map(|e| e.to_string()),
         }
     }
+
+    pub fn internal_owned(
+        name: &str,
+        command: Vec<String>,
+        started: Instant,
+        result: &Result<()>,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            command,
+            status: if result.is_ok() {
+                AgentStatus::Passed
+            } else {
+                AgentStatus::Failed
+            },
+            duration_ms: started.elapsed().as_millis(),
+            exit_code: None,
+            stdout_tail: None,
+            stderr_tail: result.as_ref().err().map(|e| e.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LivenessRecord {
+    pub state: String,
+    pub checked_at: DateTime<Utc>,
+    pub agent: AgentKind,
+    pub mode: AgentMode,
+    pub target: String,
+    pub command_surface: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityRecord {
+    pub name: String,
+    pub status: String,
+    pub evidence: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCheck {
+    pub name: String,
+    pub required: bool,
+    pub status: String,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,6 +192,9 @@ pub struct AgentReport {
     pub agent: AgentKind,
     pub mode: AgentMode,
     pub target: String,
+    pub liveness: LivenessRecord,
+    pub capabilities: Vec<CapabilityRecord>,
+    pub tool_checks: Vec<ToolCheck>,
     pub started_at: DateTime<Utc>,
     pub finished_at: DateTime<Utc>,
     pub status: AgentStatus,
@@ -161,11 +210,22 @@ pub struct AgentReport {
 impl AgentReport {
     pub fn new(agent: AgentKind, mode: AgentMode, target: impl Into<String>) -> Self {
         let now = Utc::now();
+        let target = target.into();
         Self {
             schema_version: "agent-report-v1".to_string(),
             agent,
             mode,
-            target: target.into(),
+            target: target.clone(),
+            liveness: LivenessRecord {
+                state: "alive".to_string(),
+                checked_at: now,
+                agent,
+                mode,
+                target,
+                command_surface: format!("refine agent {}", agent.as_str()),
+            },
+            capabilities: Vec::new(),
+            tool_checks: Vec::new(),
             started_at: now,
             finished_at: now,
             status: AgentStatus::Passed,
@@ -197,6 +257,7 @@ impl AgentReport {
         out.push_str(&format!("- Schema: `{}`\n", self.schema_version));
         out.push_str(&format!("- Mode: `{}`\n", self.mode.as_str()));
         out.push_str(&format!("- Target: `{}`\n", self.target));
+        out.push_str(&format!("- Liveness: `{}`\n", self.liveness.state));
         out.push_str(&format!("- Status: `{}`\n", self.status.as_str()));
         out.push_str(&format!("- Trust level: `{}`\n", self.trust_level.as_str()));
         out.push_str(&format!("- Started: `{}`\n", self.started_at.to_rfc3339()));
@@ -207,6 +268,30 @@ impl AgentReport {
         out.push_str("## Summary\n\n");
         out.push_str(&self.summary);
         out.push_str("\n\n");
+        out.push_str("## Capabilities\n\n");
+        if self.capabilities.is_empty() {
+            out.push_str("- None recorded.\n\n");
+        } else {
+            for capability in &self.capabilities {
+                out.push_str(&format!(
+                    "- `{}`: `{}` — {}\n",
+                    capability.name, capability.status, capability.evidence
+                ));
+            }
+            out.push('\n');
+        }
+        out.push_str("## Tool Checks\n\n");
+        if self.tool_checks.is_empty() {
+            out.push_str("- None recorded.\n\n");
+        } else {
+            for check in &self.tool_checks {
+                out.push_str(&format!(
+                    "- `{}`: `{}` (required={}) — {}\n",
+                    check.name, check.status, check.required, check.detail
+                ));
+            }
+            out.push('\n');
+        }
         write_list(&mut out, "Artifacts", &self.artifacts);
         write_string_list(&mut out, "Blockers", &self.blockers);
         write_string_list(&mut out, "Warnings", &self.warnings);
@@ -253,6 +338,42 @@ fn write_string_list(out: &mut String, title: &str, values: &[String]) {
         }
         out.push('\n');
     }
+}
+
+pub fn capability(name: &str, status: &str, evidence: &str) -> CapabilityRecord {
+    CapabilityRecord {
+        name: name.to_string(),
+        status: status.to_string(),
+        evidence: evidence.to_string(),
+    }
+}
+
+pub fn tool_check(name: &str, required: bool, status: &str, detail: &str) -> ToolCheck {
+    ToolCheck {
+        name: name.to_string(),
+        required,
+        status: status.to_string(),
+        detail: detail.to_string(),
+    }
+}
+
+pub fn repo_tool_check(root: &Path, tool: &str, required: bool) -> ToolCheck {
+    if root.join("Cargo.toml").exists()
+        && matches!(tool, "refine" | "refine-train" | "refine-bitexact")
+    {
+        return tool_check(
+            tool,
+            required,
+            "available",
+            "provided by the local Cargo workspace command surface",
+        );
+    }
+    tool_check(
+        tool,
+        required,
+        "not_checked",
+        "external tool availability is environment-specific",
+    )
 }
 
 pub fn write_reports(out_dir: &Path, stem: &str, report: &AgentReport) -> Result<()> {
