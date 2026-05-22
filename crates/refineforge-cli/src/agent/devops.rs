@@ -125,12 +125,8 @@ pub fn build(
     if result.is_ok() {
         report.finish(
             AgentStatus::Passed,
-            TrustLevel::ReleaseReadyLocal,
-            if allow_expensive {
-                "Local release readiness passed with live expensive gates requested. CI/OIDC readiness is still not claimed."
-            } else {
-                "Local release readiness passed with explicit Docker/signature skips recorded. CI/OIDC readiness is not claimed."
-            },
+            release_ready_success_trust_level(allow_expensive),
+            release_ready_success_summary(allow_expensive),
         );
     } else {
         report.finish(
@@ -140,6 +136,18 @@ pub fn build(
         );
     }
     report
+}
+
+fn release_ready_success_trust_level(_allow_expensive: bool) -> TrustLevel {
+    TrustLevel::ReleaseReadyLocal
+}
+
+fn release_ready_success_summary(allow_expensive: bool) -> &'static str {
+    if allow_expensive {
+        "Local release readiness passed with live expensive gates requested. CI/OIDC readiness is still not claimed."
+    } else {
+        "Local release readiness passed with explicit Docker/signature skips recorded. CI/OIDC readiness is not claimed."
+    }
 }
 
 fn release_version_for_target(target: &str) -> String {
@@ -158,7 +166,11 @@ fn relative_or_display(root: &Path, path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::release_version_for_target;
+    use super::{
+        release_ready_success_summary, release_ready_success_trust_level,
+        release_version_for_target,
+    };
+    use crate::agent::common::TrustLevel;
 
     #[test]
     fn helyx_target_uses_non_release_probe_version() {
@@ -168,5 +180,21 @@ mod tests {
     #[test]
     fn explicit_semver_target_is_preserved() {
         assert_eq!(release_version_for_target("1.2.3"), "1.2.3");
+    }
+
+    #[test]
+    fn release_ready_success_is_capped_below_ci_readiness() {
+        assert_eq!(
+            release_ready_success_trust_level(false),
+            TrustLevel::ReleaseReadyLocal
+        );
+        assert_eq!(
+            release_ready_success_trust_level(true),
+            TrustLevel::ReleaseReadyLocal
+        );
+        assert!(release_ready_success_summary(false).contains("CI/OIDC readiness is not claimed"));
+        assert!(
+            release_ready_success_summary(true).contains("CI/OIDC readiness is still not claimed")
+        );
     }
 }

@@ -49,6 +49,26 @@ fn assert_enterprise_report(report: &Value, expected_agent: &str) {
     );
 }
 
+fn assert_warning_contains(report: &Value, needle: &str) {
+    assert!(
+        report["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning.as_str().unwrap().contains(needle)),
+        "expected warning containing {needle:?}, got {:?}",
+        report["warnings"]
+    );
+}
+
+fn assert_summary_contains(report: &Value, needle: &str) {
+    let summary = report["summary"].as_str().unwrap();
+    assert!(
+        summary.contains(needle),
+        "expected summary containing {needle:?}, got {summary:?}"
+    );
+}
+
 fn write_stub(dir: &Path, name: &str, success: bool) -> std::path::PathBuf {
     #[cfg(windows)]
     let path = dir.join(format!("{name}.cmd"));
@@ -194,6 +214,35 @@ fn agent_devops_train_and_kernel_inspect_reports_are_truth_bounded() {
             "{name} report should record at least one inspected artifact"
         );
         assert!(out.join(format!("{name}.md")).exists());
+    }
+}
+
+#[test]
+fn agent_devops_default_report_cannot_claim_ci_or_live_signing() {
+    let td = tempfile::tempdir().unwrap();
+    let out = td.path().join("devops-inspect");
+    let output = run_refine(
+        &["agent", "devops", "--mode", "inspect", "--target", "helyx"],
+        &out,
+    );
+
+    assert_success(&output);
+    let report = read_json(&out.join("devops.json"));
+    assert_eq!(report["status"], "passed");
+    assert_eq!(report["trust_level"], "release-ready-local");
+    assert_summary_contains(&report, "Live hosted signing is not claimed.");
+    assert_warning_contains(
+        &report,
+        "inspect mode does not run Docker, Nix, cosign, or hosted CI evidence",
+    );
+
+    let tool_checks = report["tool_checks"].as_array().unwrap();
+    for tool in ["docker", "cosign"] {
+        let check = tool_checks
+            .iter()
+            .find(|check| check["name"] == tool)
+            .unwrap_or_else(|| panic!("missing tool check for {tool}"));
+        assert_eq!(check["status"], "skipped");
     }
 }
 
@@ -344,6 +393,12 @@ fn agent_train_execute_runs_data_audit_and_dry_run_training() {
     assert_success(&output);
     let report = read_json(&out.join("train.json"));
     assert_eq!(report["status"], "passed");
+    assert_eq!(report["trust_level"], "measured-only");
+    assert_summary_contains(
+        &report,
+        "This proves orchestration readiness, not model improvement.",
+    );
+    assert_warning_contains(&report, "training execute used --dry-run");
     let command_names: Vec<_> = report["commands"]
         .as_array()
         .unwrap()
@@ -370,6 +425,51 @@ fn agent_train_execute_runs_data_audit_and_dry_run_training() {
 }
 
 #[test]
+fn agent_train_allow_expensive_still_cannot_claim_model_quality() {
+    let td = tempfile::tempdir().unwrap();
+    let stub = write_stub(td.path(), "refine-train-expensive", true);
+    let out = td.path().join("train-expensive");
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .env("REFINEFORGE_REFINE_TRAIN_BIN", &stub)
+        .args([
+            "--root",
+            ".",
+            "agent",
+            "train",
+            "--mode",
+            "execute",
+            "--target",
+            "helyx",
+            "--allow-expensive",
+            "--out",
+        ])
+        .arg(&out)
+        .arg("--json")
+        .output()
+        .expect("run train allow-expensive execute");
+
+    assert_success(&output);
+    let report = read_json(&out.join("train.json"));
+    assert_eq!(report["status"], "passed");
+    assert_eq!(report["trust_level"], "measured-only");
+    assert_summary_contains(&report, "Model quality still requires evaluation evidence.");
+
+    let command_names: Vec<_> = report["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|cmd| cmd["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(command_names, ["training-data-audit", "training-run"]);
+    let run_command = report["commands"][1]["command"].as_array().unwrap();
+    assert!(
+        !run_command.iter().any(|arg| arg == "--dry-run"),
+        "--allow-expensive should request live trainer execution while keeping trust measured-only"
+    );
+}
+
+#[test]
 fn agent_kernel_execute_runs_lint_and_bitexact_gate() {
     let td = tempfile::tempdir().unwrap();
     let stub = write_kernel_enterprise_stub(td.path());
@@ -388,6 +488,8 @@ fn agent_kernel_execute_runs_lint_and_bitexact_gate() {
     assert_success(&output);
     let report = read_json(&out.join("kernel.json"));
     assert_eq!(report["status"], "passed");
+    assert_eq!(report["trust_level"], "measured-only");
+    assert_summary_contains(&report, "not CUDA semantic correctness.");
     let command_names: Vec<_> = report["commands"]
         .as_array()
         .unwrap()

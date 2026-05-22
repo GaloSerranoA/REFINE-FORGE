@@ -10,6 +10,13 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — agent trust-boundary regression tests
+
+- Added CLI regressions that freeze the DevOps, training, and kernel agent
+  trust floors: DevOps cannot silently report `release-ready-ci`, training
+  cannot claim model-quality improvement, and kernel gates cannot claim CUDA
+  semantic correctness without new evidence.
+
 ### Fixed — Lean agent trust floor
 
 - `refine agent lean --mode check|execute` now derives `trust_level` from the
