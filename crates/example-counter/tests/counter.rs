@@ -86,3 +86,21 @@ fn lean_model_is_const_and_static() {
     const X: &str = Counter::LEAN_MODEL;
     assert!(X.contains("value : Nat"));
 }
+
+#[test]
+fn lean_model_supported_shape_is_deterministic() {
+    #[derive(refineforge_derive::LeanModel)]
+    #[allow(dead_code)]
+    struct DeriveShape {
+        count: usize,
+        signed: i64,
+        active: bool,
+        label: String,
+        bytes: [u8; 32],
+        trail: Vec<u8>,
+    }
+
+    let expected = "structure DeriveShape where\n  count : Nat\n  signed : Int\n  active : Bool\n  label : String\n  bytes : ByteArray\n  trail : List Nat";
+    assert_eq!(DeriveShape::LEAN_MODEL, expected);
+    assert_eq!(DeriveShape::lean_model(), expected);
+}

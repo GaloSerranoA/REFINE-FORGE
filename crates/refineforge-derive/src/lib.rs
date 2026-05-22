@@ -46,6 +46,13 @@
 //! When an unsupported type is encountered, the macro emits a
 //! `syn::Error` pointing at the offending field — the compiler
 //! shows a normal error message with file:line.
+//!
+//! ## Determinism
+//!
+//! Generated fields are emitted in Rust declaration order. For the
+//! same input struct and field types, `LEAN_MODEL` is byte-stable
+//! across runs so downstream scan/lint/bundle evidence does not
+//! drift.
 
 use proc_macro::TokenStream;
 use quote::quote;
