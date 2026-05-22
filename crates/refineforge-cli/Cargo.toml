@@ -20,6 +20,7 @@ anyhow                  = "1.0"
 thiserror               = "1.0"
 walkdir                 = "2.5"
 regex                   = "1.10"
+syn                     = { version = "2", features = ["full"] }
 chrono                  = { version = "0.4", features = ["serde"] }
 # repair module: Lean LSP client + diagnostic types
 lsp-types               = "0.97"
