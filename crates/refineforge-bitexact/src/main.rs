@@ -6,6 +6,7 @@
 
 mod experiment;
 mod hash;
+mod manifest;
 mod report;
 mod runner;
 

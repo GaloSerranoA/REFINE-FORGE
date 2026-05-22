@@ -9,6 +9,7 @@ use std::time::Instant;
 
 use crate::experiment::{KernelExperiment, OutputSource};
 use crate::hash::{hash_bytes, hash_file};
+use crate::manifest;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunResult {
@@ -35,6 +36,7 @@ impl RunPaths {
 pub fn run_all(runs_root: &Path, exp: &KernelExperiment) -> Result<Vec<RunResult>> {
     let paths = RunPaths::for_experiment(runs_root, exp);
     std::fs::create_dir_all(&paths.run_dir)?;
+    let _input_manifest = manifest::build_input_manifest(&exp.input_files)?;
 
     let mut out = Vec::with_capacity(exp.runs);
     for i in 0..exp.runs {
