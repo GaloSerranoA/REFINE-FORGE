@@ -1,6 +1,6 @@
 {
   "claim_id": "EXAMPLE-003",
-  "created_at": "2026-05-22T02:29:20.105224600Z",
+  "created_at": "2026-05-22T02:32:06.484776500Z",
   "lean_toolchain": "leanprover/lean4:v4.29.1",
   "files": {
     "claims/example-capability-revocation.yaml": "a5aa43c006e3539a47273dfb14a12ee9660aace57dfa7b097c61e8bb195ed330",
@@ -16,6 +16,6 @@
     "lean/lakefile.toml": "54506b9c610a71beb6d7d05f8756da73c7b3303e226b65e43389b4e233026eac",
     "lean/lean-toolchain": "b15a57f8ea4c890197465ce1156667ae13d9ed4ab8a9f263a920bf010d967d82"
   },
-  "report_sha256": "70d1ea9e5879056169dcddbcd885b750e3ae1e5de02107040f97b208972df1ae",
+  "report_sha256": "74f208994183b1c8f8351e54b9cb7478043cc8c15081dc75eb343dd94a61db4d",
   "bundle_schema": 1
 }
