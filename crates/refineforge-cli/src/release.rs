@@ -4,6 +4,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -295,6 +297,519 @@ pub fn provenance_from_report(report: &ReleaseReport) -> serde_json::Value {
     })
 }
 
+#[derive(Debug, Clone)]
+pub struct ReleaseReadyOptions {
+    pub version: String,
+    pub evidence_dir: PathBuf,
+    pub dry_run: bool,
+    pub allow_dirty: bool,
+    pub skip_docker: bool,
+    pub skip_signature: bool,
+    pub ci: bool,
+}
+
+pub fn ready(root: &Path, opts: ReleaseReadyOptions) -> Result<()> {
+    let report = build_ready_report(root, &opts)?;
+    let metadata = cargo_metadata_json(root, opts.dry_run)?;
+    let sbom = sbom_from_cargo_metadata(&metadata, &opts.version)?;
+    let provenance = provenance_from_report(&report);
+    write_evidence(&report, &sbom, &provenance)?;
+
+    println!("release evidence: {}", report.evidence_dir.display());
+    println!(
+        "release report:   {}",
+        report.evidence_dir.join("release-report.md").display()
+    );
+
+    if report.required_gates_succeeded() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "release readiness failed; see {}",
+            report.evidence_dir.display()
+        ))
+    }
+}
+
+pub fn build_ready_report(root: &Path, opts: &ReleaseReadyOptions) -> Result<ReleaseReport> {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let mut report = ReleaseReport::new(opts.version.clone(), opts.evidence_dir.clone());
+    std::fs::create_dir_all(report.evidence_dir.join("logs"))
+        .with_context(|| format!("creating {}", report.evidence_dir.join("logs").display()))?;
+
+    fill_git_context(&root, &mut report, opts)?;
+    push_semver_gate(&mut report, &opts.version);
+    push_tag_available_gate(&root, &mut report, opts)?;
+    push_command_gate(
+        &root,
+        &mut report,
+        opts,
+        "cargo-metadata-locked",
+        &["cargo", "metadata", "--locked", "--format-version", "1"],
+        true,
+    )?;
+
+    for package in [
+        "refineforge-cli",
+        "refineforge-derive",
+        "example-counter",
+        "example-capability",
+    ] {
+        push_command_gate(
+            &root,
+            &mut report,
+            opts,
+            &format!("cargo-test-{package}"),
+            &["cargo", "test", "-p", package],
+            true,
+        )?;
+    }
+
+    for (name, args) in [
+        (
+            "lean-check-all",
+            vec![
+                "cargo",
+                "run",
+                "-p",
+                "refineforge-cli",
+                "--bin",
+                "refine",
+                "--",
+                "lean",
+                "check-all",
+            ],
+        ),
+        (
+            "scan-check-all",
+            vec![
+                "cargo",
+                "run",
+                "-p",
+                "refineforge-cli",
+                "--bin",
+                "refine",
+                "--",
+                "scan",
+                "check-all",
+            ],
+        ),
+        (
+            "lint-check-all",
+            vec![
+                "cargo",
+                "run",
+                "-p",
+                "refineforge-cli",
+                "--bin",
+                "refine",
+                "--",
+                "lint",
+                "check-all",
+            ],
+        ),
+    ] {
+        push_command_gate(&root, &mut report, opts, name, &args, true)?;
+    }
+
+    for claim_id in ["EXAMPLE-001", "EXAMPLE-002", "EXAMPLE-003"] {
+        push_bundle_gates(&root, &mut report, opts, claim_id)?;
+    }
+
+    push_docs_audit_gate(&mut report, opts);
+    push_docker_gate(&root, &mut report, opts)?;
+    push_signature_gate(&mut report, opts);
+
+    Ok(report)
+}
+
+fn cargo_metadata_json(root: &Path, dry_run: bool) -> Result<serde_json::Value> {
+    if dry_run {
+        return Ok(serde_json::json!({
+            "packages": [],
+            "workspace_members": []
+        }));
+    }
+
+    let output = Command::new("cargo")
+        .current_dir(root)
+        .args(["metadata", "--locked", "--format-version", "1"])
+        .output()
+        .context("running cargo metadata --locked")?;
+    if !output.status.success() {
+        return Err(anyhow::anyhow!(
+            "cargo metadata --locked failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(serde_json::from_slice(&output.stdout)?)
+}
+
+fn fill_git_context(
+    root: &Path,
+    report: &mut ReleaseReport,
+    opts: &ReleaseReadyOptions,
+) -> Result<()> {
+    let git_available = Command::new("git")
+        .current_dir(root)
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .output();
+    match git_available {
+        Ok(output) if output.status.success() => report.gates.push(GateReport {
+            name: "git-worktree".into(),
+            command: vec!["git".into(), "rev-parse".into(), "--is-inside-work-tree".into()],
+            status: GateStatus::Passed,
+            required: true,
+            duration_ms: 0,
+            log_path: None,
+            message: Some("inside git worktree".into()),
+        }),
+        Ok(output) => {
+            report.gates.push(GateReport {
+                name: "git-worktree".into(),
+                command: vec!["git".into(), "rev-parse".into(), "--is-inside-work-tree".into()],
+                status: GateStatus::Failed,
+                required: true,
+                duration_ms: 0,
+                log_path: None,
+                message: Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
+            });
+            return Ok(());
+        }
+        Err(e) => {
+            report.gates.push(GateReport {
+                name: "git-worktree".into(),
+                command: vec!["git".into(), "rev-parse".into(), "--is-inside-work-tree".into()],
+                status: GateStatus::Blocked,
+                required: true,
+                duration_ms: 0,
+                log_path: None,
+                message: Some(e.to_string()),
+            });
+            return Ok(());
+        }
+    }
+
+    report.git_commit = command_stdout(root, "git", &["rev-parse", "HEAD"]).ok();
+    report.git_branch = command_stdout(root, "git", &["symbolic-ref", "--short", "HEAD"]).ok();
+
+    let status = command_stdout(root, "git", &["status", "--porcelain"]).unwrap_or_default();
+    report.dirty_tree = !status.trim().is_empty();
+    let (status, message) = if report.dirty_tree && !opts.allow_dirty {
+        (GateStatus::Failed, "working tree is dirty".to_string())
+    } else if report.dirty_tree {
+        (GateStatus::Skipped, "allowed by --allow-dirty".to_string())
+    } else {
+        (GateStatus::Passed, "working tree is clean".to_string())
+    };
+    report.gates.push(GateReport {
+        name: "git-clean".into(),
+        command: vec!["git".into(), "status".into(), "--porcelain".into()],
+        status,
+        required: true,
+        duration_ms: 0,
+        log_path: None,
+        message: Some(message),
+    });
+
+    Ok(())
+}
+
+fn command_stdout(root: &Path, program: &str, args: &[&str]) -> Result<String> {
+    let output = Command::new(program).current_dir(root).args(args).output()?;
+    if !output.status.success() {
+        return Err(anyhow::anyhow!(
+            "{} failed: {}",
+            program,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn push_semver_gate(report: &mut ReleaseReport, version: &str) {
+    let re = Regex::new(r"^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$").unwrap();
+    let passed = re.is_match(version);
+    report.gates.push(GateReport {
+        name: "version-semver".into(),
+        command: vec!["semver".into(), version.into()],
+        status: if passed {
+            GateStatus::Passed
+        } else {
+            GateStatus::Failed
+        },
+        required: true,
+        duration_ms: 0,
+        log_path: None,
+        message: Some(if passed {
+            "valid semver".into()
+        } else {
+            "version must be X.Y.Z or X.Y.Z-prerelease".into()
+        }),
+    });
+}
+
+fn push_tag_available_gate(
+    root: &Path,
+    report: &mut ReleaseReport,
+    opts: &ReleaseReadyOptions,
+) -> Result<()> {
+    let tag = format!("v{}", opts.version);
+    if opts.dry_run {
+        report.gates.push(GateReport {
+            name: "tag-available".into(),
+            command: vec!["git".into(), "rev-parse".into(), tag],
+            status: GateStatus::Skipped,
+            required: true,
+            duration_ms: 0,
+            log_path: None,
+            message: Some("dry-run".into()),
+        });
+        return Ok(());
+    }
+
+    let start = Instant::now();
+    let output = Command::new("git")
+        .current_dir(root)
+        .args(["rev-parse", "-q", "--verify", &format!("refs/tags/{tag}")])
+        .output();
+    let status = match output {
+        Ok(output) if output.status.success() => GateStatus::Failed,
+        Ok(_) => GateStatus::Passed,
+        Err(_) => GateStatus::Blocked,
+    };
+    report.gates.push(GateReport {
+        name: "tag-available".into(),
+        command: vec!["git".into(), "rev-parse".into(), tag],
+        status,
+        required: true,
+        duration_ms: start.elapsed().as_millis(),
+        log_path: None,
+        message: Some(match status {
+            GateStatus::Passed => "tag is available".into(),
+            GateStatus::Failed => "tag already exists".into(),
+            GateStatus::Blocked => "could not invoke git".into(),
+            GateStatus::Skipped => "dry-run".into(),
+        }),
+    });
+    Ok(())
+}
+
+fn push_command_gate(
+    root: &Path,
+    report: &mut ReleaseReport,
+    opts: &ReleaseReadyOptions,
+    name: &str,
+    args: &[&str],
+    required: bool,
+) -> Result<()> {
+    let log_path = report.evidence_dir.join("logs").join(gate_log_name(name));
+    if opts.dry_run {
+        write_log(&log_path, "dry-run: command not executed\n")?;
+        report.gates.push(GateReport {
+            name: name.into(),
+            command: args.iter().map(|arg| (*arg).to_string()).collect(),
+            status: GateStatus::Skipped,
+            required,
+            duration_ms: 0,
+            log_path: Some(log_path),
+            message: Some("dry-run".into()),
+        });
+        return Ok(());
+    }
+
+    let Some((program, cmd_args)) = args.split_first() else {
+        report.gates.push(GateReport {
+            name: name.into(),
+            command: Vec::new(),
+            status: GateStatus::Failed,
+            required,
+            duration_ms: 0,
+            log_path: None,
+            message: Some("empty command".into()),
+        });
+        return Ok(());
+    };
+
+    let start = Instant::now();
+    let output = Command::new(program).current_dir(root).args(cmd_args).output();
+    let duration_ms = start.elapsed().as_millis();
+    match output {
+        Ok(output) => {
+            let mut log = String::new();
+            log.push_str("$ ");
+            log.push_str(&args.join(" "));
+            log.push_str("\n\n[stdout]\n");
+            log.push_str(&String::from_utf8_lossy(&output.stdout));
+            log.push_str("\n[stderr]\n");
+            log.push_str(&String::from_utf8_lossy(&output.stderr));
+            write_log(&log_path, &log)?;
+            report.gates.push(GateReport {
+                name: name.into(),
+                command: args.iter().map(|arg| (*arg).to_string()).collect(),
+                status: if output.status.success() {
+                    GateStatus::Passed
+                } else {
+                    GateStatus::Failed
+                },
+                required,
+                duration_ms,
+                log_path: Some(log_path),
+                message: Some(if output.status.success() {
+                    "command exited 0".into()
+                } else {
+                    format!("command exited {}", output.status)
+                }),
+            });
+        }
+        Err(e) => {
+            write_log(&log_path, &e.to_string())?;
+            report.gates.push(GateReport {
+                name: name.into(),
+                command: args.iter().map(|arg| (*arg).to_string()).collect(),
+                status: GateStatus::Blocked,
+                required,
+                duration_ms,
+                log_path: Some(log_path),
+                message: Some(e.to_string()),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn push_bundle_gates(
+    root: &Path,
+    report: &mut ReleaseReport,
+    opts: &ReleaseReadyOptions,
+    claim_id: &str,
+) -> Result<()> {
+    push_command_gate(
+        root,
+        report,
+        opts,
+        &format!("bundle-export-{claim_id}"),
+        &[
+            "cargo",
+            "run",
+            "-p",
+            "refineforge-cli",
+            "--bin",
+            "refine",
+            "--",
+            "bundle",
+            "export",
+            claim_id,
+        ],
+        true,
+    )?;
+    push_command_gate(
+        root,
+        report,
+        opts,
+        &format!("bundle-verify-{claim_id}"),
+        &[
+            "cargo",
+            "run",
+            "-p",
+            "refineforge-cli",
+            "--bin",
+            "refine",
+            "--",
+            "bundle",
+            "verify",
+            &format!("artifacts/{claim_id}"),
+        ],
+        true,
+    )?;
+
+    if !opts.dry_run {
+        let manifest = root.join("artifacts").join(claim_id).join("manifest.json");
+        if manifest.exists() {
+            report.bundles.push(BundleEvidence {
+                claim_id: claim_id.into(),
+                bundle_dir: PathBuf::from("artifacts").join(claim_id),
+                manifest_sha256: sha256_file(&manifest)?,
+                signature: SignatureEvidence::Unsigned,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn push_docs_audit_gate(report: &mut ReleaseReport, opts: &ReleaseReadyOptions) {
+    report.gates.push(GateReport {
+        name: "docs-truth-audit".into(),
+        command: vec!["refine".into(), "release".into(), "ready".into()],
+        status: GateStatus::Skipped,
+        required: true,
+        duration_ms: 0,
+        log_path: None,
+        message: Some(if opts.dry_run {
+            "dry-run; docs audit implemented in release audit step".into()
+        } else {
+            "docs audit pending task 4".into()
+        }),
+    });
+}
+
+fn push_docker_gate(
+    root: &Path,
+    report: &mut ReleaseReport,
+    opts: &ReleaseReadyOptions,
+) -> Result<()> {
+    if opts.skip_docker {
+        report.gates.push(GateReport {
+            name: "docker-verifier-smoke".into(),
+            command: vec!["docker".into(), "build".into()],
+            status: GateStatus::Skipped,
+            required: true,
+            duration_ms: 0,
+            log_path: None,
+            message: Some("skipped by --skip-docker".into()),
+        });
+        return Ok(());
+    }
+    push_command_gate(
+        root,
+        report,
+        opts,
+        "docker-build-verifier",
+        &[
+            "docker",
+            "build",
+            "-t",
+            "refineforge-verifier:release-ready",
+            "-f",
+            "containers/Dockerfile.verifier",
+            ".",
+        ],
+        true,
+    )
+}
+
+fn push_signature_gate(report: &mut ReleaseReport, opts: &ReleaseReadyOptions) {
+    if opts.skip_signature {
+        report.gates.push(GateReport {
+            name: "signature-verification".into(),
+            command: vec!["cosign".into(), "verify-blob".into()],
+            status: GateStatus::Skipped,
+            required: true,
+            duration_ms: 0,
+            log_path: None,
+            message: Some("skipped by --skip-signature".into()),
+        });
+    }
+}
+
+fn write_log(path: &Path, contents: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, contents)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,5 +942,53 @@ mod tests {
         assert_eq!(provenance["subject"][0]["name"], "EXAMPLE-003/manifest.json");
         assert_eq!(provenance["subject"][0]["digest"]["sha256"], "b".repeat(64));
         assert_eq!(provenance["predicate"]["materials"][0]["uri"], "git+HEAD");
+    }
+
+    #[test]
+    fn dry_run_ready_marks_expensive_gates_skipped() {
+        let td = tempfile::tempdir().unwrap();
+        let opts = ReleaseReadyOptions {
+            version: "0.2.2".into(),
+            evidence_dir: td.path().join("evidence"),
+            dry_run: true,
+            allow_dirty: true,
+            skip_docker: true,
+            skip_signature: true,
+            ci: false,
+        };
+
+        let report = build_ready_report(Path::new("."), &opts).unwrap();
+        assert!(report
+            .gates
+            .iter()
+            .any(|g| g.name == "cargo-test-refineforge-cli"));
+        assert!(report
+            .gates
+            .iter()
+            .filter(|g| g.name.starts_with("cargo-test-"))
+            .all(|g| g.status == GateStatus::Skipped));
+    }
+
+    #[test]
+    fn invalid_semver_is_a_failed_required_gate() {
+        let td = tempfile::tempdir().unwrap();
+        let opts = ReleaseReadyOptions {
+            version: "not-a-version".into(),
+            evidence_dir: td.path().join("evidence"),
+            dry_run: true,
+            allow_dirty: true,
+            skip_docker: true,
+            skip_signature: true,
+            ci: false,
+        };
+
+        let report = build_ready_report(Path::new("."), &opts).unwrap();
+        let semver = report
+            .gates
+            .iter()
+            .find(|g| g.name == "version-semver")
+            .unwrap();
+        assert_eq!(semver.status, GateStatus::Failed);
+        assert!(!report.required_gates_succeeded());
     }
 }

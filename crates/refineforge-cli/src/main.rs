@@ -11,7 +11,9 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use refineforge_cli::{autonomous, bundle, claim, lint, repair, runner, scaffold, scan};
+use refineforge_cli::{
+    autonomous, bundle, claim, lint, release, repair, runner, scaffold, scan,
+};
 
 #[derive(Parser)]
 #[command(
@@ -60,6 +62,11 @@ enum Cmd {
     Lint {
         #[command(subcommand)]
         cmd: LintCmd,
+    },
+    /// Release readiness, evidence, SBOM, provenance, and audit gates.
+    Release {
+        #[command(subcommand)]
+        cmd: ReleaseCmd,
     },
     /// SKELETON: bounded LLM repair loop. Spawns `lake env lean
     /// --server`, collects diagnostics, asks the strategy for
@@ -230,6 +237,34 @@ enum LintCmd {
 }
 
 #[derive(Subcommand)]
+enum ReleaseCmd {
+    /// Run release readiness gates and write evidence artifacts.
+    Ready {
+        /// Semver version being prepared, e.g. 0.2.2.
+        #[arg(long)]
+        version: String,
+        /// Evidence output directory.
+        #[arg(long)]
+        evidence_dir: Option<PathBuf>,
+        /// Plan and write evidence without running expensive gates.
+        #[arg(long)]
+        dry_run: bool,
+        /// Permit a dirty working tree and record it as skipped evidence.
+        #[arg(long)]
+        allow_dirty: bool,
+        /// Do not build or smoke-test the Docker verifier image.
+        #[arg(long)]
+        skip_docker: bool,
+        /// Do not require or verify signatures during local readiness.
+        #[arg(long)]
+        skip_signature: bool,
+        /// Mark report as a CI run and use CI-specific evidence defaults.
+        #[arg(long)]
+        ci: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum EscalationsCmd {
     /// List every escalation packet across the project,
     /// sorted by age, with PENDING / DECIDED status.
@@ -277,6 +312,35 @@ fn main() -> Result<()> {
         Cmd::Lint { cmd } => match cmd {
             LintCmd::Check { claim_id } => lint::lint_one(&cli.root, &claim_id),
             LintCmd::CheckAll => lint::lint_all(&cli.root),
+        },
+        Cmd::Release { cmd } => match cmd {
+            ReleaseCmd::Ready {
+                version,
+                evidence_dir,
+                dry_run,
+                allow_dirty,
+                skip_docker,
+                skip_signature,
+                ci,
+            } => {
+                let dir = evidence_dir.unwrap_or_else(|| {
+                    PathBuf::from("release")
+                        .join("evidence")
+                        .join(format!("local-{version}"))
+                });
+                release::ready(
+                    &cli.root,
+                    release::ReleaseReadyOptions {
+                        version,
+                        evidence_dir: dir,
+                        dry_run,
+                        allow_dirty,
+                        skip_docker,
+                        skip_signature,
+                        ci,
+                    },
+                )
+            }
         },
         Cmd::Repair {
             claim_id,
