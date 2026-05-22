@@ -8,6 +8,7 @@
 //! The scaffolder writes:
 //!   * `lean/<MODULE_PATH>.lean`     (creating intermediate dirs)
 //!   * `claims/<slug>.yaml`
+//!   * `docs/refinement/<CLAIM_ID>.md`
 //!
 //! `MODULE_PATH` is derived from the user-supplied module string by
 //! replacing dots with `/`. E.g. `Refineforge.Capability` →
@@ -60,6 +61,8 @@ pub fn create(
     let tdir = root.join("templates").join(template);
     let lean_tmpl_path = tdir.join("lean.lean.tmpl");
     let yaml_tmpl_path = tdir.join("claim.yaml.tmpl");
+    let local_refinement_tmpl_path = tdir.join("refinement.md.tmpl");
+    let default_refinement_tmpl_path = root.join("templates").join("refinement.md.tmpl");
     if !lean_tmpl_path.exists() || !yaml_tmpl_path.exists() {
         return Err(anyhow!(
             "template '{}' is incomplete or missing under {}",
@@ -85,6 +88,10 @@ pub fn create(
     let lean_abs = root.join(&lean_rel);
     let slug = claim_id.to_lowercase().replace('_', "-");
     let yaml_abs = root.join("claims").join(format!("{slug}.yaml"));
+    let refinement_rel = PathBuf::from("docs")
+        .join("refinement")
+        .join(format!("{claim_id}.md"));
+    let refinement_abs = root.join(&refinement_rel);
 
     // Refuse to overwrite — operator must delete first.
     if lean_abs.exists() {
@@ -99,29 +106,52 @@ pub fn create(
             yaml_abs.display()
         ));
     }
+    if refinement_abs.exists() {
+        return Err(anyhow!(
+            "refusing to overwrite existing refinement doc: {}",
+            refinement_abs.display()
+        ));
+    }
 
     let lean_tmpl = std::fs::read_to_string(&lean_tmpl_path)
         .with_context(|| format!("reading {}", lean_tmpl_path.display()))?;
     let yaml_tmpl = std::fs::read_to_string(&yaml_tmpl_path)
         .with_context(|| format!("reading {}", yaml_tmpl_path.display()))?;
+    let refinement_tmpl_path = if local_refinement_tmpl_path.exists() {
+        local_refinement_tmpl_path
+    } else {
+        default_refinement_tmpl_path
+    };
+    let refinement_tmpl = std::fs::read_to_string(&refinement_tmpl_path)
+        .with_context(|| format!("reading {}", refinement_tmpl_path.display()))?;
 
     let lean_rel_str = lean_rel.to_string_lossy().replace('\\', "/");
+    let refinement_rel_str = refinement_rel.to_string_lossy().replace('\\', "/");
     let title_str = title.unwrap_or("TODO: short, factual claim title");
+    let template_version = "1";
 
     let substitute = |s: &str| -> String {
         s.replace("{{CLAIM_ID}}", claim_id)
             .replace("{{MODULE}}", module)
             .replace("{{LEAN_FILE}}", &lean_rel_str)
+            .replace("{{REFINEMENT_FILE}}", &refinement_rel_str)
+            .replace("{{TEMPLATE}}", template)
+            .replace("{{TEMPLATE_VERSION}}", template_version)
             .replace("{{TITLE}}", title_str)
     };
     let lean_out = substitute(&lean_tmpl);
     let yaml_out = substitute(&yaml_tmpl);
+    let refinement_out = substitute(&refinement_tmpl);
 
     if let Some(parent) = lean_abs.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(&lean_abs, lean_out)?;
     std::fs::write(&yaml_abs, yaml_out)?;
+    if let Some(parent) = refinement_abs.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&refinement_abs, refinement_out)?;
 
     // Make sure the library root imports the new module. We append a
     // line to `lean/HELYX.lean` if one doesn't already exist for it.
@@ -130,6 +160,7 @@ pub fn create(
     println!("Scaffolded {claim_id}:");
     println!("  Lean: {}", lean_abs.display());
     println!("  YAML: {}", yaml_abs.display());
+    println!("  Refinement: {}", refinement_abs.display());
     println!();
     println!("Next: edit both files, then run");
     println!("  refine lean check {claim_id}");
@@ -217,4 +248,74 @@ fn update_root_import(root: &Path, module: &str) -> Result<()> {
     updated.push('\n');
     std::fs::write(&path, updated)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_minimal_repo(root: &Path) {
+        std::fs::create_dir_all(root.join("lean")).unwrap();
+        std::fs::write(
+            root.join("lean").join("lakefile.toml"),
+            r#"name = "refineforge"
+defaultTargets = ["Refineforge"]
+"#,
+        )
+        .unwrap();
+        std::fs::write(root.join("lean").join("Refineforge.lean"), "").unwrap();
+        std::fs::create_dir_all(root.join("claims")).unwrap();
+    }
+
+    fn write_template(root: &Path) {
+        let tdir = root.join("templates").join("state_machine");
+        std::fs::create_dir_all(&tdir).unwrap();
+        std::fs::write(
+            tdir.join("lean.lean.tmpl"),
+            "/-\nTemplate provenance: {{TEMPLATE}} v{{TEMPLATE_VERSION}}\n-/\nnamespace {{MODULE}}\ntheorem ok : True := by trivial\nend {{MODULE}}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            tdir.join("claim.yaml.tmpl"),
+            "claim_id: {{CLAIM_ID}}\ntitle: \"{{TITLE}}\"\ntemplate:\n  name: {{TEMPLATE}}\n  version: {{TEMPLATE_VERSION}}\nlean:\n  toolchain: leanprover/lean4:v4.29.1\n  module: {{MODULE}}\n  file: {{LEAN_FILE}}\n  theorems: [ok]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("templates").join("refinement.md.tmpl"),
+            "# {{CLAIM_ID}}\n\nTemplate provenance: {{TEMPLATE}} v{{TEMPLATE_VERSION}}\n\nRefinement file: {{REFINEMENT_FILE}}\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn create_writes_refinement_doc_and_template_provenance() {
+        let td = tempfile::tempdir().unwrap();
+        write_minimal_repo(td.path());
+        write_template(td.path());
+
+        create(
+            td.path(),
+            "state_machine",
+            "TEST-SCAFFOLD-001",
+            "Refineforge.Generated",
+            Some("Generated claim"),
+        )
+        .unwrap();
+
+        let claim = std::fs::read_to_string(td.path().join("claims/test-scaffold-001.yaml"))
+            .unwrap();
+        assert!(claim.contains("template:"));
+        assert!(claim.contains("name: state_machine"));
+        assert!(claim.contains("version: 1"));
+
+        let lean = std::fs::read_to_string(td.path().join("lean/Refineforge/Generated.lean"))
+            .unwrap();
+        assert!(lean.contains("Template provenance: state_machine v1"));
+
+        let refinement =
+            std::fs::read_to_string(td.path().join("docs/refinement/TEST-SCAFFOLD-001.md"))
+                .unwrap();
+        assert!(refinement.contains("Template provenance: state_machine v1"));
+        assert!(refinement.contains("docs/refinement/TEST-SCAFFOLD-001.md"));
+    }
 }

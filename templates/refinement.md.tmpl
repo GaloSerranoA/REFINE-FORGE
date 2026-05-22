@@ -1,0 +1,44 @@
+# {{CLAIM_ID}} - Refinement argument
+
+> **Status of this document:** SCAFFOLD.
+> Template provenance: {{TEMPLATE}} v{{TEMPLATE_VERSION}}.
+> Generated for Lean module `{{MODULE}}` and claim file `{{LEAN_FILE}}`.
+
+## 1. What the Lean model says
+
+In `{{LEAN_FILE}}`, the Lean model defines the mathematical objects and
+theorems for `{{CLAIM_ID}}`. Replace this paragraph with the exact Lean
+entities, their kinds, and the model assumptions.
+
+## 2. What the Rust must implement
+
+List every Rust entity cited by the claim YAML and its Lean counterpart.
+Run `refine scan check {{CLAIM_ID}}` after filling the claim's `rust_source`
+entries.
+
+## 3. Mapping
+
+For each Rust entity and Lean entity pair, explain the correspondence,
+preconditions, postconditions, edge cases, and idealisations. Any mismatch
+between Rust finite types and Lean mathematical types belongs here.
+
+## 4. Trusted code base
+
+This claim depends on Lean's kernel, the pinned Lean toolchain, `rustc`,
+LLVM, the Rust standard library, and any explicitly cited external crates.
+List additional dependencies before upgrading the claim status.
+
+## 5. What this claim does NOT cover
+
+State excluded behavior such as concurrency, persistence, side channels,
+resource exhaustion, hardware faults, and deployment-specific assumptions.
+
+## 6. Reviewer checklist
+
+- [ ] **[machine-checked]** `refine lean check {{CLAIM_ID}}` succeeds.
+- [ ] **[machine-checked]** `refine scan check {{CLAIM_ID}}` succeeds.
+- [ ] **[machine-checked]** `refine lint check {{CLAIM_ID}}` succeeds.
+- [ ] **[machine-checked]** `refine bundle verify artifacts/{{CLAIM_ID}}` succeeds.
+- [ ] **[needs human]** The Lean model states the intended trust property.
+- [ ] **[needs human]** The Rust mapping in this document is complete.
+- [ ] **[needs human]** The exclusions above are acceptable for deployment.
