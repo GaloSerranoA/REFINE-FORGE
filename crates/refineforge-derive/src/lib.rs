@@ -150,9 +150,11 @@ pub fn derive_lean_model(input: TokenStream) -> TokenStream {
 fn rust_type_to_lean(ty: &Type) -> Result<String, syn::Error> {
     match ty {
         Type::Path(tp) => {
-            let last = tp.path.segments.last().ok_or_else(|| {
-                syn::Error::new_spanned(ty, "LeanModel: empty type path")
-            })?;
+            let last = tp
+                .path
+                .segments
+                .last()
+                .ok_or_else(|| syn::Error::new_spanned(ty, "LeanModel: empty type path"))?;
             let name = last.ident.to_string();
             match name.as_str() {
                 "u8" | "u16" | "u32" | "u64" | "usize" => Ok("Nat".into()),

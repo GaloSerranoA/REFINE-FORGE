@@ -172,7 +172,10 @@ fn validate_claim_id(s: &str) -> Result<()> {
     if s.is_empty() {
         return Err(anyhow!("claim_id may not be empty"));
     }
-    if !s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         return Err(anyhow!(
             "claim_id must be ASCII alphanumeric + '-' or '_': got {s:?}"
         ));
@@ -302,14 +305,14 @@ defaultTargets = ["Refineforge"]
         )
         .unwrap();
 
-        let claim = std::fs::read_to_string(td.path().join("claims/test-scaffold-001.yaml"))
-            .unwrap();
+        let claim =
+            std::fs::read_to_string(td.path().join("claims/test-scaffold-001.yaml")).unwrap();
         assert!(claim.contains("template:"));
         assert!(claim.contains("name: state_machine"));
         assert!(claim.contains("version: 1"));
 
-        let lean = std::fs::read_to_string(td.path().join("lean/Refineforge/Generated.lean"))
-            .unwrap();
+        let lean =
+            std::fs::read_to_string(td.path().join("lean/Refineforge/Generated.lean")).unwrap();
         assert!(lean.contains("Template provenance: state_machine v1"));
 
         let refinement =

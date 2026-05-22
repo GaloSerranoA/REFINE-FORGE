@@ -91,7 +91,10 @@ pub fn lint_claim(root: &Path, _claim_path: &Path, c: &Claim) -> Result<LintRepo
     if expects_refinement && !refinement_path.exists() {
         report.error(format!(
             "refinement doc missing: {}",
-            refinement_path.strip_prefix(root).unwrap_or(&refinement_path).display()
+            refinement_path
+                .strip_prefix(root)
+                .unwrap_or(&refinement_path)
+                .display()
         ));
         return Ok(report);
     }
