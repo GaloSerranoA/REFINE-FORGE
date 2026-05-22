@@ -145,6 +145,29 @@ fn agent_lean_inspect_writes_report() {
 }
 
 #[test]
+fn agent_lean_check_keeps_model_only_scope_as_trust_floor() {
+    let td = tempfile::tempdir().unwrap();
+    let out = td.path().join("lean-check");
+    let output = run_refine(
+        &["agent", "lean", "--mode", "check", "--target", "helyx"],
+        &out,
+    );
+
+    assert_success(&output);
+    let report = read_json(&out.join("lean.json"));
+    assert_eq!(report["status"], "passed");
+    assert_eq!(report["trust_level"], "model-only");
+    assert!(
+        report["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning.as_str().unwrap().contains("model-only")),
+        "Lean check must explain why passing gates did not upgrade trust to model-linked"
+    );
+}
+
+#[test]
 fn agent_devops_train_and_kernel_inspect_reports_are_truth_bounded() {
     for (name, trust_level) in [
         ("devops", "release-ready-local"),

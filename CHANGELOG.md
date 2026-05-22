@@ -10,6 +10,14 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Fixed — Lean agent trust floor
+
+- `refine agent lean --mode check|execute` now derives `trust_level` from the
+  selected claim scopes and refinement-doc evidence instead of upgrading to
+  `model-linked` just because Lean, scan, and lint commands passed. The current
+  HELYX-wide claim set contains model-only claims, so the honest Lean trust
+  floor is `model-only`.
+
 ### Changed — HELYX agent enterprise liveness
 
 - Agent reports now include explicit `liveness`, `capabilities`, and

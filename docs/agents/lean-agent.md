@@ -21,6 +21,9 @@ blockers.
 - Inspect Lean files, claim YAMLs, and refinement docs.
 - Run Lean checks, structured scans, and claim lint.
 - Use execute mode as the full local verification gate.
+- Derive the reported trust level from claim `scope`, Rust-source presence,
+  and refinement-doc evidence; passing gates alone must not upgrade
+  `model-only` claims to `model-linked`.
 - Propose proof/refinement tasks.
 - Keep model-only and model-linked claims clearly separated.
 
