@@ -57,3 +57,16 @@ fn release_scripts_delegate_to_refine_release_ready() {
     assert!(ps1.contains("--evidence-dir"));
     assert!(!ps1.contains("cargo nextest run --workspace"));
 }
+
+#[test]
+fn ci_workflow_runs_release_evidence_and_container_smoke() {
+    let workflow =
+        std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();
+
+    assert!(workflow.contains("release ready --version"));
+    assert!(workflow.contains("lint check-all"));
+    assert!(workflow.contains("bundle export EXAMPLE-003"));
+    assert!(workflow.contains("Dockerfile.verifier"));
+    assert!(workflow.contains("release/evidence"));
+    assert!(!workflow.contains("scan check-all || echo"));
+}
