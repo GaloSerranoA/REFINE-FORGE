@@ -291,9 +291,11 @@ The CUDA engineer owns:
 **Current status (in refineforge today)**
 
 - Gate primitive (`crates/refineforge-bitexact`): ✅ shipped + tested
-- `refine-bitexact` CLI (`run` + `report` subcommands): ✅ shipped
+- `refine-bitexact` CLI (`run`, `report`, `lint`, `run-all`): ✅ shipped
 - Stub deterministic + non-deterministic scripts (prove gate works
   in both directions): ✅ shipped
+- HELYX-compatible strict contract fixture (`helyx-bitexact-smoke.yaml`): ✅ shipped
+- Expected output baselines + input-file manifests in reports: ✅ shipped
 - `kernels/src/` actual CUDA kernels: ❌ empty (CUDA engineer fills)
 - `docs/bit-exact-reproducibility.md` methodology: ✅ shipped
 - CI matrix with GPU runners: ❌ not yet (requires self-hosted GPU
@@ -303,16 +305,20 @@ The CUDA engineer owns:
 
 **Open work, in order**
 
-1. Hire a CUDA engineer (or assign one). The scaffold is ready.
-2. Write the first real kernel under `kernels/src/`. Compile to
+1. Assign the HELYX kernel owner. The Refine-Forge gate contract is ready.
+2. Write the first real `helyx-kernels` implementation under the HELYX
+   repository, then expose a wrapper command for Refine-Forge.
+3. If mirroring source in this repo is desired, add the reviewed kernel
+   under `kernels/src/`. Compile to
    `kernels/scripts/<name>`.
-3. Author the first bit-exact gate config; verify it passes on
+4. Author the first real bit-exact gate config using `profile: helyx_cuda`;
+   verify it passes on
    a single GPU.
-4. Add a self-hosted GPU runner to CI; wire the `bit-exact-gate`
+5. Add a self-hosted GPU runner to CI; wire the `bit-exact-gate`
    job.
-5. Add a second GPU class (different hardware); verify
+6. Add a second GPU class (different hardware); verify
    cross-hardware bit-exactness.
-6. Iterate on every kernel HELYX (or other consumers) want
+7. Iterate on every kernel HELYX (or other consumers) want
    reproducibility-attested.
 
 **Interface to other sections**

@@ -10,6 +10,20 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — GPU/kernel bit-exact enterprise gate
+
+- `KernelExperiment` now supports HELYX-compatible contract metadata:
+  `template_version`, `producer`, `kernel_id`, `profile`, `expected_sha256`,
+  `input_files`, and sorted `tags`.
+- `expected_sha256` closes the stable-but-wrong gap: identical run hashes still
+  fail when they do not match the declared baseline.
+- `refine-bitexact lint` enforces strict CUDA / HELYX contract readiness before
+  execution.
+- `refine-bitexact run-all` discovers kernel configs deterministically, runs all
+  included gates, and writes aggregate CI summary JSON.
+- `kernels/configs/helyx-bitexact-smoke.yaml` provides a HELYX-compatible
+  contract fixture while keeping real `helyx-kernels` implementation external.
+
 ### Added — ML training engine HELYX-compatible orchestration
 
 - `refine-train data audit` validates proof-repair SFT JSONL row counts,

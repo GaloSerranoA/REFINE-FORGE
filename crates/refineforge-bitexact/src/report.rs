@@ -37,10 +37,6 @@ pub struct Report {
 }
 
 impl Report {
-    pub fn build(exp: &KernelExperiment, runs: Vec<RunResult>) -> Self {
-        Self::build_with_input_manifest(exp, runs, vec![])
-    }
-
     pub fn build_with_input_manifest(
         exp: &KernelExperiment,
         runs: Vec<RunResult>,
@@ -169,7 +165,7 @@ mod tests {
             run(1, Some("aaa"), None),
             run(2, Some("aaa"), None),
         ];
-        let r = Report::build(&exp(), runs);
+        let r = Report::build_with_input_manifest(&exp(), runs, vec![]);
         assert_eq!(r.outcome, Outcome::Pass);
         assert_eq!(r.unique_hashes.len(), 1);
         assert!(r.summary.starts_with("PASS"));
@@ -181,7 +177,7 @@ mod tests {
             run(0, Some("aaa"), None),
             run(1, Some("bbb"), None),
         ];
-        let r = Report::build(&exp(), runs);
+        let r = Report::build_with_input_manifest(&exp(), runs, vec![]);
         assert_eq!(r.outcome, Outcome::Fail);
         assert_eq!(r.unique_hashes.len(), 2);
         assert!(r.summary.starts_with("FAIL"));
@@ -194,7 +190,7 @@ mod tests {
             run(1, None, Some("kernel crashed")),
             run(2, Some("aaa"), None),
         ];
-        let r = Report::build(&exp(), runs);
+        let r = Report::build_with_input_manifest(&exp(), runs, vec![]);
         assert_eq!(r.outcome, Outcome::Fail);
         assert!(r.summary.contains("1 errored"));
     }
@@ -206,7 +202,7 @@ mod tests {
             run(1, Some("aaa"), None),
             run(2, Some("aaa"), None),
         ];
-        let r = Report::build(&exp_with_expected(Some("bbb")), runs);
+        let r = Report::build_with_input_manifest(&exp_with_expected(Some("bbb")), runs, vec![]);
         assert_eq!(r.outcome, Outcome::Fail);
         assert_eq!(r.expected_sha256.as_deref(), Some("bbb"));
         assert_eq!(r.observed_sha256.as_deref(), Some("aaa"));
@@ -231,7 +227,7 @@ mod tests {
 
     #[test]
     fn fail_when_zero_runs() {
-        let r = Report::build(&exp(), vec![]);
+        let r = Report::build_with_input_manifest(&exp(), vec![], vec![]);
         assert_eq!(r.outcome, Outcome::Fail);
     }
 }

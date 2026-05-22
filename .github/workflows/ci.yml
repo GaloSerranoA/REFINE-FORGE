@@ -247,6 +247,9 @@ jobs:
       - name: Build refine-bitexact
         run: cargo build --release --bin refine-bitexact
 
+      - name: HELYX contract fixture must lint
+        run: ./target/release/refine-bitexact lint kernels/configs/helyx-bitexact-smoke.yaml
+
       - name: Stub-deterministic gate must PASS
         run: ./target/release/refine-bitexact run kernels/configs/example-deterministic.yaml
 
@@ -261,10 +264,10 @@ jobs:
       - name: Real-kernel gates (skipped on non-GPU runners)
         run: |
           # When a real kernel is added under kernels/src/ and its
-          # config name doesn't start with `example-`, a self-hosted
-          # GPU runner job will execute it. This step is informational
-          # on the public runner.
-          REAL=$(find kernels/configs -name '*.yaml' -not -name 'example-*' | wc -l)
+          # config name doesn't start with `example-` and isn't a
+          # contract smoke fixture, a self-hosted GPU runner job will
+          # execute it. This step is informational on the public runner.
+          REAL=$(find kernels/configs -name '*.yaml' -not -name 'example-*' -not -name '*smoke.yaml' | wc -l)
           echo "Real (non-example) kernel configs: $REAL"
           if [ "$REAL" -gt 0 ]; then
             echo "Add a self-hosted [gpu] runner to actually execute these."

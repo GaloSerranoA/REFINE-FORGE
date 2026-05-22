@@ -133,7 +133,8 @@ refineforge/
 │   ├── data/                   # smoke fixture + mathlib-proof-repair-v1 corpus
 │   └── runs/                   # refine-train per-experiment output (gitignored)
 ├── kernels/                    # Section 4: GPU kernels + bit-exact gates
-│   ├── configs/                # per-kernel gate YAMLs
+│   ├── configs/                # per-kernel gate YAMLs + HELYX-compatible contract smoke
+│   ├── fixtures/               # deterministic input bytes hashed into reports
 │   ├── scripts/                # stub-deterministic + stub-nondeterministic (sh + ps1)
 │   ├── src/                    # actual .cu source (empty; CUDA engineer fills)
 │   └── runs/                   # refine-bitexact per-gate output (gitignored)
@@ -221,7 +222,9 @@ cargo build --release
 | `refine-train monitor <run_dir>`       | Tail `progress.jsonl` and show latest metrics |
 | `refine-train report <run_dir>`        | Build / refresh `report.json` for a run |
 | `refine-train promote <run_dir>`       | Convert a successful training report + latest checkpoint into a `refineforge-local-finetune.json` runtime directory plus `promotion-report.json` |
-| `refine-bitexact run <kernel.yaml>`    | Bit-exact reproducibility gate: run kernel N times, fail if SHA-256 hashes disagree. See [`kernels/README.md`](kernels/README.md) and [`docs/bit-exact-reproducibility.md`](docs/bit-exact-reproducibility.md) |
+| `refine-bitexact lint <kernel.yaml>`   | Lint a kernel experiment for strict CUDA / HELYX contract readiness |
+| `refine-bitexact run <kernel.yaml>`    | Bit-exact reproducibility gate: run kernel N times, fail if SHA-256 hashes disagree or miss `expected_sha256`. See [`kernels/README.md`](kernels/README.md) and [`docs/bit-exact-reproducibility.md`](docs/bit-exact-reproducibility.md) |
+| `refine-bitexact run-all <dir>`        | Deterministically discover kernel YAMLs, run every included gate, and write aggregate CI summary JSON |
 | `refine templates`                     | List scaffolding templates                                              |
 | `refine new --template <t> --module <M> <ID>` | Scaffold a new claim from a template                             |
 
@@ -263,7 +266,7 @@ Where each thing currently lives:
 | `refineforge-strategies` workspace member  | ✅ `AnthropicStrategy` + `ReqwestTransport` plus `LocalFinetuneStrategy` command-manifest bridge. Native checkpoint loading is still blocked on the final model/tokenizer layout. |
 | `refineforge-eval` (`refine-eval` binary)  | ✅ corpus-driven evaluation harness with JSON output; ships a 3-entry tutorial corpus under [`eval/corpus/`](eval/corpus) |
 | `refineforge-trainer` (`refine-train` binary) | ✅ training-experiment orchestration (HELYX `helyx-train` / axolotl / HF Trainer / custom); deterministic dataset audit, run tracking, checkpoint resume, failure recovery, JSON reports, and local-finetune promotion. Does NOT perform training itself; backend does. See [`training/README.md`](training/README.md) |
-| `refineforge-bitexact` (`refine-bitexact` binary) | ✅ bit-exact reproducibility gate: runs kernel N times, hashes outputs, fails if any disagree. Stub scripts prove the gate catches non-determinism. Real CUDA kernels are the CUDA engineer's domain. See [`kernels/README.md`](kernels/README.md). |
+| `refineforge-bitexact` (`refine-bitexact` binary) | ✅ enterprise bit-exact gate: strict contract linting, HELYX-compatible metadata, input manifests, expected output baselines, per-run JSONL, run reports, and `run-all` CI aggregation. Real HELYX/CUDA kernels remain external kernel-engineering domain. See [`kernels/README.md`](kernels/README.md). |
 | `refineforge-escalation` (library) | ✅ Phases 1 + 2 + 3.5 of [`docs/plans/autonomous-driver-plan.md`](docs/plans/autonomous-driver-plan.md) under criteria v0.3. Pure-functional engine (`Action` + `ProjectContext` → `Decision::Proceed`/`Escalate`); `Packet` markdown renderer with v0.3 `batch:` support; `DecisionOutcome` parser (`APPROVED:`/`REJECTED:`/`EDIT_AND_RESUBMIT:`/partial form); `GitOps` trait (subprocess `git` + `MockGitOps`); indefinite `await_decision` (no auto-reject); ProjectContext loaders (claim YAML + lake-manifest.json + Cargo.lock). 170 tests; 2 POSIX-only e2e git tests gated `#[cfg(unix)]` |
 | `refine autonomous` driver (in `refineforge-cli`) | ✅ Phases 3 MVP + 3.5 + 3.6 + 3.7 + 3.8 + Phase 4 audit. `Planner` + `Executor<G: GitOps>` + `WorkRunConfig` + `run_worklist`; real `runner::run`/`scan::scan_claim`/`bundle::export` library calls; `Repair` step with `resolve_strategy` (mock / anthropic-mock / **anthropic** real HTTP / `local-finetune` command-manifest bridge) + cost-gate ($0.07/attempt upfront for Anthropic); `RunTrainingExperiment`/`RunBitExactGate` subprocess-shell; `--auto-repair` + `--await-decisions` + `--inject-counter-idealisation` + `--inject-training` + `--inject-bitexact` flags. **Phase 3.8 cross-run await-resume**: existing APPROVED packets survive re-runs. Live LLM auto-repair confirmed end-to-end ([60d2a81](#)). EXAMPLE-002 forced-Counter dogfood passes as integration test AND was exercised against real Anthropic in the Phase 4 audit ($0.35 spend) |
 | Verifier Docker image                      | ✅ `containers/Dockerfile.verifier` — multi-stage build, elan + Lean v4.29.1 preinstalled |

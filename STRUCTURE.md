@@ -229,20 +229,24 @@ section).
 ### `crates/refineforge-bitexact/` — bit-exact gate (Section 4)
 
 Binary `refine-bitexact`. Runs a kernel N times, hashes each
-output (SHA-256), fails the process if any hash disagrees. Does
-NOT enforce determinism — only detects its absence. Custom
-serde Deserialize for `OutputSource` accepts `output: stdout`
-(bare scalar) and `output: {file: "..."}` (map) without YAML !tag
-syntax.
+output (SHA-256), fails the process if any hash disagrees or any
+configured `expected_sha256` baseline is missed. Does NOT enforce
+determinism; it detects and records the absence of determinism.
+Custom serde Deserialize for `OutputSource` accepts `output: stdout`
+(bare scalar) and `output: {file: "..."}` (map) without YAML !tag syntax.
 
 Modules: `experiment` (KernelExperiment YAML + validation),
 `hash` (streaming SHA-256 of bytes / files; `all_equal`),
-`runner` (subprocess N times + env vars + per-run timing),
-`report` (Pass/Fail outcome + unique-hash count + summary).
+`manifest` (input-file SHA-256 manifest), `lint` (strict CUDA/HELYX
+contract checks), `runner` (subprocess N times + env vars + per-run
+timing + `runs.jsonl`), `report` (Pass/Fail outcome + unique-hash count
+plus baseline/input evidence), `run_all` (deterministic config discovery
+plus aggregate CI summary).
 
-23 unit tests + 3 POSIX-only e2e tests using the shipped stub
-scripts (deterministic → Pass; non-deterministic → Fail;
-dry-run → no execution).
+Unit tests cover schema loading, strict lint profiles, input manifests,
+baseline enforcement, run-all aggregation, hashing, reports, and runner
+failure capture. POSIX-only e2e tests use the shipped stub scripts
+(deterministic → Pass; non-deterministic → Fail; dry-run → no execution).
 
 ### `crates/refineforge-trainer/` — training orchestration (Section 2)
 

@@ -3,11 +3,11 @@
 Owned by **Section 4: CUDA / GPU Kernel Engineer**
 ([../ARCHITECTURE.md](../ARCHITECTURE.md) §4).
 
-> **Status:** Orchestration scaffold shipped
-> (`crates/refineforge-bitexact`, binary `refine-bitexact`). The
-> gate primitive runs and is unit-tested. **No actual CUDA kernel
-> ships in this commit** — `kernels/src/` is empty. A CUDA engineer
-> with GPU access fills it in.
+> **Status:** Enterprise gate shipped
+> (`crates/refineforge-bitexact`, binary `refine-bitexact`). The gate
+> supports strict contract linting, expected output hashes, input-file
+> manifests, per-run reports, and run-all aggregation. **No production
+> CUDA kernel ships here**; HELYX owns real `helyx-kernels`.
 
 ## 1. What "bit-exact" means here
 
@@ -94,16 +94,52 @@ Given a kernel-experiment YAML, the gate:
 1. Runs the kernel command N times (N ≥ 2; recommended 5+).
 2. Captures each run's output (stdout bytes OR a file's bytes).
 3. SHA-256-hashes each output.
-4. If all hashes match → `Outcome::Pass` (exit 0).
-5. If any hash disagrees OR any run errored → `Outcome::Fail` (exit non-zero).
-6. Writes `bitexact-report.json` with per-run hashes + unique-hash
-   count + per-run timing.
+4. Hashes every declared `input_files` entry into the input manifest.
+5. If all output hashes match and any configured `expected_sha256`
+   matches → `Outcome::Pass` (exit 0).
+6. If any hash disagrees, any run errored, any input is missing, or the
+   stable output does not match `expected_sha256` → `Outcome::Fail`
+   (exit non-zero).
+7. Writes `bitexact-report.json` with per-run hashes, unique-hash count,
+   input manifest, baseline hash, and per-run timing.
 
 The gate does **not** care WHICH source of non-determinism is at
 fault. It only tells you whether the kernel IS deterministic. If
 it isn't, work down the table in §2 + apply the mitigations in §3.
 
-## 5. CI integration
+## 5. HELYX strict contract profile
+
+`profile: helyx_cuda` is the Refine-Forge contract for HELYX kernel
+evidence. The linter requires:
+
+```yaml
+template_version: refineforge-bitexact-v1
+producer: helyx-kernels
+kernel_id: helyx.<domain>.<kernel>
+profile: helyx_cuda
+runs: 5
+expected_sha256: "<64 lowercase hex chars>"
+env:
+  CUBLAS_WORKSPACE_CONFIG: ":4096:8"
+  CUDA_LAUNCH_BLOCKING: "1"
+hardware:
+  gpu: "<runner GPU>"
+  cuda: "<runtime version>"
+  driver: "<driver version>"
+```
+
+Run:
+
+```bash
+refine-bitexact lint kernels/configs/<kernel>.yaml
+refine-bitexact run kernels/configs/<kernel>.yaml
+```
+
+The shipped `kernels/configs/helyx-bitexact-smoke.yaml` is a contract
+fixture only. It uses the deterministic PowerShell stub and does not claim
+that a HELYX CUDA kernel exists in this repository.
+
+## 6. CI integration
 
 Add a job to `.github/workflows/ci.yml`:
 
@@ -115,10 +151,7 @@ bit-exact-gate:
     - name: Build refine-bitexact
       run: cargo build --release --bin refine-bitexact
     - name: Run all bit-exact gates
-      run: |
-        for cfg in kernels/configs/*.yaml; do
-          ./target/release/refine-bitexact run "$cfg"
-        done
+      run: ./target/release/refine-bitexact run-all kernels/configs --summary-json kernels/runs/run-all-summary.json
 ```
 
 A GPU runner is required because CPU-only CI cannot exercise real
@@ -126,7 +159,7 @@ CUDA non-determinism. The repo's stub-script-based tests run on
 any runner and prove the gate primitive works; the actual kernel
 gates need real hardware.
 
-## 6. Cross-hardware verification (deferred)
+## 7. Cross-hardware verification (deferred)
 
 True "bit-exact across hardware classes" requires N different
 hardware classes (e.g. A100, H100, RTX 4090). Each needs its own
@@ -142,10 +175,10 @@ Strategy when it's time to wire this up:
 - If a kernel is bit-exact within hardware class but not across,
   document the class scope in the claim YAML's `notes` field.
 
-## 7. What the scaffold does NOT do
+## 8. What the gate does NOT do
 
 - **Does not write CUDA kernels.** The CUDA engineer does. The
-  scaffold tells them whether they succeeded.
+  gate tells them whether they succeeded.
 - **Does not enforce determinism** — only detects its absence.
 - **Does not pick algorithms** — that's `cublasSetAlgorithm` /
   `cudnnSetConvolutionAlgorithm` / etc. in the kernel itself.
@@ -158,9 +191,11 @@ Strategy when it's time to wire this up:
   passes; a fast non-deterministic kernel fails. Performance
   tracking is out of scope.
 - **Does not test across hardware classes** by default — single-
-  runner only. Cross-hardware is the CI matrix expansion in §6.
+  runner only. Cross-hardware is the CI matrix expansion in §7.
+- **Does not make a HELYX implementation claim from a stub.** The HELYX
+  smoke config proves contract compatibility only.
 
-## 8. Reading list for a CUDA engineer joining the project
+## 9. Reading list for a CUDA engineer joining the project
 
 1. NVIDIA: *Floating Point and IEEE 754 Compliance for Nvidia GPUs*
 2. NVIDIA cuBLAS docs: "Reproducibility" section

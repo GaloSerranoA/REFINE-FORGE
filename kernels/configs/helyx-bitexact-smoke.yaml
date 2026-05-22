@@ -1,0 +1,38 @@
+# HELYX-compatible bit-exact contract fixture.
+#
+# This is not a production HELYX kernel. It uses the deterministic stub
+# to prove the Refine-Forge gate accepts the same metadata shape that a
+# `helyx-kernels` gate will use.
+
+id: helyx-bitexact-smoke
+template_version: refineforge-bitexact-v1
+producer: helyx-kernels
+kernel_id: helyx.bitexact.stub_v1
+profile: helyx_cuda
+description: |
+  HELYX-compatible smoke gate for the Section 4 contract. Refine-Forge
+  owns the bit-exact evidence; HELYX owns real kernel implementation.
+
+command: "powershell -NoProfile -ExecutionPolicy Bypass -File kernels/scripts/stub-deterministic.ps1"
+runs: 5
+output: stdout
+expected_sha256: "d5ca9a70b50179b497870748df66099e49197509f40ae6785513648a87eb2e03"
+
+input_files:
+  - kernels/fixtures/helyx-bitexact-input.txt
+
+tags:
+  - helyx
+  - smoke
+  - bitexact
+
+env:
+  CUBLAS_WORKSPACE_CONFIG: ":4096:8"
+  CUDA_LAUNCH_BLOCKING: "1"
+  PYTHONHASHSEED: "0"
+
+hardware:
+  gpu: "contract-fixture-no-gpu"
+  cuda: "contract-fixture"
+  driver: "contract-fixture"
+  notes: "stub script; no GPU involved"

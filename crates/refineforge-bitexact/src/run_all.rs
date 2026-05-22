@@ -55,7 +55,7 @@ pub fn discover_configs(config_dir: &Path, include_examples: bool) -> Result<Vec
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or_default();
-        if !include_examples && file_name.starts_with("example-") {
+        if !include_examples && (file_name.starts_with("example-") || file_name.ends_with("-smoke.yaml")) {
             continue;
         }
         paths.push(path);
@@ -143,6 +143,10 @@ mod tests {
             &td.path().join("example-a.yaml"),
             "id: example-a\ncommand: x\noutput: stdout\n",
         );
+        write(
+            &td.path().join("helyx-bitexact-smoke.yaml"),
+            "id: helyx-bitexact-smoke\ncommand: x\noutput: stdout\n",
+        );
         write(&td.path().join("a.yaml"), "id: a\ncommand: x\noutput: stdout\n");
         write(&td.path().join("notes.txt"), "not yaml");
 
@@ -159,7 +163,15 @@ mod tests {
             .iter()
             .map(|path| path.file_name().unwrap().to_string_lossy().to_string())
             .collect();
-        assert_eq!(with_example_names, vec!["a.yaml", "example-a.yaml", "z.yaml"]);
+        assert_eq!(
+            with_example_names,
+            vec![
+                "a.yaml",
+                "example-a.yaml",
+                "helyx-bitexact-smoke.yaml",
+                "z.yaml"
+            ]
+        );
     }
 
     #[test]

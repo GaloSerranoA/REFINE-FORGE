@@ -1,8 +1,9 @@
 //! Run a kernel-experiment N times and collect output hashes.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
@@ -42,7 +43,18 @@ pub fn run_all(runs_root: &Path, exp: &KernelExperiment) -> Result<Vec<RunResult
     for i in 0..exp.runs {
         out.push(run_once(&paths.run_dir, exp, i));
     }
+    write_runs_jsonl(&paths.run_dir.join("runs.jsonl"), &out)?;
     Ok(out)
+}
+
+fn write_runs_jsonl(path: &Path, runs: &[RunResult]) -> Result<()> {
+    let mut file =
+        std::fs::File::create(path).with_context(|| format!("creating {}", path.display()))?;
+    for run in runs {
+        let json = serde_json::to_string(run)?;
+        writeln!(file, "{json}").with_context(|| format!("writing {}", path.display()))?;
+    }
+    Ok(())
 }
 
 pub fn run_once(run_dir: &Path, exp: &KernelExperiment, run_index: usize) -> RunResult {
@@ -192,5 +204,21 @@ mod tests {
             assert!(r.error.is_some(), "spawn failure must populate error");
             assert!(r.output_hash.is_none());
         }
+    }
+
+    #[test]
+    fn run_all_writes_per_run_jsonl_audit_stream() {
+        let td = tempfile::tempdir().unwrap();
+        let exp = make_exp("this-binary-does-not-exist-jsonl", 2, OutputSource::Stdout);
+
+        let _ = run_all(td.path(), &exp).unwrap();
+
+        let jsonl = td.path().join("test-runner").join("runs.jsonl");
+        let text = std::fs::read_to_string(&jsonl).expect("runs.jsonl must exist");
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2);
+        let first: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(first["run_index"], 0);
+        assert!(first["error"].as_str().unwrap().contains("failed to spawn"));
     }
 }
