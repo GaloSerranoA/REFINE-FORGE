@@ -106,12 +106,14 @@ into a candidate patch.
 | `crates/refineforge-cli/src/repair/lsp.rs`      | Lean LSP client (also Section 1 reviews this)    |
 | `crates/refineforge-cli/src/repair/diagnostic.rs` | LSP diagnostic types                           |
 | `crates/refineforge-cli/src/repair/mod.rs`      | Driver loop, `RepairConfig`, `RepairReport`      |
-| **NEW:** `crates/refineforge-strategies/`       | Pluggable strategy crates (one per provider)     |
-| **NEW:** `training/data/`                       | Synthetic-data generation pipeline               |
-| **NEW:** `training/scripts/`                    | Fine-tuning scripts (HuggingFace, axolotl, etc.) |
-| **NEW:** `training/eval/`                       | Held-out theorem corpus, success-rate harness    |
-| **NEW:** `models/` *(or LFS / external mirror)* | Model checkpoints                                |
-| **NEW:** `docs/repair-evaluation.md`            | Benchmark methodology and current numbers        |
+| `crates/refineforge-strategies/`                | Pluggable strategy crates (Anthropic + local-finetune command runtime) |
+| `crates/refineforge-eval/`                      | Held-out corpus evaluator (`refine-eval`)        |
+| `crates/refineforge-trainer/`                   | Training orchestration, dataset audit, backend adapter, promotion handoff |
+| `training/data/`                                | Proof-repair corpus and SFT split artifacts      |
+| `training/scripts/`                             | Stub trainer scripts and backend shims           |
+| `training/configs/`                             | Axolotl/custom/HELYX-compatible experiment YAMLs |
+| `models/` *(or LFS / external mirror)*          | External model checkpoints, if a project chooses to mirror them |
+| `docs/repair-evaluation.md`                     | Benchmark methodology and current measured run state |
 
 **Responsibilities**
 
@@ -127,16 +129,17 @@ The ML engineer owns:
   itself is a research artifact (drop a hypothesis, swap a lemma
   name, weaken an inductive case, introduce a wrong tactic).
 - **Training.** Fine-tune an open base model (Qwen-Coder,
-  DeepSeek-Prover, or similar) on the broken→fixed corpus.
-  Document base model, hyperparameters, hardware, and total
-  training cost so the run is reproducible.
+  DeepSeek-Prover, or similar) on the broken-to-fixed corpus through
+  HELYX `helyx-train`, Axolotl, HF Trainer, or a custom backend.
+  Document base model, hyperparameters, hardware, and total training
+  cost so the run is reproducible.
 - **Evaluation.** Held-out broken proofs from claims not in the
   training set. Report success rate per strategy, latency
   distributions, and cost per repair attempt. Numbers go in
   `docs/repair-evaluation.md`.
-- **Inference packaging.** Ship the trained model either as a
-  weight file the user downloads, or via the LocalLLMStrategy
-  pointing at a self-hosted endpoint.
+- **Inference packaging.** Promote successful checkpoints into the
+  `refineforge-local-finetune.json` runtime contract, then evaluate them
+  via `local-finetune` before any release claim.
 
 **Current status**
 
@@ -144,22 +147,18 @@ The ML engineer owns:
 - Diagnostic types + tests: ✅
 - Driver loop with no-sorry gate after every patch: ✅
 - `MockStrategy` (declines every proposal): ✅
-- Real strategies: ❌ none yet
-- Training pipeline: ❌ doesn't exist
-- Evaluation harness: ❌ doesn't exist
+- Real strategies: ✅ `anthropic`, `anthropic-mock`, and `local-finetune` command-manifest runtime. Local Ollama/llama.cpp strategy remains open.
+- Training pipeline: ✅ Mathlib proof-repair corpus, deterministic SFT audit, trainer orchestration, HELYX-compatible backend adapter, run reports, and promotion handoff. Real accepted checkpoint remains open.
+- Evaluation harness: ✅ `refine-eval` with JSON output and tutorial corpus. Held-out comparison for a real promoted checkpoint remains open.
 
 **Open work, in order**
 
-1. `AnthropicStrategy` against the existing trait — one file, no
-   training. This is the cheapest path to a working
-   `refine repair` and validates the trait surface against a real
-   provider.
-2. Evaluation harness against the EXAMPLE-001/002 corpus plus
-   synthetic broken variants. Establishes the benchmark before
-   investing in training.
-3. Mathlib mutation pipeline. Produces the training corpus.
-4. Fine-tune a small open model and beat the AnthropicStrategy on
-   the eval harness (or document honestly that it doesn't).
+1. Run HELYX or Axolotl training on the audited Mathlib SFT split.
+2. Promote the latest successful checkpoint with `refine-train promote`.
+3. Evaluate the promoted local-finetune runtime on the held-out split and
+   compare it against the Anthropic strategy.
+4. Ship only the measured result: either the local model beats the hosted
+   baseline on the target corpus, or the docs record that it does not.
 
 **Interface to other sections**
 

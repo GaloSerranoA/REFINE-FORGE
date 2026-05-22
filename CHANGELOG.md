@@ -10,6 +10,21 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — ML training engine HELYX-compatible orchestration
+
+- `refine-train data audit` validates proof-repair SFT JSONL row counts,
+  split counts, duplicate ids, patch JSON shape, and SHA-256 before a
+  training run.
+- `backend.kind=helyx_train` resolves to `helyx-train run --config ...`
+  while Refine-Forge keeps ownership of run directories, checkpoints,
+  logs, and reports.
+- `refine-train promote` converts a successful `report.json` plus latest
+  checkpoint into a `refineforge-local-finetune.json` runtime directory and
+  `promotion-report.json`.
+- Training docs now describe the boundary honestly: HELYX/Axolotl/custom
+  backends train; Refine-Forge audits, orchestrates, reports, promotes, and
+  evaluates.
+
 ### Changed — `docs/ecosystem.md` rewritten v0.2 (HELYX-as-LLM reframe; v0.1 had flat-peers framing)
 
 v0.1 of this doc (commit `0805430`) framed the four projects

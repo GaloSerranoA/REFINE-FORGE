@@ -4,11 +4,13 @@ How we measure whether `refine repair` is actually any good.
 Owned by the **ML Training Engineer** section
 ([ARCHITECTURE.md](../ARCHITECTURE.md) §2).
 
-> **Status (0.1.0):** This is the *design* doc. The shipped
-> `MockStrategy` declines every proposal, so a baseline number
-> exists (0 % repair rate) but there is no harness to compare
-> strategies against each other yet. Building that harness is
-> Section 2 phase 1, after `AnthropicStrategy` lands.
+> **Status:** The repair/eval/training surfaces are now executable:
+> `AnthropicStrategy`, `LocalFinetuneStrategy`, `refine-eval`, and
+> `refine-train` are shipped. The Mathlib proof-repair SFT split is
+> available under `training/data/mathlib-proof-repair-v1/`, with
+> deterministic dataset audit and HELYX-compatible trainer orchestration.
+> A real accepted proof-repair checkpoint and held-out comparison are
+> still pending.
 
 ## 1. What we're measuring
 
@@ -118,9 +120,23 @@ For a local fine-tuned checkpoint, pass the runtime directory:
 refine-eval \
     --corpus eval/corpus-tutorial.jsonl \
     --strategy local-finetune \
-    --weights-path training/runs/<experiment-id>/checkpoints/<checkpoint> \
+    --weights-path training/runs/<experiment-id>/promoted-local-finetune \
     --max-iterations 5 \
     --output eval/runs/2026-05-18-local-finetune.json
+```
+
+`--weights-path` points at the promotion output directory, not the raw
+checkpoint directory. That directory is created by:
+
+```bash
+refine-train promote training/runs/<experiment-id> \
+  --out-dir training/runs/<experiment-id>/promoted-local-finetune \
+  --model-id proof-repair-local-v1 \
+  --command your-infer-runtime \
+  --command-arg --checkpoint \
+  --command-arg "{checkpoint_dir}" \
+  --producer helyx-train \
+  --require-success
 ```
 
 Output is a JSON file with per-attempt:
@@ -138,18 +154,17 @@ The harness is part of the `RepairStrategy` ecosystem, not part
 of the strategies themselves. It treats `S` as a black box and
 measures end-to-end behaviour.
 
-## 5. Baseline numbers (placeholder)
+## 5. Baseline numbers
 
-Once the harness lands, this section will be populated. Expected
-shape:
+The harness exists, but no accepted local fine-tuned checkpoint has
+completed held-out evaluation yet. Until a measured run lands, the table
+records explicit run state instead of guessed numbers.
 
-| Strategy | Corpus | Repair rate | Median iters | Cost / attempt |
-|---|---|---:|---:|---:|
-| `mock` | tutorial-40 | 0.0 % | n/a | $0 |
-| `anthropic` (claude-opus-4-7) | tutorial-40 | TBD | TBD | TBD |
-| `anthropic` (claude-opus-4-7) | mathlib-5000 | TBD | TBD | TBD |
-| `local-llm` (Qwen-Coder-32B) | mathlib-5000 | TBD | TBD | TBD |
-| `local-finetune` (refineforge-prover-v1) | mathlib-5000 | TBD | TBD | TBD |
+| Strategy | Corpus | Repair rate | Median iters | Cost / attempt | State |
+|---|---|---:|---:|---:|---|
+| `mock` | tutorial smoke | 0.0 % | n/a | $0 | control strategy declines all proposals |
+| `anthropic` | tutorial/mathlib held-out | not measured here | not measured here | provider-priced | available strategy; run-specific report required |
+| `local-finetune` | Mathlib held-out | not measured yet | not measured yet | local compute | waiting on accepted promoted checkpoint |
 
 Updating these numbers is part of Section 2's deliverable. The
 table itself must include the **commit hash of the corpus**, the
@@ -209,10 +224,11 @@ must emit CIs automatically.
 
 | Step | Owner | When |
 |---|---|---|
-| `AnthropicStrategy` against existing trait | ML | Section 2 phase 1, item 1 |
-| **Tutorial-40 harness** | **ML** | **Section 2 phase 1, item 2** |
-| Mathlib mutation pipeline → mathlib-5000 corpus | ML | Section 2 phase 1, item 3 |
-| First baseline numbers in this doc | ML | After Section 2 phase 1 |
+| `AnthropicStrategy` against existing trait | ML | shipped |
+| Tutorial harness / `refine-eval` | ML | shipped with tutorial corpus |
+| Mathlib mutation + Anthropic SFT split | ML | shipped at N=1000 with 800/100/100 split |
+| Dataset audit + HELYX-compatible trainer orchestration | ML | shipped in `refine-train data audit`, `backend.kind=helyx_train`, and `refine-train promote` |
+| First accepted checkpoint + held-out comparison | ML | pending real training runtime + GPU |
 | Local-LLM strategy (Ollama/llama.cpp) | ML | Section 2 phase 2 |
-| `local-finetune` strategy + held-out eval | ML | Section 2 phase 2 |
+| `local-finetune` strategy + held-out eval | ML | strategy shipped; eval pending checkpoint |
 | Distribution-shift evals (cross-snapshot) | ML | Section 2 phase 3 |

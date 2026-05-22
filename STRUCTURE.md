@@ -246,27 +246,32 @@ dry-run → no execution).
 
 ### `crates/refineforge-trainer/` — training orchestration (Section 2)
 
-Binary `refine-train`. Wraps any training backend (axolotl,
-HuggingFace Trainer, custom script) with run tracking, checkpoint
-resume, retry-with-backoff failure recovery, and JSON training
-reports. **Does NOT perform training itself** — the backend does.
+Binary `refine-train`. Wraps any training backend (HELYX `helyx-train`,
+axolotl, HuggingFace Trainer, custom script) with dataset audit, run
+tracking, checkpoint resume, retry-with-backoff failure recovery, JSON
+training reports, and local-finetune promotion. **Does NOT perform
+training itself**; the backend does.
 
-Subcommands: `run <exp.yaml>` (+ `--dry-run`), `sweep <sweep.yaml>`
-(cartesian or random:N), `monitor <run_dir>` (tail
+Subcommands: `data audit <jsonl>`, `run <exp.yaml>` (+ `--dry-run`),
+`sweep <sweep.yaml>` (cartesian or random:N), `monitor <run_dir>` (tail
 `progress.jsonl`), `report <run_dir>` (build/refresh `report.json`),
-`checkpoints <run_dir>` (list).
+`promote <run_dir>` (write `refineforge-local-finetune.json` +
+`promotion-report.json`), `checkpoints <run_dir>` (list).
 
-Modules: `experiment` (YAML schema), `runner` (subprocess +
-log capture + per-line progress parsing), `progress` (HF /
-axolotl / generic parsers), `checkpoint` (find latest / prune
-old), `sweep` (cartesian + deterministic random sample),
-`failure` (OOM / Interrupt / Network / BackendError / Unknown
-classifier + recovery action chooser), `report` (final JSON
-with metric summary stats + checkpoint manifest + failure
-timeline).
+Modules: `dataset` (proof-repair SFT JSONL audit + SHA-256),
+`experiment` (YAML schema), `runner` (subprocess + log capture +
+per-line progress parsing), `progress` (HF / axolotl / generic parsers),
+`checkpoint` (find latest / prune old), `sweep` (cartesian +
+deterministic random sample), `failure` (OOM / Interrupt / Network /
+BackendError / Unknown classifier + recovery action chooser), `report`
+(final JSON with metric summary stats + checkpoint manifest + failure
+timeline), `promotion` (successful checkpoint to local-finetune runtime
+manifest).
 
-35 unit tests + 2 POSIX-only end-to-end tests using a stub
-trainer script. Stub trainer lives in
+Unit tests cover dataset audit, HELYX backend command resolution,
+promotion readiness/blocking, reports, checkpoints, sweeps, failures,
+and progress parsing. POSIX end-to-end tests use a stub trainer script.
+Stub trainer lives in
 [`training/scripts/stub-trainer.sh`](training/scripts/stub-trainer.sh)
 (POSIX) and `.ps1` (PowerShell).
 

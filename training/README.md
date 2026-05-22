@@ -2,16 +2,17 @@
 
 Owned by **Section 2: ML Training Engineer** ([../ARCHITECTURE.md](../ARCHITECTURE.md) §2).
 
-> **Status:** Orchestration scaffold shipped (`crates/refineforge-trainer`,
-> binary `refine-train`). NO actual model training has been performed
-> against this tree. The directories are wired and the CLI runs; an
-> ML engineer with GPU access fills in real configs + datasets.
+> **Status:** Orchestration is shipped (`crates/refineforge-trainer`,
+> binary `refine-train`). Dataset audit, Axolotl/custom/HELYX command
+> resolution, run reports, and local-finetune promotion are implemented.
+> No accepted real proof-repair checkpoint has been produced yet; HELYX
+> or another backend still performs the actual training.
 
 ## What lives here
 
 | Path | Owner | Status |
 |---|---|---|
-| `configs/` | ML engineer | example experiment + sweep YAMLs (real training NOT executed) |
+| `configs/` | ML engineer | example experiment + sweep YAMLs, including Axolotl and HELYX-compatible Mathlib proof-repair configs |
 | `scripts/` | ML engineer / DevOps | stub trainer scripts used by tests + as a template for the real one |
 | `data/` | ML engineer | training datasets. Contains the two-row smoke fixture plus `mathlib-proof-repair-v1/`, a 1000-row Mathlib-derived mutation corpus and finalized Anthropic SFT split. |
 | `runs/` | runtime | `refine-train` writes per-experiment run directories here. Gitignored content; structure is documented below. |
@@ -19,18 +20,34 @@ Owned by **Section 2: ML Training Engineer** ([../ARCHITECTURE.md](../ARCHITECTU
 ## Quick start (assumes you have a real training backend installed)
 
 ```bash
-# 1. Validate an experiment config without running training:
+# 1. Audit the finalized Mathlib proof-repair training split:
+refine-train data audit \
+  training/data/mathlib-proof-repair-v1/anthropic-sft.train.jsonl \
+  --expect-rows 800 \
+  --expect-split train=800
+
+# 2. Validate an experiment config without running training:
 refine-train run training/configs/example-qwen-1.5b.yaml --dry-run
 
-# 2. Actually run (assumes `axolotl` or your training tool is on PATH):
+# 3. Actually run (assumes `axolotl`, `helyx-train`, or your training tool is on PATH):
 refine-train run training/configs/example-qwen-1.5b.yaml
 
-# 3. Tail progress in another shell:
+# 4. Tail progress in another shell:
 refine-train monitor training/runs/<experiment-id>
 
-# 4. After completion:
+# 5. After completion:
 refine-train report training/runs/<experiment-id>
 cat training/runs/<experiment-id>/report.json
+
+# 6. Promote a successful checkpoint into the local-finetune runtime shape:
+refine-train promote training/runs/<experiment-id> \
+  --out-dir training/runs/<experiment-id>/promoted-local-finetune \
+  --model-id proof-repair-local-v1 \
+  --command your-infer-runtime \
+  --command-arg --checkpoint \
+  --command-arg "{checkpoint_dir}" \
+  --producer helyx-train \
+  --require-success
 ```
 
 ## Run-directory layout
@@ -44,7 +61,26 @@ training/runs/<experiment-id>/
 ├── progress.jsonl       # per-step parsed metrics (one JSON object per line)
 ├── failures.jsonl       # one entry per failed attempt + category + recovery action
 ├── report.json          # final report (built by `report` subcommand or at end of `run`)
-└── checkpoints/         # backend-written checkpoints (step-N or checkpoint-N)
+├── checkpoints/         # backend-written checkpoints (step-N or checkpoint-N)
+└── promoted-local-finetune/  # optional `promote` output
+    ├── refineforge-local-finetune.json
+    └── promotion-report.json
+```
+
+The local-finetune promotion directory is the path passed to:
+
+```bash
+refine repair <claim-id> --strategy local-finetune --weights-path training/runs/<experiment-id>/promoted-local-finetune
+```
+
+`promote` records the source `report.json`, latest checkpoint, model id,
+producer, and runtime command. It writes the runtime manifest only when
+promotion is ready; blocked promotions still write `promotion-report.json`.
+
+Checkpoint directories use the backend convention:
+
+```
+checkpoints/
     ├── step-100/
     └── step-200/
 ```
@@ -93,25 +129,40 @@ python scripts/generate_mathlib_repair_corpus.py --help
 python scripts/anthropic_teacher_generate.py --help
 ```
 
-The real LoRA/QLoRA config entry point is:
+The real LoRA/QLoRA Axolotl config entry point is:
 
 ```bash
 refine-train run training/configs/mathlib-proof-repair-anthropic-qwen-1.5b-lora.yaml --dry-run
 ```
 
-Actual training still depends on a local Axolotl/PyTorch runtime and GPU.
+The HELYX-compatible entry point is:
+
+```bash
+refine-train run training/configs/helyx-mathlib-proof-repair-smoke.yaml --dry-run
+```
+
+That resolves to:
+
+```text
+helyx-train run --config training/configs/helyx-proof-repair-qwen-1.5b-lora.yaml --dataset training/data/mathlib-proof-repair-v1/anthropic-sft.train.jsonl --output <run_dir> --checkpoint-dir <run_dir>/checkpoints
+```
+
+Actual training still depends on a local Axolotl/PyTorch or HELYX runtime
+and GPU.
 
 ## What the scaffold does NOT do (honesty)
 
-- **Does not perform model training.** The backend (axolotl, HF
-  Trainer, your script) does that. The scaffold orchestrates.
+- **Does not perform model training.** The backend (HELYX `helyx-train`,
+  axolotl, HF Trainer, or your script) does that. The scaffold orchestrates.
 - **Does not allocate GPUs / cloud resources.** Your training script
   uses whatever GPU is available; the scaffold just spawns the
   subprocess.
 - **Does not optimise hyperparameters automatically** (no Bayesian
   / population-based search). It executes a sweep config you write.
-- **Does not produce a trained model.** The model produced is whatever
-  your backend writes to `checkpoints/`.
+- **Does not certify a trained model by itself.** The backend writes
+  `checkpoints/`; `promote` only packages a successful checkpoint into the
+  local-finetune runtime contract after `report.json` passes its readiness
+  checks.
 - **No distributed-training coordination.** Use `accelerate launch ...`
   or `torchrun ...` in your backend command for that.
 - **No W&B / TensorBoard integration.** `progress.jsonl` is the
@@ -121,9 +172,9 @@ Actual training still depends on a local Axolotl/PyTorch runtime and GPU.
 ## Sequencing (from `docs/repair-evaluation.md` §9)
 
 1. ✅ AnthropicStrategy + eval harness (shipped earlier)
-2. ✅ Training orchestration scaffold (this commit)
+2. ✅ Training orchestration, dataset audit, HELYX adapter, and promotion handoff
 3. ✅ **Mathlib mutation pipeline → first N=1000 corpus**
-4. ⚠️ First fine-tune run + held-out eval (depends on Axolotl/PyTorch + GPU)
+4. ⚠️ First accepted fine-tune run + held-out eval (depends on Axolotl/PyTorch or HELYX + GPU)
 5. ⚠️ Distribution-shift evals (depends on 4)
 
 Items 4-5 are real engineering work that needs a person with GPU
