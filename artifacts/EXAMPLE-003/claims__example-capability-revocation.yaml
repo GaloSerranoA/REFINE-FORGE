@@ -1,0 +1,42 @@
+claim_id: EXAMPLE-003
+title: "Capability revocation authorizes nothing"
+description: |
+  Production-shaped dogfood claim for the Lean verification track.
+  The Lean model proves that a revoked capability authorizes no
+  right, that a fresh unrevoked capability authorizes a held right,
+  and that revocation is idempotent.
+
+scope: tutorial-production-shaped
+status: proven
+authors:
+  - refineforge
+
+rust_source:
+  - path: crates/example-capability/src/capability.rs
+    types:
+      - Capability
+    functions:
+      - authorizes
+      - revoke
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.CapabilityRevocation
+  file: lean/Refineforge/CapabilityRevocation.lean
+  theorems:
+    - revoked_authorizes_nothing
+    - fresh_capability_authorizes_held_right
+    - revoke_is_idempotent
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: |
+    Dogfood claim for the hardened verification core. The refinement
+    argument in docs/refinement/EXAMPLE-003.md documents the finite
+    right-set mapping and the revocation monotonicity boundary.

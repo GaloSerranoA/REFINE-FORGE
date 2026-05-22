@@ -9,6 +9,7 @@ members = [
     "crates/refineforge-bitexact",
     "crates/refineforge-escalation",
     "crates/example-counter",
+    "crates/example-capability",
 ]
 resolver = "2"
 
