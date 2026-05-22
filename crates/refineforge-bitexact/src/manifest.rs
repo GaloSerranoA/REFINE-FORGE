@@ -72,6 +72,9 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let missing = td.path().join("missing.bin");
         let err = build_input_manifest(&[missing]).unwrap_err();
-        assert!(err.to_string().contains("input file does not exist"), "{err}");
+        assert!(
+            err.to_string().contains("input file does not exist"),
+            "{err}"
+        );
     }
 }

@@ -28,7 +28,9 @@ pub struct RunPaths {
 
 impl RunPaths {
     pub fn for_experiment(runs_root: &Path, exp: &KernelExperiment) -> Self {
-        Self { run_dir: runs_root.join(&exp.id) }
+        Self {
+            run_dir: runs_root.join(&exp.id),
+        }
     }
 }
 
@@ -138,14 +140,18 @@ fn shell_split(s: &str) -> Vec<String> {
 }
 
 fn truncate(s: &str, n: usize) -> String {
-    if s.len() <= n { s.to_string() } else { format!("{}…", &s[..n.saturating_sub(1)]) }
+    if s.len() <= n {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..n.saturating_sub(1)])
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
     use crate::experiment::KernelProfile;
+    use std::collections::BTreeMap;
 
     fn make_exp(cmd: &str, runs: usize, output: OutputSource) -> KernelExperiment {
         KernelExperiment {
@@ -173,10 +179,16 @@ mod tests {
         let exp = make_exp("echo deterministic-output", 3, OutputSource::Stdout);
         let results = run_all(td.path(), &exp).unwrap();
         assert_eq!(results.len(), 3);
-        let hashes: Vec<&String> = results.iter().filter_map(|r| r.output_hash.as_ref()).collect();
+        let hashes: Vec<&String> = results
+            .iter()
+            .filter_map(|r| r.output_hash.as_ref())
+            .collect();
         assert_eq!(hashes.len(), 3);
-        assert!(hashes.windows(2).all(|w| w[0] == w[1]),
-                "all hashes must match: {:?}", hashes);
+        assert!(
+            hashes.windows(2).all(|w| w[0] == w[1]),
+            "all hashes must match: {:?}",
+            hashes
+        );
     }
 
     #[test]
@@ -186,12 +198,18 @@ mod tests {
         // RANDOM is a bash-specific variable that changes per invocation.
         let exp = make_exp("bash -c 'echo $RANDOM-$RANDOM'", 3, OutputSource::Stdout);
         let results = run_all(td.path(), &exp).unwrap();
-        let hashes: Vec<String> = results.iter().filter_map(|r| r.output_hash.clone()).collect();
+        let hashes: Vec<String> = results
+            .iter()
+            .filter_map(|r| r.output_hash.clone())
+            .collect();
         // It's astronomically unlikely (but theoretically possible) that
         // 3 calls to $RANDOM produce the same value 3 times. If this
         // test ever flakes, that's a story for a winning lottery ticket.
         let unique: std::collections::HashSet<&String> = hashes.iter().collect();
-        assert!(unique.len() > 1, "expected non-equal hashes, got {hashes:?}");
+        assert!(
+            unique.len() > 1,
+            "expected non-equal hashes, got {hashes:?}"
+        );
     }
 
     #[test]

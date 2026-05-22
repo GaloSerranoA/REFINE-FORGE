@@ -156,12 +156,19 @@ mod tests {
     fn helyx_cuda_profile_requires_enterprise_contract_fields() {
         let report = lint_experiment(&exp(KernelProfile::HelyxCuda));
         assert_eq!(report.status, LintStatus::Fail);
-        let fields: Vec<&str> = report.issues.iter().map(|issue| issue.field.as_str()).collect();
+        let fields: Vec<&str> = report
+            .issues
+            .iter()
+            .map(|issue| issue.field.as_str())
+            .collect();
         assert!(fields.contains(&"producer"), "{fields:?}");
         assert!(fields.contains(&"kernel_id"), "{fields:?}");
         assert!(fields.contains(&"expected_sha256"), "{fields:?}");
         assert!(fields.contains(&"runs"), "{fields:?}");
-        assert!(fields.contains(&"env.CUBLAS_WORKSPACE_CONFIG"), "{fields:?}");
+        assert!(
+            fields.contains(&"env.CUBLAS_WORKSPACE_CONFIG"),
+            "{fields:?}"
+        );
         assert!(fields.contains(&"env.CUDA_LAUNCH_BLOCKING"), "{fields:?}");
         assert!(fields.contains(&"hardware.gpu"), "{fields:?}");
         assert!(fields.contains(&"hardware.cuda"), "{fields:?}");
@@ -176,7 +183,8 @@ mod tests {
         exp.runs = 5;
         exp.expected_sha256 =
             Some("cd1be5aaab2e8c6846f7b87d5069142cbf595c14e8b10652b4f9a64a1a5976f3".into());
-        exp.env.insert("CUBLAS_WORKSPACE_CONFIG".into(), ":4096:8".into());
+        exp.env
+            .insert("CUBLAS_WORKSPACE_CONFIG".into(), ":4096:8".into());
         exp.env.insert("CUDA_LAUNCH_BLOCKING".into(), "1".into());
         exp.hardware.insert("gpu".into(), "RTX-3060-Laptop".into());
         exp.hardware.insert("cuda".into(), "13.2".into());
@@ -196,7 +204,8 @@ mod tests {
         exp.runs = 5;
         exp.expected_sha256 =
             Some("cd1be5aaab2e8c6846f7b87d5069142cbf595c14e8b10652b4f9a64a1a5976f3".into());
-        exp.env.insert("CUBLAS_WORKSPACE_CONFIG".into(), ":4096:8".into());
+        exp.env
+            .insert("CUBLAS_WORKSPACE_CONFIG".into(), ":4096:8".into());
         exp.env.insert("CUDA_LAUNCH_BLOCKING".into(), "1".into());
         exp.hardware.insert("gpu".into(), "A100".into());
         exp.hardware.insert("cuda".into(), "12.4".into());

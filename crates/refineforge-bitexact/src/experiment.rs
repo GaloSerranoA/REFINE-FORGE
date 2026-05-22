@@ -77,7 +77,9 @@ pub struct KernelExperiment {
     pub hardware: BTreeMap<String, String>,
 }
 
-fn default_runs() -> usize { 5 }
+fn default_runs() -> usize {
+    5
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -158,8 +160,8 @@ impl<'de> Deserialize<'de> for OutputSource {
 
 impl KernelExperiment {
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let mut exp: KernelExperiment = serde_yaml::from_str(&text)
             .with_context(|| format!("parsing kernel-experiment YAML {}", path.display()))?;
         exp.input_files.sort();
@@ -292,7 +294,10 @@ hardware:
             OutputSource::File(path) => assert!(path.contains("{run_dir}")),
             _ => panic!("expected File"),
         }
-        assert_eq!(exp.env.get("CUBLAS_WORKSPACE_CONFIG"), Some(&":4096:8".to_string()));
+        assert_eq!(
+            exp.env.get("CUBLAS_WORKSPACE_CONFIG"),
+            Some(&":4096:8".to_string())
+        );
         assert_eq!(exp.hardware.get("gpu"), Some(&"A100-80GB".to_string()));
     }
 
@@ -300,7 +305,10 @@ hardware:
     fn loads_helyx_contract_fields_and_sorts_lists() {
         let (_d, p) = write_temp(HELYX_CONTRACT);
         let exp = KernelExperiment::load(&p).unwrap();
-        assert_eq!(exp.template_version.as_deref(), Some("refineforge-bitexact-v1"));
+        assert_eq!(
+            exp.template_version.as_deref(),
+            Some("refineforge-bitexact-v1")
+        );
         assert_eq!(exp.producer.as_deref(), Some("helyx-kernels"));
         assert_eq!(exp.kernel_id.as_deref(), Some("helyx.bitexact.stub_v1"));
         assert_eq!(exp.profile, KernelProfile::HelyxCuda);
@@ -342,18 +350,17 @@ hardware:
         let yaml = MINIMAL.replace("\"echo hello\"", "\"\"");
         let (_d, p) = write_temp(&yaml);
         let err = KernelExperiment::load(&p).unwrap_err();
-        assert!(err.to_string().contains("command may not be empty"), "{err}");
+        assert!(
+            err.to_string().contains("command may not be empty"),
+            "{err}"
+        );
     }
 
     #[test]
     fn substitute_replaces_tokens() {
         let (_d, p) = write_temp(MINIMAL);
         let exp = KernelExperiment::load(&p).unwrap();
-        let out = exp.substitute(
-            "{run_dir}/out-{run_index}.bin",
-            Path::new("/tmp/foo"),
-            3,
-        );
+        let out = exp.substitute("{run_dir}/out-{run_index}.bin", Path::new("/tmp/foo"), 3);
         assert_eq!(out, "/tmp/foo/out-3.bin");
     }
 }

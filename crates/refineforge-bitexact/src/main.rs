@@ -48,9 +48,7 @@ enum Cmd {
     /// Rebuild report.json for a previous run (does NOT re-execute
     /// the kernel; just re-summarises whatever's on disk in the
     /// runs_root/<id>/ tree).
-    Report {
-        run_dir: PathBuf,
-    },
+    Report { run_dir: PathBuf },
     /// Lint one kernel-experiment YAML for enterprise readiness.
     Lint {
         /// Path to the kernel-experiment YAML.
@@ -78,7 +76,10 @@ enum Cmd {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Run { experiment, dry_run } => cmd_run(&cli.runs_root, &experiment, dry_run),
+        Cmd::Run {
+            experiment,
+            dry_run,
+        } => cmd_run(&cli.runs_root, &experiment, dry_run),
         Cmd::Report { run_dir } => cmd_report(&run_dir),
         Cmd::Lint {
             experiment,
@@ -110,7 +111,10 @@ fn cmd_run(runs_root: &Path, exp_path: &Path, dry_run: bool) -> Result<()> {
             println!("  [{i}] {cmd}");
         }
         if let experiment::OutputSource::File(path) = &exp.output {
-            println!("  hashing file: {}", exp.substitute(path, &paths.run_dir, 0));
+            println!(
+                "  hashing file: {}",
+                exp.substitute(path, &paths.run_dir, 0)
+            );
         } else {
             println!("  hashing stdout of each run");
         }
@@ -145,7 +149,10 @@ fn cmd_run(runs_root: &Path, exp_path: &Path, dry_run: bool) -> Result<()> {
     report.write(&paths.run_dir)?;
     eprintln!();
     eprintln!("{}", report.summary);
-    eprintln!("report: {}", paths.run_dir.join("bitexact-report.json").display());
+    eprintln!(
+        "report: {}",
+        paths.run_dir.join("bitexact-report.json").display()
+    );
     match report.outcome {
         report::Outcome::Pass => Ok(()),
         report::Outcome::Fail => Err(anyhow::anyhow!("bit-exact gate FAILED")),
@@ -158,8 +165,8 @@ fn cmd_report(run_dir: &Path) -> Result<()> {
     // future enhancement that persists per-run hashes to a JSONL.
     // For now: read the existing report.json and re-pretty-print.
     let p = run_dir.join("bitexact-report.json");
-    let content = std::fs::read_to_string(&p)
-        .with_context(|| format!("reading {}", p.display()))?;
+    let content =
+        std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?;
     let v: serde_json::Value = serde_json::from_str(&content)?;
     println!("{}", serde_json::to_string_pretty(&v)?);
     Ok(())
@@ -170,8 +177,7 @@ fn cmd_lint(exp_path: &Path, json: bool, output: Option<&Path>) -> Result<()> {
     let report = lint::lint_experiment(&exp);
     let json_text = serde_json::to_string_pretty(&report)?;
     if let Some(path) = output {
-        std::fs::write(path, &json_text)
-            .with_context(|| format!("writing {}", path.display()))?;
+        std::fs::write(path, &json_text).with_context(|| format!("writing {}", path.display()))?;
     }
     if json {
         println!("{json_text}");

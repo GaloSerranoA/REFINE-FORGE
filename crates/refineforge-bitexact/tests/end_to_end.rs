@@ -37,7 +37,9 @@ fn gate_passes_against_deterministic_stub() {
     assert!(status.success(), "gate must PASS on deterministic stub");
 
     // Report must say Pass.
-    let report_path = runs.path().join("example-deterministic/bitexact-report.json");
+    let report_path = runs
+        .path()
+        .join("example-deterministic/bitexact-report.json");
     let report_text = std::fs::read_to_string(&report_path).expect("report.json must exist");
     let report: serde_json::Value = serde_json::from_str(&report_text).unwrap();
     assert_eq!(report["outcome"], "Pass");
@@ -57,16 +59,24 @@ fn gate_fails_against_nondeterministic_stub() {
         .current_dir(&root)
         .status()
         .expect("refine-bitexact must run");
-    assert!(!status.success(), "gate must FAIL on non-deterministic stub");
+    assert!(
+        !status.success(),
+        "gate must FAIL on non-deterministic stub"
+    );
 
-    let report_path = runs.path().join("example-nondeterministic/bitexact-report.json");
+    let report_path = runs
+        .path()
+        .join("example-nondeterministic/bitexact-report.json");
     let report_text = std::fs::read_to_string(&report_path).unwrap();
     let report: serde_json::Value = serde_json::from_str(&report_text).unwrap();
     assert_eq!(report["outcome"], "Fail");
     // Expect multiple unique hashes (likely 5, could be fewer if
     // $RANDOM collided — but never just 1).
     let unique = report["unique_hashes"].as_array().unwrap().len();
-    assert!(unique > 1, "expected > 1 unique hashes for non-deterministic stub, got {unique}");
+    assert!(
+        unique > 1,
+        "expected > 1 unique hashes for non-deterministic stub, got {unique}"
+    );
 }
 
 #[test]
@@ -85,6 +95,8 @@ fn dry_run_does_not_execute_kernel() {
         .expect("dry-run must succeed");
     assert!(status.success(), "dry-run must exit 0 (no kernel executed)");
     // No report.json should exist after dry-run.
-    let report_path = runs.path().join("example-nondeterministic/bitexact-report.json");
+    let report_path = runs
+        .path()
+        .join("example-nondeterministic/bitexact-report.json");
     assert!(!report_path.exists(), "dry-run must not write a report");
 }

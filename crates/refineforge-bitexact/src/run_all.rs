@@ -55,7 +55,9 @@ pub fn discover_configs(config_dir: &Path, include_examples: bool) -> Result<Vec
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or_default();
-        if !include_examples && (file_name.starts_with("example-") || file_name.ends_with("-smoke.yaml")) {
+        if !include_examples
+            && (file_name.starts_with("example-") || file_name.ends_with("-smoke.yaml"))
+        {
             continue;
         }
         paths.push(path);
@@ -138,7 +140,10 @@ mod tests {
     #[test]
     fn discover_configs_sorts_and_filters_examples_by_default() {
         let td = tempfile::tempdir().unwrap();
-        write(&td.path().join("z.yaml"), "id: z\ncommand: x\noutput: stdout\n");
+        write(
+            &td.path().join("z.yaml"),
+            "id: z\ncommand: x\noutput: stdout\n",
+        );
         write(
             &td.path().join("example-a.yaml"),
             "id: example-a\ncommand: x\noutput: stdout\n",
@@ -147,7 +152,10 @@ mod tests {
             &td.path().join("helyx-bitexact-smoke.yaml"),
             "id: helyx-bitexact-smoke\ncommand: x\noutput: stdout\n",
         );
-        write(&td.path().join("a.yaml"), "id: a\ncommand: x\noutput: stdout\n");
+        write(
+            &td.path().join("a.yaml"),
+            "id: a\ncommand: x\noutput: stdout\n",
+        );
         write(&td.path().join("notes.txt"), "not yaml");
 
         let paths = discover_configs(td.path(), false).unwrap();
@@ -211,6 +219,9 @@ output: stdout
         assert_eq!(summary.failed, 2);
         assert_eq!(summary.passed, 0);
         assert!(summary.has_failures());
-        assert!(summary.entries.iter().all(|entry| entry.report_path.is_some()));
+        assert!(summary
+            .entries
+            .iter()
+            .all(|entry| entry.report_path.is_some()));
     }
 }

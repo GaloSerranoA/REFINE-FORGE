@@ -54,20 +54,20 @@ impl Report {
             (Some(_), None) => false,
             (None, _) => true,
         };
-        let outcome = if hashes.len() == runs.len()
-            && all_equal(&hashes)
-            && !any_error
-            && baseline_matches
-        {
-            Outcome::Pass
-        } else {
-            Outcome::Fail
-        };
+        let outcome =
+            if hashes.len() == runs.len() && all_equal(&hashes) && !any_error && baseline_matches {
+                Outcome::Pass
+            } else {
+                Outcome::Fail
+            };
         let summary = match &outcome {
             Outcome::Pass => format!(
                 "PASS: all {} runs produced identical SHA-256 = {}",
                 runs.len(),
-                hashes.first().map(|s| &s[..16.min(s.len())]).unwrap_or("(none)")
+                hashes
+                    .first()
+                    .map(|s| &s[..16.min(s.len())])
+                    .unwrap_or("(none)")
             ),
             Outcome::Fail => {
                 let err_count = runs.iter().filter(|r| r.error.is_some()).count();
@@ -173,10 +173,7 @@ mod tests {
 
     #[test]
     fn fail_when_hashes_disagree() {
-        let runs = vec![
-            run(0, Some("aaa"), None),
-            run(1, Some("bbb"), None),
-        ];
+        let runs = vec![run(0, Some("aaa"), None), run(1, Some("bbb"), None)];
         let r = Report::build_with_input_manifest(&exp(), runs, vec![]);
         assert_eq!(r.outcome, Outcome::Fail);
         assert_eq!(r.unique_hashes.len(), 2);

@@ -19,15 +19,17 @@ pub fn hash_bytes(data: &[u8]) -> String {
 
 /// Streaming SHA-256 hex of a file.
 pub fn hash_file(path: &Path) -> Result<String> {
-    let f = std::fs::File::open(path)
-        .with_context(|| format!("opening {}", path.display()))?;
+    let f = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut reader = std::io::BufReader::with_capacity(STREAM_BUF_SIZE, f);
     let mut h = Sha256::new();
     let mut buf = vec![0u8; STREAM_BUF_SIZE];
     loop {
-        let n = reader.read(&mut buf)
+        let n = reader
+            .read(&mut buf)
             .with_context(|| format!("reading {}", path.display()))?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         h.update(&buf[..n]);
     }
     Ok(hex::encode(h.finalize()))
@@ -36,7 +38,9 @@ pub fn hash_file(path: &Path) -> Result<String> {
 /// True iff all hashes in the slice are equal (and the slice is
 /// non-empty). The gate's primary decision function.
 pub fn all_equal(hashes: &[String]) -> bool {
-    if hashes.is_empty() { return false; }
+    if hashes.is_empty() {
+        return false;
+    }
     let first = &hashes[0];
     hashes.iter().all(|h| h == first)
 }
@@ -50,13 +54,19 @@ mod tests {
     fn hash_bytes_is_known_sha256() {
         // SHA-256 of "abc" is the canonical RFC test vector.
         let h = hash_bytes(b"abc");
-        assert_eq!(h, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(
+            h,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 
     #[test]
     fn hash_bytes_empty() {
         let h = hash_bytes(b"");
-        assert_eq!(h, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        assert_eq!(
+            h,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
     }
 
     #[test]
