@@ -44,6 +44,7 @@ The repo also has known verification-core gaps:
 - Make the verification core harder to misuse.
 - Make docs and ownership boundaries match the current four-section system.
 - Improve scanner fidelity without breaking existing claim YAMLs.
+- Make scan and lint outputs deterministic enough for bundle and review use.
 - Preserve the stable bundle schema unless a concrete need for schema version
   2 appears.
 - Preserve the existing `RepairStrategy` trait boundary; this track should not
@@ -86,10 +87,30 @@ Upgrade `refine scan` from best-effort name search toward structured parsing:
   warning text.
 - Avoid false success from identifiers that appear only in comments or string
   literals.
+- Emit discovered symbols in deterministic order and compute a deterministic
+  scan-result hash when scan evidence is consumed by reports or bundles.
 
 This should stay backward-compatible with the current claim schema.
 
-### 3. Derive Macro Contract
+### 3. Claim Linter
+
+Add a small pre-Lean claim linter that catches human-maintenance errors before
+the expensive or noisy gates run:
+
+- Missing or unreadable Rust source citations.
+- Missing refinement doc for claims marked as refined.
+- Missing required refinement doc sections for production-shaped claims.
+- Rust symbols cited by a claim but not discovered by structured scan.
+- Discovered Rust symbols that are listed in a claim but no longer used by the
+  refinement doc.
+- Stale claim `status` values, especially `model+refined` without a complete
+  refinement argument and scan evidence.
+
+The linter should report warnings separately from hard errors. It should be
+usable directly by the operator and callable from later bundle/autonomous
+workflows without changing the claim schema.
+
+### 4. Derive Macro Contract
 
 Harden `#[derive(LeanModel)]` as a verification aid:
 
@@ -101,7 +122,7 @@ Harden `#[derive(LeanModel)]` as a verification aid:
 The macro does not prove refinement. It generates a model skeleton that the
 human refinement argument can cite.
 
-### 4. Template and Claim Scaffolding
+### 5. Template and Claim Scaffolding
 
 Strengthen templates that matter for production claims:
 
@@ -116,10 +137,13 @@ Each hardened template should scaffold:
 - Claim YAML.
 - Refinement doc skeleton.
 - Rust source citation when applicable.
+- Template provenance metadata, such as a comment or metadata line recording
+  the template name and template version used to generate the claim. This is
+  not a claim-schema version bump.
 
 The template path should remain usable through `refine new`.
 
-### 5. Mathlib Trust-Base Handling
+### 6. Mathlib Trust-Base Handling
 
 Clarify and test the first-use boundary for Mathlib and other Lake
 dependencies:
@@ -134,13 +158,17 @@ dependencies:
 Stage 1 should not silently vendor Mathlib or claim third-party proof trust
 without operator approval.
 
-### 6. Regression Tests
+### 7. Regression Tests
 
 Add targeted verification tests rather than broad refactors:
 
 - Scanner tests for real Rust syntax and comment/string false positives.
+- Scanner tests for deterministic symbol ordering and stable scan-result hash.
+- Claim-linter tests for missing citations, missing refinement docs, unused or
+  missing Rust symbols, and stale claim status.
 - Derive macro tests for deterministic output and unsupported types.
-- Template smoke tests where the repo already supports them.
+- Template smoke tests where the repo already supports them, including
+  template provenance metadata.
 - No-sorry/no-admit/no-axiom regression tests if new scaffolds touch Lean.
 - Bundle export/verify tests only where changed behavior affects manifests.
 
@@ -210,8 +238,12 @@ Stage 1 is complete when:
 - Docs consistently describe four sections.
 - Structured scan avoids comment/string false positives and passes existing
   claim checks.
+- Scan results have deterministic ordering and stable hashing where consumed.
+- A claim linter catches missing citations, missing refinement docs, stale
+  status, and symbol drift before Lean runs.
 - Derive macro behavior is documented and tested.
-- At least one production-relevant template path is hardened.
+- At least one production-relevant template path is hardened and records
+  template provenance metadata.
 - Mathlib/trust-base handling is explicit and tested where code changes touch
   it.
 - Relevant Rust and Lean gates pass.
