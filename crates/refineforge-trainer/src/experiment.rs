@@ -62,8 +62,8 @@ fn default_format() -> String { "jsonl".to_string() }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Backend {
-    /// One of: `axolotl`, `hf_trainer`, `custom`. Runner uses this to
-    /// pick the right subprocess pattern + log parser.
+    /// One of: `axolotl`, `hf_trainer`, `helyx_train`, `custom`.
+    /// Runner uses this to pick the right subprocess pattern + log parser.
     pub kind: String,
     /// Path to the backend's own config file (e.g. axolotl YAML).
     #[serde(default)]
@@ -183,9 +183,9 @@ impl Experiment {
             );
         }
         match self.backend.kind.as_str() {
-            "axolotl" | "hf_trainer" | "custom" => {}
+            "axolotl" | "hf_trainer" | "helyx_train" | "custom" => {}
             other => anyhow::bail!(
-                "unknown backend.kind {:?} — supported: axolotl, hf_trainer, custom",
+                "unknown backend.kind {:?} — supported: axolotl, hf_trainer, helyx_train, custom",
                 other
             ),
         }
@@ -267,5 +267,20 @@ hyperparameters:
         let (_dir, path) = write_temp(&yaml);
         let err = Experiment::load(&path).unwrap_err();
         assert!(err.to_string().contains("command template"), "{err}");
+    }
+
+    #[test]
+    fn loads_helyx_train_backend() {
+        let yaml = MINIMAL.replace(
+            "kind: hf_trainer",
+            "kind: helyx_train\n  config_file: training/configs/helyx-proof-repair.yaml",
+        );
+        let (_dir, path) = write_temp(&yaml);
+        let exp = Experiment::load(&path).unwrap();
+        assert_eq!(exp.backend.kind, "helyx_train");
+        assert_eq!(
+            exp.backend.config_file.as_deref(),
+            Some(Path::new("training/configs/helyx-proof-repair.yaml"))
+        );
     }
 }

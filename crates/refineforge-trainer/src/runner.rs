@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::checkpoint;
 use crate::experiment::{Backend, Experiment};
-use crate::progress::{parser_for, ProgressRecord};
+use crate::progress::parser_for;
 
 #[derive(Debug, Clone)]
 pub struct RunPaths {
@@ -56,10 +56,16 @@ pub struct RunOutcome {
 
 /// Build the command line for the given backend by substituting
 /// template tokens. Defaults are provided for `axolotl` and
-/// `hf_trainer`; `custom` requires the user to provide `command`.
+/// `hf_trainer` and `helyx_train`; `custom` requires the user to provide
+/// `command`.
 pub fn build_command(backend: &Backend, paths: &RunPaths, exp: &Experiment) -> Result<Vec<String>> {
     let resume_from = checkpoint::latest(&paths.checkpoint_dir)?
         .map(|c| c.path.display().to_string())
+        .unwrap_or_default();
+    let config_file = backend
+        .config_file
+        .as_ref()
+        .map(|p| p.display().to_string())
         .unwrap_or_default();
 
     let template = match (backend.kind.as_str(), backend.command.as_deref()) {
@@ -78,6 +84,15 @@ pub fn build_command(backend: &Backend, paths: &RunPaths, exp: &Experiment) -> R
                 "backend.kind=hf_trainer with no command requires `backend.command` template — point at your training script"
             ));
         }
+        ("helyx_train", None) => {
+            let cfg = backend.config_file.as_ref().ok_or_else(|| {
+                anyhow!("backend.kind=helyx_train with no command requires backend.config_file")
+            })?;
+            format!(
+                "helyx-train run --config {} --dataset {{dataset_path}} --output {{run_dir}} --checkpoint-dir {{checkpoint_dir}}",
+                cfg.display()
+            )
+        }
         ("custom", None) => {
             return Err(anyhow!("backend.kind=custom requires command template"));
         }
@@ -87,7 +102,11 @@ pub fn build_command(backend: &Backend, paths: &RunPaths, exp: &Experiment) -> R
     let substituted = template
         .replace("{run_dir}", &paths.run_dir.display().to_string())
         .replace("{checkpoint_dir}", &paths.checkpoint_dir.display().to_string())
+        .replace("{config_file}", &config_file)
         .replace("{dataset_path}", &exp.dataset.path.display().to_string())
+        .replace("{dataset_format}", &exp.dataset.format)
+        .replace("{base_model}", &exp.base_model.name)
+        .replace("{base_revision}", exp.base_model.revision.as_deref().unwrap_or(""))
         .replace("{resume_from}", &resume_from);
 
     let mut argv: Vec<String> = shell_split(&substituted);
@@ -253,6 +272,32 @@ mod tests {
         let paths = RunPaths::for_experiment(td.path(), &exp);
         let err = build_command(&exp.backend, &paths, &exp).unwrap_err();
         assert!(err.to_string().contains("command template"));
+    }
+
+    #[test]
+    fn build_command_defaults_helyx_train_backend() {
+        let mut exp = minimal_exp_with_command("ignored");
+        exp.backend = Backend {
+            kind: "helyx_train".into(),
+            config_file: Some("training/configs/helyx-proof-repair.yaml".into()),
+            command: None,
+            extra_args: vec![],
+        };
+        let td = tempfile::tempdir().unwrap();
+        let paths = RunPaths::for_experiment(td.path(), &exp);
+        paths.ensure_created().unwrap();
+
+        let argv = build_command(&exp.backend, &paths, &exp).unwrap();
+
+        assert_eq!(argv[0], "helyx-train");
+        assert_eq!(argv[1], "run");
+        let joined = argv.join(" ");
+        assert!(joined.contains("--config training/configs/helyx-proof-repair.yaml"), "{joined}");
+        assert!(joined.contains("--dataset data.jsonl"), "{joined}");
+        assert!(joined.contains("--output"), "{joined}");
+        assert!(joined.contains("test-exp"), "{joined}");
+        assert!(joined.contains("--checkpoint-dir"), "{joined}");
+        assert!(joined.contains("checkpoints"), "{joined}");
     }
 
     #[test]

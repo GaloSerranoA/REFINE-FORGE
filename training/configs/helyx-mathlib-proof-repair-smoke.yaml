@@ -1,0 +1,53 @@
+# Refine-Forge orchestration config for the HELYX sovereign trainer lane.
+# This dry-runs without requiring HELYX to be installed; real execution calls
+# `helyx-train run` with the backend config below.
+
+id: 2026-05-22-helyx-mathlib-proof-repair-smoke
+
+description: |
+  HELYX-compatible Mathlib proof-repair training lane. Refine-Forge owns the
+  dataset audit, command resolution, run directory, checkpoint/report layout,
+  and promotion handoff; HELYX owns autograd and trainer execution.
+
+base_model:
+  name: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+  source: huggingface
+
+dataset:
+  path: training/data/mathlib-proof-repair-v1/anthropic-sft.train.jsonl
+  format: jsonl
+  fields:
+    input: prompt
+    output: response
+
+backend:
+  kind: helyx_train
+  config_file: training/configs/helyx-proof-repair-qwen-1.5b-lora.yaml
+
+hyperparameters:
+  learning_rate: 0.0002
+  batch_size: 1
+  gradient_accumulation: 8
+  num_epochs: 2
+  warmup_steps: 20
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+
+checkpoint:
+  dir: checkpoints
+  save_steps: 50
+  keep_last: 3
+
+monitoring:
+  log_file: train.log
+  progress_format: generic
+  metrics_to_track:
+    - loss
+    - eval_loss
+    - learning_rate
+
+retry:
+  max_attempts: 2
+  backoff_seconds: 60
+  resume_from_checkpoint: true

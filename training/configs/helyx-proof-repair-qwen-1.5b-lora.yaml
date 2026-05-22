@@ -1,0 +1,56 @@
+# HELYX-owned backend config for Mathlib proof-repair SFT.
+#
+# Refine-Forge treats this file as opaque and passes it to:
+#   helyx-train run --config <this file>
+# The fields below are intentionally conservative so operators can map them
+# directly to helyx-autograd/helyx-train without changing Refine-Forge schema.
+
+template_version: refineforge-helyx-train-v1
+
+engine:
+  autograd: helyx-autograd
+  trainer: helyx-train
+  task: causal_lm_sft
+
+model:
+  base: Qwen/Qwen2.5-Coder-1.5B-Instruct
+  source: huggingface
+  trust_remote_code: false
+
+data:
+  format: jsonl
+  input_field: prompt
+  output_field: response
+  response_format: proof_repair_json_patch
+  split_field: metadata.split
+
+optimization:
+  precision: bf16
+  max_sequence_length: 4096
+  micro_batch_size: 1
+  gradient_accumulation_steps: 8
+  epochs: 2
+  learning_rate: 0.0002
+  warmup_steps: 20
+
+lora:
+  enabled: true
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+
+checkpointing:
+  save_steps: 50
+  keep_last: 3
+
+logging:
+  progress_format: key_value
+  metrics:
+    - loss
+    - eval_loss
+    - learning_rate
