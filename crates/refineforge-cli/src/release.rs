@@ -182,6 +182,119 @@ pub fn sha256_file(path: &Path) -> Result<String> {
     Ok(hex::encode(h.finalize()))
 }
 
+pub fn write_evidence(
+    report: &ReleaseReport,
+    sbom: &serde_json::Value,
+    provenance: &serde_json::Value,
+) -> Result<()> {
+    std::fs::create_dir_all(&report.evidence_dir)
+        .with_context(|| format!("creating {}", report.evidence_dir.display()))?;
+
+    let report_json = serde_json::to_vec_pretty(report)?;
+    std::fs::write(report.evidence_dir.join("release-report.json"), report_json)?;
+    std::fs::write(report.evidence_dir.join("release-report.md"), report.to_markdown())?;
+    std::fs::write(
+        report.evidence_dir.join("sbom.cyclonedx.json"),
+        serde_json::to_vec_pretty(sbom)?,
+    )?;
+    std::fs::write(
+        report.evidence_dir.join("provenance.intoto.json"),
+        serde_json::to_vec_pretty(provenance)?,
+    )?;
+    Ok(())
+}
+
+pub fn sbom_from_cargo_metadata(
+    metadata: &serde_json::Value,
+    version: &str,
+) -> Result<serde_json::Value> {
+    let packages = metadata["packages"]
+        .as_array()
+        .context("cargo metadata missing packages array")?;
+
+    let components: Vec<serde_json::Value> = packages
+        .iter()
+        .map(|pkg| {
+            let name = pkg["name"].as_str().unwrap_or("unknown");
+            let version = pkg["version"].as_str().unwrap_or("0.0.0");
+            let license = pkg["license"].as_str().unwrap_or("NOASSERTION");
+            serde_json::json!({
+                "type": "library",
+                "name": name,
+                "version": version,
+                "licenses": [{"license": {"id": license}}],
+                "purl": format!("pkg:cargo/{name}@{version}")
+            })
+        })
+        .collect();
+
+    Ok(serde_json::json!({
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.5",
+        "version": 1,
+        "metadata": {
+            "component": {
+                "type": "application",
+                "name": "refineforge",
+                "version": version
+            }
+        },
+        "components": components
+    }))
+}
+
+pub fn provenance_from_report(report: &ReleaseReport) -> serde_json::Value {
+    let subjects: Vec<serde_json::Value> = report
+        .bundles
+        .iter()
+        .map(|bundle| {
+            serde_json::json!({
+                "name": format!("{}/manifest.json", bundle.claim_id),
+                "digest": {"sha256": bundle.manifest_sha256}
+            })
+        })
+        .collect();
+
+    serde_json::json!({
+        "_type": "https://in-toto.io/Statement/v1",
+        "subject": subjects,
+        "predicateType": "https://slsa.dev/provenance/v1",
+        "predicate": {
+            "builder": {"id": "refineforge-local-release-ready"},
+            "buildType": "https://github.com/galo/refineforge/release-ready",
+            "invocation": {
+                "parameters": {
+                    "requested_version": report.requested_version
+                },
+                "environment": {
+                    "host_os": report.host_os
+                }
+            },
+            "materials": [
+                {
+                    "uri": "git+HEAD",
+                    "digest": {
+                        "sha1": report
+                            .git_commit
+                            .clone()
+                            .unwrap_or_else(|| "unknown".into())
+                    }
+                },
+                {"uri": "file:Cargo.lock"},
+                {"uri": "file:lean/lean-toolchain"}
+            ],
+            "metadata": {
+                "buildStartedOn": report.generated_at.to_rfc3339(),
+                "completeness": {
+                    "parameters": true,
+                    "environment": false,
+                    "materials": true
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,5 +354,78 @@ mod tests {
             gate_log_name("bundle verify: EXAMPLE-003"),
             "bundle-verify-example-003.log"
         );
+    }
+
+    #[test]
+    fn writes_json_markdown_sbom_and_provenance_files() {
+        let td = tempfile::tempdir().unwrap();
+        let mut report = ReleaseReport::test_fixture("0.2.2");
+        report.evidence_dir = td.path().join("evidence");
+        report.gates.push(gate("lean-check-all", GateStatus::Passed));
+
+        let sbom = serde_json::json!({
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.5",
+            "components": []
+        });
+        let provenance = serde_json::json!({
+            "_type": "https://in-toto.io/Statement/v1",
+            "subject": []
+        });
+
+        write_evidence(&report, &sbom, &provenance).unwrap();
+
+        assert!(report.evidence_dir.join("release-report.json").exists());
+        assert!(report.evidence_dir.join("release-report.md").exists());
+        assert!(report.evidence_dir.join("sbom.cyclonedx.json").exists());
+        assert!(report.evidence_dir.join("provenance.intoto.json").exists());
+    }
+
+    #[test]
+    fn sbom_from_cargo_metadata_includes_workspace_and_dependency_components() {
+        let metadata = serde_json::json!({
+            "packages": [
+                {
+                    "id": "path+file:///repo#refineforge-cli@0.2.2",
+                    "name": "refineforge-cli",
+                    "version": "0.2.2",
+                    "license": "Apache-2.0 OR MIT",
+                    "dependencies": [{"name": "serde", "req": "^1"}]
+                },
+                {
+                    "id": "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.0",
+                    "name": "serde",
+                    "version": "1.0.0",
+                    "license": "MIT OR Apache-2.0",
+                    "dependencies": []
+                }
+            ],
+            "workspace_members": ["path+file:///repo#refineforge-cli@0.2.2"]
+        });
+
+        let sbom = sbom_from_cargo_metadata(&metadata, "0.2.2").unwrap();
+        assert_eq!(sbom["bomFormat"], "CycloneDX");
+        assert_eq!(sbom["metadata"]["component"]["name"], "refineforge");
+        let components = sbom["components"].as_array().unwrap();
+        assert!(components.iter().any(|c| c["name"] == "refineforge-cli"));
+        assert!(components.iter().any(|c| c["name"] == "serde"));
+    }
+
+    #[test]
+    fn provenance_records_bundle_subjects_and_materials() {
+        let mut report = ReleaseReport::test_fixture("0.2.2");
+        report.git_commit = Some("abc123".into());
+        report.bundles.push(BundleEvidence {
+            claim_id: "EXAMPLE-003".into(),
+            bundle_dir: PathBuf::from("bundles/EXAMPLE-003"),
+            manifest_sha256: "b".repeat(64),
+            signature: SignatureEvidence::Unsigned,
+        });
+
+        let provenance = provenance_from_report(&report);
+        assert_eq!(provenance["_type"], "https://in-toto.io/Statement/v1");
+        assert_eq!(provenance["subject"][0]["name"], "EXAMPLE-003/manifest.json");
+        assert_eq!(provenance["subject"][0]["digest"]["sha256"], "b".repeat(64));
+        assert_eq!(provenance["predicate"]["materials"][0]["uri"], "git+HEAD");
     }
 }
