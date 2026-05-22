@@ -11,7 +11,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use refineforge_cli::{autonomous, bundle, claim, repair, runner, scaffold, scan};
+use refineforge_cli::{autonomous, bundle, claim, lint, repair, runner, scaffold, scan};
 
 #[derive(Parser)]
 #[command(
@@ -54,6 +54,12 @@ enum Cmd {
     Scan {
         #[command(subcommand)]
         cmd: ScanCmd,
+    },
+    /// Lint claim metadata and refinement docs before running the
+    /// heavier Lean / bundle gates.
+    Lint {
+        #[command(subcommand)]
+        cmd: LintCmd,
     },
     /// SKELETON: bounded LLM repair loop. Spawns `lake env lean
     /// --server`, collects diagnostics, asks the strategy for
@@ -216,6 +222,14 @@ enum ScanCmd {
 }
 
 #[derive(Subcommand)]
+enum LintCmd {
+    /// Lint one claim
+    Check { claim_id: String },
+    /// Lint every claim in the registry
+    CheckAll,
+}
+
+#[derive(Subcommand)]
 enum EscalationsCmd {
     /// List every escalation packet across the project,
     /// sorted by age, with PENDING / DECIDED status.
@@ -259,6 +273,10 @@ fn main() -> Result<()> {
         Cmd::Scan { cmd } => match cmd {
             ScanCmd::Check { claim_id } => scan::scan_one(&cli.root, &claim_id),
             ScanCmd::CheckAll => scan::scan_all(&cli.root),
+        },
+        Cmd::Lint { cmd } => match cmd {
+            LintCmd::Check { claim_id } => lint::lint_one(&cli.root, &claim_id),
+            LintCmd::CheckAll => lint::lint_all(&cli.root),
         },
         Cmd::Repair {
             claim_id,

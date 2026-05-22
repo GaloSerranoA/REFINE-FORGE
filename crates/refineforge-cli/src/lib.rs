@@ -8,6 +8,7 @@
 pub mod autonomous;
 pub mod bundle;
 pub mod claim;
+pub mod lint;
 pub mod repair;
 pub mod report;
 pub mod runner;
