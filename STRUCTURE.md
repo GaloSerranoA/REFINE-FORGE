@@ -483,7 +483,7 @@ the bundle exporter once had is documented in `CHANGELOG.md`).
 | `refinement/EXAMPLE-002.md` | claim authors | Answer-key showing a filled-in refinement argument with a real idealisation |
 | `llm-repair-design.md` | ML engineer (Section 2) | Architecture of the repair loop + four-step swap-in recipe for a real LLM strategy |
 | `repair-evaluation.md` | ML engineer (Section 2) | Benchmark methodology, mutation taxonomy, training/eval separation rules |
-| `security.md` | DevOps (Section 3) | Threat model, supply chain, **shipped** signing chain, vuln reporting |
+| `security.md` | DevOps (Section 3) | Threat model, supply chain, reviewer-side signature verification, first-CI-signing boundary, vuln reporting |
 | `reproducible-build.md` | DevOps (Section 3) | Bit-identical-rebuild methodology, Nix flake (**authored — first-build pending**), verification protocol |
 | `bit-exact-reproducibility.md` | CUDA engineer (Section 4) | Sources of CUDA non-determinism + per-source mitigations + gate primitive |
 | `why-rust.md` | reviewers, prospective adopters | The trade-off behind HELYX + refineforge's Rust-native ML stack. One-liner: "PyTorch is good for humans. Rust is good for machines." Eight sections: honest accounting of PyTorch's strengths, the five ceiling properties Python can't satisfy, the cost being acknowledged, what this is NOT an argument for, reviewer FAQ |

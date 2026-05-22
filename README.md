@@ -14,7 +14,7 @@ Read in this order — each doc is short and points at the next.
 | Doc | What it covers |
 |---|---|
 | [README.md](README.md) (this file) | What refineforge is, how to install, the CLI surface |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Three-section structure: Lean Specialist + ML Engineer + DevOps, with interfaces and sequencing |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Four-section structure: Lean, Release/DevOps, ML, and CUDA/GPU ownership with interfaces and sequencing |
 | [ROLES.md](ROLES.md) | Short version of who owns what; map a task to a role |
 | [STRUCTURE.md](STRUCTURE.md) | Every file in the repo, what owns it, how the pieces connect |
 | [CHANGELOG.md](CHANGELOG.md) | Version history, what shipped in each release |
@@ -25,7 +25,7 @@ Read in this order — each doc is short and points at the next.
 | [docs/refinement/EXAMPLE-002.md](docs/refinement/EXAMPLE-002.md) | A filled-in refinement doc you can read as the answer key |
 | [docs/llm-repair-design.md](docs/llm-repair-design.md) | Architecture of the LLM repair loop + how to swap in a real strategy |
 | [docs/repair-evaluation.md](docs/repair-evaluation.md) | How we'll measure whether `refine repair` is any good — corpus design, mutation taxonomy, statistical reporting |
-| [docs/security.md](docs/security.md) | Threat model, supply chain, signing chain (shipped), vuln reporting |
+| [docs/security.md](docs/security.md) | Threat model, supply chain, signed-bundle verification, first-CI-signing boundary, vuln reporting |
 | [docs/reproducible-build.md](docs/reproducible-build.md) | Bit-identical-rebuild methodology — Nix flake (authored), verification protocol |
 | [docs/bit-exact-reproducibility.md](docs/bit-exact-reproducibility.md) | GPU kernel bit-exact reproducibility: non-determinism sources + mitigations + gate primitive |
 | [docs/escalation-criteria.md](docs/escalation-criteria.md) | **CONTRACT v0.3** (operator-signed; v0.2 superseded same-day with Q1/Q3/Q4 revisions). 9 categories that always escalate to the human during `refine autonomous` runs. Enforced by `crates/refineforge-escalation` |
@@ -266,7 +266,7 @@ Where each thing currently lives:
 | `refine autonomous` driver (in `refineforge-cli`) | ✅ Phases 3 MVP + 3.5 + 3.6 + 3.7 + 3.8 + Phase 4 audit. `Planner` + `Executor<G: GitOps>` + `WorkRunConfig` + `run_worklist`; real `runner::run`/`scan::scan_claim`/`bundle::export` library calls; `Repair` step with `resolve_strategy` (mock / anthropic-mock / **anthropic** real HTTP / `local-finetune` command-manifest bridge) + cost-gate ($0.07/attempt upfront for Anthropic); `RunTrainingExperiment`/`RunBitExactGate` subprocess-shell; `--auto-repair` + `--await-decisions` + `--inject-counter-idealisation` + `--inject-training` + `--inject-bitexact` flags. **Phase 3.8 cross-run await-resume**: existing APPROVED packets survive re-runs. Live LLM auto-repair confirmed end-to-end ([60d2a81](#)). EXAMPLE-002 forced-Counter dogfood passes as integration test AND was exercised against real Anthropic in the Phase 4 audit ($0.35 spend) |
 | Verifier Docker image                      | ✅ `containers/Dockerfile.verifier` — multi-stage build, elan + Lean v4.29.1 preinstalled |
 | Multi-arch CI matrix                       | ✅ Ubuntu + macOS + Windows with elan / lake / cargo caches |
-| Sigstore signing in CI + `--verify-signature` | ✅ keyless cosign sign-blob on main + tags; verifier-side `refine bundle verify --verify-signature` (cosign subprocess) |
+| Sigstore signing in CI + `--verify-signature` | ⚠️ CI workflow authored and verifier-side `refine bundle verify --verify-signature` shipped; first real GitHub OIDC signed-bundle run pending until the repo has a remote |
 | Release scripting (`release/release.{sh,ps1}`) | ✅ semver check, CHANGELOG check, version bump, test run, tag + optional cosign tag-commit sig |
 | Nix flake for hermetic builds              | ⚠️ authored (`flake.nix`); first-build verification pending (see [docs/reproducible-build.md](docs/reproducible-build.md) §8) |
 | Mathlib mutation pipeline (corpus at N≥1000) | ✅ shipped: `training/data/mathlib-proof-repair-v1/` has 1000 Mathlib mutation rows plus finalized Anthropic SFT train/val/heldout splits |

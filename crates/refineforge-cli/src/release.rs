@@ -194,7 +194,10 @@ pub fn write_evidence(
 
     let report_json = serde_json::to_vec_pretty(report)?;
     std::fs::write(report.evidence_dir.join("release-report.json"), report_json)?;
-    std::fs::write(report.evidence_dir.join("release-report.md"), report.to_markdown())?;
+    std::fs::write(
+        report.evidence_dir.join("release-report.md"),
+        report.to_markdown(),
+    )?;
     std::fs::write(
         report.evidence_dir.join("sbom.cyclonedx.json"),
         serde_json::to_vec_pretty(sbom)?,
@@ -416,7 +419,7 @@ pub fn build_ready_report(root: &Path, opts: &ReleaseReadyOptions) -> Result<Rel
         push_bundle_gates(&root, &mut report, opts, claim_id)?;
     }
 
-    push_docs_audit_gate(&mut report, opts);
+    push_docs_audit_gate(&root, &mut report)?;
     push_docker_gate(&root, &mut report, opts)?;
     push_signature_gate(&mut report, opts);
 
@@ -457,7 +460,11 @@ fn fill_git_context(
     match git_available {
         Ok(output) if output.status.success() => report.gates.push(GateReport {
             name: "git-worktree".into(),
-            command: vec!["git".into(), "rev-parse".into(), "--is-inside-work-tree".into()],
+            command: vec![
+                "git".into(),
+                "rev-parse".into(),
+                "--is-inside-work-tree".into(),
+            ],
             status: GateStatus::Passed,
             required: true,
             duration_ms: 0,
@@ -467,7 +474,11 @@ fn fill_git_context(
         Ok(output) => {
             report.gates.push(GateReport {
                 name: "git-worktree".into(),
-                command: vec!["git".into(), "rev-parse".into(), "--is-inside-work-tree".into()],
+                command: vec![
+                    "git".into(),
+                    "rev-parse".into(),
+                    "--is-inside-work-tree".into(),
+                ],
                 status: GateStatus::Failed,
                 required: true,
                 duration_ms: 0,
@@ -479,7 +490,11 @@ fn fill_git_context(
         Err(e) => {
             report.gates.push(GateReport {
                 name: "git-worktree".into(),
-                command: vec!["git".into(), "rev-parse".into(), "--is-inside-work-tree".into()],
+                command: vec![
+                    "git".into(),
+                    "rev-parse".into(),
+                    "--is-inside-work-tree".into(),
+                ],
                 status: GateStatus::Blocked,
                 required: true,
                 duration_ms: 0,
@@ -516,7 +531,10 @@ fn fill_git_context(
 }
 
 fn command_stdout(root: &Path, program: &str, args: &[&str]) -> Result<String> {
-    let output = Command::new(program).current_dir(root).args(args).output()?;
+    let output = Command::new(program)
+        .current_dir(root)
+        .args(args)
+        .output()?;
     if !output.status.success() {
         return Err(anyhow::anyhow!(
             "{} failed: {}",
@@ -632,7 +650,10 @@ fn push_command_gate(
     };
 
     let start = Instant::now();
-    let output = Command::new(program).current_dir(root).args(cmd_args).output();
+    let output = Command::new(program)
+        .current_dir(root)
+        .args(cmd_args)
+        .output();
     let duration_ms = start.elapsed().as_millis();
     match output {
         Ok(output) => {
@@ -737,20 +758,96 @@ fn push_bundle_gates(
     Ok(())
 }
 
-fn push_docs_audit_gate(report: &mut ReleaseReport, opts: &ReleaseReadyOptions) {
+pub fn audit_docs_in_dir(root: &Path) -> Result<Vec<String>> {
+    let mut issues = Vec::new();
+    for rel in [
+        "README.md",
+        "SECURITY.md",
+        "docs/security.md",
+        "docs/reproducible-build.md",
+        "ARCHITECTURE.md",
+        "ROLES.md",
+        "STRUCTURE.md",
+        ".github/CODEOWNERS",
+    ] {
+        let path = root.join(rel);
+        if !path.exists() {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        if text.contains("Three Sections")
+            || text.contains("three sections")
+            || text.contains("Three-section")
+            || text.contains("three-section")
+        {
+            issues.push(format!("{rel}: stale Three Sections language"));
+        }
+        if text.contains("Planned, not yet present:")
+            && (text.contains("containers/")
+                || text.contains("release/")
+                || text.contains("docs/security.md")
+                || text.contains("docs/reproducible-build.md"))
+        {
+            issues.push(format!(
+                "{rel}: planned-path language references paths that are present"
+            ));
+        }
+        if text.contains("Sigstore keyless signature over manifest.json | ✅")
+            && !text.contains("CI-pending")
+            && !text.contains("first real GitHub OIDC")
+        {
+            issues.push(format!(
+                "{rel}: signed-bundle claim lacks first-run truth boundary"
+            ));
+        }
+        for (line_idx, line) in text.lines().enumerate() {
+            if line.contains("Nix flake")
+                && line.contains("✅ shipped")
+                && !line.contains("first-build")
+                && !line.contains("first build")
+            {
+                issues.push(format!(
+                    "{rel}:{}: Nix shipped claim lacks first-build boundary",
+                    line_idx + 1
+                ));
+            }
+        }
+    }
+    Ok(issues)
+}
+
+fn push_docs_audit_gate(root: &Path, report: &mut ReleaseReport) -> Result<()> {
+    let start = Instant::now();
+    let log_path = report
+        .evidence_dir
+        .join("logs")
+        .join("docs-truth-audit.log");
+    let issues = audit_docs_in_dir(root)?;
+    let (status, message, log) = if issues.is_empty() {
+        (
+            GateStatus::Passed,
+            "docs truth audit passed".to_string(),
+            "docs truth audit passed\n".to_string(),
+        )
+    } else {
+        (
+            GateStatus::Failed,
+            format!("{} docs truth issue(s)", issues.len()),
+            issues.join("\n") + "\n",
+        )
+    };
+    write_log(&log_path, &log)?;
     report.gates.push(GateReport {
         name: "docs-truth-audit".into(),
         command: vec!["refine".into(), "release".into(), "ready".into()],
-        status: GateStatus::Skipped,
+        status,
         required: true,
-        duration_ms: 0,
-        log_path: None,
-        message: Some(if opts.dry_run {
-            "dry-run; docs audit implemented in release audit step".into()
-        } else {
-            "docs audit pending task 4".into()
-        }),
+        duration_ms: start.elapsed().as_millis(),
+        log_path: Some(log_path),
+        message: Some(message),
     });
+    Ok(())
 }
 
 fn push_docker_gate(
@@ -830,7 +927,9 @@ mod tests {
     #[test]
     fn release_report_is_success_only_when_required_gates_pass_or_skip() {
         let mut report = ReleaseReport::test_fixture("0.2.2");
-        report.gates.push(gate("lean-check-all", GateStatus::Passed));
+        report
+            .gates
+            .push(gate("lean-check-all", GateStatus::Passed));
         report.gates.push(gate("signature", GateStatus::Skipped));
         assert!(report.required_gates_succeeded());
 
@@ -848,7 +947,9 @@ mod tests {
     #[test]
     fn markdown_report_contains_gate_table_and_bundle_hashes() {
         let mut report = ReleaseReport::test_fixture("0.2.2");
-        report.gates.push(gate("scan-check-all", GateStatus::Passed));
+        report
+            .gates
+            .push(gate("scan-check-all", GateStatus::Passed));
         report.bundles.push(BundleEvidence {
             claim_id: "EXAMPLE-003".into(),
             bundle_dir: PathBuf::from("release/evidence/run/bundles/EXAMPLE-003"),
@@ -876,7 +977,9 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let mut report = ReleaseReport::test_fixture("0.2.2");
         report.evidence_dir = td.path().join("evidence");
-        report.gates.push(gate("lean-check-all", GateStatus::Passed));
+        report
+            .gates
+            .push(gate("lean-check-all", GateStatus::Passed));
 
         let sbom = serde_json::json!({
             "bomFormat": "CycloneDX",
@@ -939,7 +1042,10 @@ mod tests {
 
         let provenance = provenance_from_report(&report);
         assert_eq!(provenance["_type"], "https://in-toto.io/Statement/v1");
-        assert_eq!(provenance["subject"][0]["name"], "EXAMPLE-003/manifest.json");
+        assert_eq!(
+            provenance["subject"][0]["name"],
+            "EXAMPLE-003/manifest.json"
+        );
         assert_eq!(provenance["subject"][0]["digest"]["sha256"], "b".repeat(64));
         assert_eq!(provenance["predicate"]["materials"][0]["uri"], "git+HEAD");
     }
@@ -990,5 +1096,41 @@ mod tests {
             .unwrap();
         assert_eq!(semver.status, GateStatus::Failed);
         assert!(!report.required_gates_succeeded());
+    }
+
+    #[test]
+    fn docs_audit_rejects_three_section_language() {
+        let td = tempfile::tempdir().unwrap();
+        std::fs::write(
+            td.path().join("README.md"),
+            "Architecture has Three Sections",
+        )
+        .unwrap();
+        let issues = audit_docs_in_dir(td.path()).unwrap();
+        assert!(issues.iter().any(|issue| issue.contains("Three Sections")));
+    }
+
+    #[test]
+    fn docs_audit_accepts_ci_pending_signature_language() {
+        let td = tempfile::tempdir().unwrap();
+        std::fs::write(
+            td.path().join("SECURITY.md"),
+            "Sigstore verification is shipped locally; first real GitHub OIDC signed-bundle run is CI-pending.",
+        )
+        .unwrap();
+        let issues = audit_docs_in_dir(td.path()).unwrap();
+        assert!(issues.is_empty(), "issues: {issues:?}");
+    }
+
+    #[test]
+    fn docs_audit_allows_unrelated_shipped_claims_near_nix_pending() {
+        let td = tempfile::tempdir().unwrap();
+        std::fs::write(
+            td.path().join("SECURITY.md"),
+            "SHA-256 manifest over bundle contents | ✅ shipped\nReproducible builds (Nix flake) | not yet\n",
+        )
+        .unwrap();
+        let issues = audit_docs_in_dir(td.path()).unwrap();
+        assert!(issues.is_empty(), "issues: {issues:?}");
     }
 }

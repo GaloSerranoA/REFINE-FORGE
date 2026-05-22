@@ -9,8 +9,8 @@ short version a contributor reads before picking up an issue.
 | Role | Owns | Stable interface to other roles |
 |---|---|---|
 | **Lean 4 Specialist** (highest priority, foundations) | `lean/`, `claims/`, `templates/`, `docs/methodology.md`, `docs/no-sorry-policy.md`, `docs/refinement-template.md`, `docs/refinement/`, and the core CLI modules: `claim.rs`, `runner.rs`, `sorry_gate.rs`, `bundle.rs`, `scaffold.rs`, `scan.rs` | (a) `RepairStrategy` trait surface; (b) bundle manifest schema (`bundle_schema: 1`) |
-| **ML Training Engineer** (repair intelligence) | `crates/refineforge-cli/src/repair/`, the planned `crates/refineforge-strategies/`, `training/`, `models/`, `docs/repair-evaluation.md` | Consumes the `RepairStrategy` trait; hands a model artifact + strategy crate to the DevOps engineer for packaging |
-| **Infrastructure / DevOps** (production surface) | `.github/workflows/`, planned `nix/` (or `bazel/`), `containers/`, `attestation/`, `release/`, `docs/security.md`, `docs/reproducible-build.md` | Wraps the bundle format with signatures; packages model artifacts into containers; promises CI never lies |
+| **ML Training Engineer** (repair intelligence) | `crates/refineforge-cli/src/repair/`, `crates/refineforge-strategies/`, `training/`, external model checkpoints, `docs/repair-evaluation.md` | Consumes the `RepairStrategy` trait; hands a model artifact + strategy crate to the DevOps engineer for packaging |
+| **Infrastructure / DevOps** (production surface) | `.github/workflows/`, `flake.nix`, `containers/`, `release/`, `docs/security.md`, `docs/reproducible-build.md`, future `attestation/` | Wraps the bundle format with signatures; packages model artifacts into containers; promises CI never lies |
 | **CUDA / GPU Kernel Engineer** (bit-exact reproducibility) | `kernels/src/`, `kernels/configs/`, `kernels/scripts/`, `crates/refineforge-bitexact/`, `docs/bit-exact-reproducibility.md` | Writes deterministic kernels; authors bit-exact gates; ensures cross-hardware reproducibility |
 
 ## What "ownership" means here

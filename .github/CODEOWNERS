@@ -1,4 +1,4 @@
-# CODEOWNERS — maps paths to the three sections defined in
+# CODEOWNERS — maps paths to the four sections defined in
 # /ARCHITECTURE.md. Used by GitHub to auto-request review when this
 # repo is published to a remote.
 #
@@ -37,11 +37,10 @@ crates/refineforge-cli/src/repair/lsp.rs           @refineforge/ml-engineer
 crates/refineforge-cli/src/repair/diagnostic.rs    @refineforge/ml-engineer
 crates/refineforge-cli/src/repair/mod.rs           @refineforge/ml-engineer @refineforge/lean-specialist
 docs/llm-repair-design.md                          @refineforge/ml-engineer
-# Planned, not yet present:
-# crates/refineforge-strategies/                   @refineforge/ml-engineer
-# training/                                        @refineforge/ml-engineer
-# models/                                          @refineforge/ml-engineer
-# docs/repair-evaluation.md                        @refineforge/ml-engineer
+crates/refineforge-strategies/                      @refineforge/ml-engineer
+training/                                           @refineforge/ml-engineer
+docs/repair-evaluation.md                           @refineforge/ml-engineer
+# External/not committed: model checkpoints
 
 # ─── Section 4: CUDA / GPU Kernel Engineer (bit-exact reproducibility) ──
 kernels/                                           @refineforge/cuda-engineer
@@ -53,13 +52,12 @@ docs/bit-exact-reproducibility.md                  @refineforge/cuda-engineer
 .gitignore                                         @refineforge/devops
 Cargo.toml                                         @refineforge/devops @refineforge/lean-specialist
 artifacts/                                         @refineforge/devops
-# Planned, not yet present:
-# nix/                                             @refineforge/devops
-# containers/                                      @refineforge/devops
-# attestation/                                     @refineforge/devops
-# release/                                         @refineforge/devops
-# docs/security.md                                 @refineforge/devops
-# docs/reproducible-build.md                       @refineforge/devops
+flake.nix                                          @refineforge/devops
+containers/                                        @refineforge/devops
+release/                                           @refineforge/devops
+docs/security.md                                   @refineforge/devops
+docs/reproducible-build.md                         @refineforge/devops
+# Planned/not present: attestation/
 
 # ─── Repo-wide docs: any role may edit, all are notified ─────────────
 README.md                                          @refineforge/lean-specialist @refineforge/ml-engineer @refineforge/devops

@@ -184,12 +184,12 @@ and production-grade verification infrastructure.
 | Path                                | What lives here                                 |
 |-------------------------------------|-------------------------------------------------|
 | `.github/workflows/`                | CI matrix: Lean + Rust across OSes / arches     |
-| **NEW:** `nix/` *(or `bazel/`)*     | Hermetic, reproducible build definitions        |
-| **NEW:** `containers/`              | Dockerfiles: `refine`, `refine-verifier`        |
-| **NEW:** `attestation/`             | Sigstore / in-toto signing pipeline             |
-| **NEW:** `release/`                 | Release scripts, semver checks, changelog gates |
-| **NEW:** `docs/security.md`         | Threat model, signing chain, vuln reporting     |
-| **NEW:** `docs/reproducible-build.md` | How to rebuild a bundle bit-for-bit            |
+| `flake.nix`                         | Authored hermetic-build definition; first-build pending |
+| `containers/`                       | Verifier Dockerfile                             |
+| `release/`                          | Release scripts, semver checks, changelog gates |
+| `docs/security.md`                  | Threat model, signing boundary, vuln reporting  |
+| `docs/reproducible-build.md`        | How to rebuild a bundle bit-for-bit             |
+| `attestation/` *(planned)*          | Future in-toto attestations beyond Sigstore blob signing |
 
 **Responsibilities**
 
@@ -199,15 +199,15 @@ The DevOps engineer owns:
   `x86_64-darwin`, `aarch64-darwin`. Each runs `lake build`,
   `cargo test`, `refine lean check-all`, `refine bundle export`,
   `refine bundle verify`.
-- **Hermetic builds.** Nix flake (or Bazel) that pins every input:
+- **Hermetic builds.** The authored Nix flake pins every input:
   elan, the Lean toolchain, the Rust toolchain, every Cargo
   dependency by hash. Goal: two independent rebuilds produce
   byte-identical bundles.
-- **Signing and attestation.** Sigstore signs every bundle in CI.
-  `refine bundle verify` learns a new flag `--verify-signature`
-  that checks the Rekor transparency log. The signature ties
-  bundle hash → git commit → signer identity, so a third party can
-  prove who built which bundle from which source.
+- **Signing and attestation.** The CI workflow is authored to
+  Sigstore-sign bundles, and `refine bundle verify
+  --verify-signature` shells out to cosign for reviewer-side
+  verification. The first real GitHub OIDC signed-bundle run is
+  still pending because this checkout has no remote configured.
 - **Container distribution.** A `refineforge-verifier` image with
   Lean v4.29.1 preinstalled. Reviewers don't install elan; they
   `docker run` against a bundle directory and get an exit code.
@@ -221,23 +221,20 @@ The DevOps engineer owns:
 
 **Current status**
 
-- Single-runner CI (Ubuntu, single arch): ✅ basic
-- Hermetic builds: ❌
-- Signed bundles: ❌
-- Container images: ❌
-- Cache infrastructure: ❌ (GitHub Actions cache used, not Lean-aware)
+- Multi-OS CI workflow: ✅ authored for Ubuntu, macOS, and Windows
+- Hermetic builds: ⚠️ `flake.nix` authored; first-build verification pending
+- Signed bundles: ⚠️ CI workflow authored and verifier-side checks shipped; first real GitHub OIDC run pending
+- Container images: ✅ verifier Dockerfile shipped
+- Cache infrastructure: ✅ GitHub Actions caches Cargo, lake, and elan inputs
 
 **Open work, in order**
 
-1. Multi-arch CI. Cheapest credibility win.
-2. Container image for the verifier. Removes elan-install friction
-   for every reviewer.
-3. Sigstore signing in CI + verification in `refine bundle verify
-   --verify-signature`. This is the artifact that turns "we built
-   this bundle" into "we built this bundle, here's the cryptographic
-   proof, and Rekor has a public log entry."
-4. Nix flake for hermetic builds. Big lift; pays off when reviewers
-   start asking "did you build the same bytes I did?"
+1. Release-readiness evidence: CI gates, SBOM/provenance artifacts,
+   docs truth audit, and signed bundle readiness reports.
+2. First real GitHub OIDC signing run after the repo has a remote.
+3. First green Nix flake build on a Nix-capable runner.
+4. Future in-toto attestation beyond the current Sigstore blob-signing
+   workflow.
 
 **Interface to other sections**
 
@@ -377,7 +374,7 @@ path forward, assuming one or two engineers at a time:
 | Phase | Duration estimate | What ships                                            |
 |-------|-------------------|-------------------------------------------------------|
 | Now   | already shipped   | Section 1 complete enough to be useful                |
-| +1 mo | 1 engineer-month  | Section 3 phase 1: multi-arch CI + verifier container |
+| +1 mo | 1 engineer-month  | Section 3 phase 1: release readiness, CI evidence, verifier container |
 | +3 mo | 1 engineer-month  | Section 2 phase 1: AnthropicStrategy + eval harness   |
 | +6 mo | 1 engineer-month  | Section 3 phase 2: sigstore signing + Nix builds      |
 | +9 mo | 2 engineer-months | Section 2 phase 2: mathlib mutation + fine-tuning     |

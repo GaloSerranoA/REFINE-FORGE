@@ -161,7 +161,7 @@ discipline to a Lean+Rust artifact pipeline.
 |---|---|---|
 | Multi-arch CI matrix | DevOps | ✅ shipped (.github/workflows/ci.yml) |
 | Dockerfile.verifier (usability, not reproducibility) | DevOps | ✅ shipped (containers/Dockerfile.verifier) |
-| Sigstore signing | DevOps | ✅ shipped (CI workflow + --verify-signature) |
+| Sigstore signing | DevOps | ⚠️ CI workflow authored + verifier-side `--verify-signature` shipped; first real GitHub OIDC signed-bundle run pending |
 | **Nix flake (this doc)** | **DevOps** | ⚠️ **authored; first build pending** |
 | Hardware-backed release signing | DevOps | not yet (Section 3 phase 3) |
 | Bit-identical bundle audit (verification protocol §5) | DevOps | not yet — gated on first green nix-flake-check CI run |

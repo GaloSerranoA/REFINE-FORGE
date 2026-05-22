@@ -81,8 +81,8 @@ Full enumeration in [docs/security.md](docs/security.md) §1.
 | Layer | Status | Tool |
 |---|---|---|
 | SHA-256 manifest over bundle contents | ✅ shipped | `refine bundle export` (built-in) |
-| Sigstore keyless signature over manifest.json | ✅ CI-side shipped; reviewer-side shipped | `cosign sign-blob` in `.github/workflows/ci.yml`; `refine bundle verify --verify-signature` |
-| Rekor transparency-log inclusion proof | ✅ shipped (cosign default) | cosign default behaviour; check via `cosign verify-blob` |
+| Sigstore keyless signature over manifest.json | CI-pending for the first real GitHub OIDC run; reviewer-side verification shipped | `cosign sign-blob` is authored in `.github/workflows/ci.yml`; `refine bundle verify --verify-signature` calls `cosign verify-blob` |
+| Rekor transparency-log inclusion proof | CI-pending for repo-produced signatures | cosign default behaviour once a real CI signature exists; check via `cosign verify-blob` |
 | Hardware-backed release-tag signing (YubiKey/TPM) | not yet | future Section 3 phase 3 |
 | Pure-Rust signature verification (no cosign dep) | not yet | future — `sigstore` crate exists in Rust ecosystem |
 | Reproducible builds (Nix flake) | not yet | future Section 3 phase 2 — see [docs/reproducible-build.md](docs/reproducible-build.md) |

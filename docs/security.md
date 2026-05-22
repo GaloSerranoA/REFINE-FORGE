@@ -68,12 +68,15 @@ Each direct dependency in `crates/*/Cargo.toml` uses a caret
 version range (`= "1.0"` means `>= 1.0, < 2.0`). For
 reproducibility-critical work, the DevOps section's
 [reproducible-build.md](reproducible-build.md) pins every input by
-content hash via Nix (planned).
+content hash via the authored Nix flake. First-build verification is
+still pending on a Nix-capable runner.
 
-## 3. Signing chain (✅ shipped)
+## 3. Signing chain (reviewer-side shipped; first CI signing pending)
 
 Bundles are SHA-256-self-attesting (the manifest hashes itself).
-Pushed to `main` or tagged `v*`, they are ALSO Sigstore-signed in CI.
+The CI workflow is authored to Sigstore-sign bundles pushed to `main`
+or tagged `v*`. This checkout has no remote configured, so the first
+real GitHub OIDC signed-bundle run is CI-pending.
 
 ```
 git commit ──▶ CI runs ──▶ refine bundle export ──▶ cosign sign-blob ──▶ Rekor log entry
@@ -90,7 +93,8 @@ git commit ──▶ CI runs ──▶ refine bundle export ──▶ cosign sig
 refine bundle verify <dir> --verify-signature
 ```
 
-Which (via `cosign verify-blob` under the hood) checks:
+Which (via `cosign verify-blob` under the hood) checks, once CI has
+produced real signature artifacts:
 - The `cosign` signature over `manifest.json` is valid
 - The signing cert chain roots in Sigstore's Fulcio CA
 - The Rekor transparency log contains an entry binding the
