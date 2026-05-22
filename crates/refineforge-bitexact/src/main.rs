@@ -9,6 +9,7 @@ mod hash;
 mod lint;
 mod manifest;
 mod report;
+mod run_all;
 mod runner;
 
 use anyhow::{Context, Result};
@@ -61,6 +62,17 @@ enum Cmd {
         #[arg(long)]
         output: Option<PathBuf>,
     },
+    /// Run every kernel-experiment YAML in a directory.
+    RunAll {
+        /// Directory containing kernel-experiment YAML files.
+        config_dir: PathBuf,
+        /// Include example-* configs. By default real-kernel CI skips examples.
+        #[arg(long)]
+        include_examples: bool,
+        /// Optional path to write aggregate summary JSON.
+        #[arg(long)]
+        summary_json: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -73,6 +85,16 @@ fn main() -> Result<()> {
             json,
             output,
         } => cmd_lint(&experiment, json, output.as_deref()),
+        Cmd::RunAll {
+            config_dir,
+            include_examples,
+            summary_json,
+        } => cmd_run_all(
+            &cli.runs_root,
+            &config_dir,
+            include_examples,
+            summary_json.as_deref(),
+        ),
     }
 }
 
@@ -167,5 +189,45 @@ fn cmd_lint(exp_path: &Path, json: bool, output: Option<&Path>) -> Result<()> {
     match report.status {
         lint::LintStatus::Pass => Ok(()),
         lint::LintStatus::Fail => Err(anyhow::anyhow!("bit-exact lint FAILED")),
+    }
+}
+
+fn cmd_run_all(
+    runs_root: &Path,
+    config_dir: &Path,
+    include_examples: bool,
+    summary_json: Option<&Path>,
+) -> Result<()> {
+    let summary = run_all::run_directory(&run_all::RunAllOptions {
+        config_dir: config_dir.to_path_buf(),
+        runs_root: runs_root.to_path_buf(),
+        include_examples,
+        summary_json: summary_json.map(Path::to_path_buf),
+    })?;
+    println!(
+        "run-all: {} config(s), {} passed, {} failed",
+        summary.included_configs, summary.passed, summary.failed
+    );
+    for entry in &summary.entries {
+        let status = entry
+            .outcome
+            .as_ref()
+            .map(|outcome| format!("{outcome:?}"))
+            .unwrap_or_else(|| "Error".into());
+        println!("  {status}: {}", entry.config_path);
+        if let Some(report_path) = &entry.report_path {
+            println!("    report: {report_path}");
+        }
+        if let Some(error) = &entry.error {
+            println!("    error: {error}");
+        }
+    }
+    if let Some(path) = summary_json {
+        println!("summary: {}", path.display());
+    }
+    if summary.has_failures() {
+        Err(anyhow::anyhow!("one or more bit-exact gates failed"))
+    } else {
+        Ok(())
     }
 }
