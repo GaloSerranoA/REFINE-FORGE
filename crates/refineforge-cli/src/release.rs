@@ -545,6 +545,18 @@ fn command_stdout(root: &Path, program: &str, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+fn is_cargo_program(program: &str) -> bool {
+    Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.eq_ignore_ascii_case("cargo") || name.eq_ignore_ascii_case("cargo.exe"))
+        .unwrap_or(false)
+}
+
+fn release_cargo_target_dir(root: &Path) -> PathBuf {
+    root.join("target").join("release-ready")
+}
+
 fn push_semver_gate(report: &mut ReleaseReport, version: &str) {
     let re = Regex::new(r"^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$").unwrap();
     let passed = re.is_match(version);
@@ -649,17 +661,24 @@ fn push_command_gate(
         return Ok(());
     };
 
+    let cargo_target_dir = is_cargo_program(program).then(|| release_cargo_target_dir(root));
     let start = Instant::now();
-    let output = Command::new(program)
-        .current_dir(root)
-        .args(cmd_args)
-        .output();
+    let mut command = Command::new(program);
+    command.current_dir(root).args(cmd_args);
+    if let Some(target_dir) = &cargo_target_dir {
+        command.env("CARGO_TARGET_DIR", target_dir);
+    }
+    let output = command.output();
     let duration_ms = start.elapsed().as_millis();
     match output {
         Ok(output) => {
             let mut log = String::new();
             log.push_str("$ ");
             log.push_str(&args.join(" "));
+            if let Some(target_dir) = &cargo_target_dir {
+                log.push_str("\n[env]\nCARGO_TARGET_DIR=");
+                log.push_str(&target_dir.display().to_string());
+            }
             log.push_str("\n\n[stdout]\n");
             log.push_str(&String::from_utf8_lossy(&output.stdout));
             log.push_str("\n[stderr]\n");
@@ -1132,5 +1151,16 @@ mod tests {
         .unwrap();
         let issues = audit_docs_in_dir(td.path()).unwrap();
         assert!(issues.is_empty(), "issues: {issues:?}");
+    }
+
+    #[test]
+    fn cargo_gate_commands_use_isolated_target_dir() {
+        assert!(is_cargo_program("cargo"));
+        assert!(is_cargo_program("cargo.exe"));
+        assert!(!is_cargo_program("git"));
+        assert_eq!(
+            release_cargo_target_dir(Path::new("repo")),
+            PathBuf::from("repo").join("target").join("release-ready")
+        );
     }
 }
