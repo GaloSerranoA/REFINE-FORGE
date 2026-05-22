@@ -11,8 +11,24 @@ pub struct KernelExperiment {
     /// Stable identifier; used as the run directory name.
     pub id: String,
 
+    /// Optional config template/schema marker for future compatibility.
+    #[serde(default)]
+    pub template_version: Option<String>,
+
     #[serde(default)]
     pub description: String,
+
+    /// External producer of the kernel implementation, e.g. `helyx-kernels`.
+    #[serde(default)]
+    pub producer: Option<String>,
+
+    /// Stable producer-side kernel id, e.g. `helyx.attention.rope_v1`.
+    #[serde(default)]
+    pub kernel_id: Option<String>,
+
+    /// Readiness/audit profile. Strict profile checks are enforced by linting.
+    #[serde(default)]
+    pub profile: KernelProfile,
 
     /// Shell command to invoke the kernel. Tokens `{run_dir}`,
     /// `{run_index}` are substituted per-run. If the command writes
@@ -28,6 +44,18 @@ pub struct KernelExperiment {
 
     /// Where the kernel's deterministic output lives.
     pub output: OutputSource,
+
+    /// Optional known-good output hash. If present, all runs must match it.
+    #[serde(default)]
+    pub expected_sha256: Option<String>,
+
+    /// Deterministic input files whose hashes are recorded in the report.
+    #[serde(default)]
+    pub input_files: Vec<PathBuf>,
+
+    /// Search/filter metadata. Sorted on load for deterministic reports.
+    #[serde(default)]
+    pub tags: Vec<String>,
 
     /// Environment variables set on every run. The most important
     /// ones for CUDA determinism (see docs/bit-exact-reproducibility.md):
@@ -50,6 +78,20 @@ pub struct KernelExperiment {
 }
 
 fn default_runs() -> usize { 5 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum KernelProfile {
+    Generic,
+    CudaStrict,
+    HelyxCuda,
+}
+
+impl Default for KernelProfile {
+    fn default() -> Self {
+        Self::Generic
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -118,8 +160,11 @@ impl KernelExperiment {
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("reading {}", path.display()))?;
-        let exp: KernelExperiment = serde_yaml::from_str(&text)
+        let mut exp: KernelExperiment = serde_yaml::from_str(&text)
             .with_context(|| format!("parsing kernel-experiment YAML {}", path.display()))?;
+        exp.input_files.sort();
+        exp.tags.sort();
+        exp.tags.dedup();
         exp.validate()?;
         Ok(exp)
     }
@@ -147,6 +192,13 @@ impl KernelExperiment {
         if self.command.trim().is_empty() {
             anyhow::bail!("kernel_experiment.command may not be empty");
         }
+        if let Some(expected) = &self.expected_sha256 {
+            if !is_lower_sha256(expected) {
+                anyhow::bail!(
+                    "kernel_experiment.expected_sha256 must be a 64-character lowercase SHA-256 hex string"
+                );
+            }
+        }
         Ok(())
     }
 
@@ -156,6 +208,12 @@ impl KernelExperiment {
             .replace("{run_dir}", &run_dir.display().to_string())
             .replace("{run_index}", &run_index.to_string())
     }
+}
+
+fn is_lower_sha256(s: &str) -> bool {
+    s.len() == 64
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 #[cfg(test)]
@@ -191,6 +249,31 @@ hardware:
   cuda: "12.4"
 "#;
 
+    const HELYX_CONTRACT: &str = r#"
+id: helyx-bitexact-smoke
+template_version: refineforge-bitexact-v1
+producer: helyx-kernels
+kernel_id: helyx.bitexact.stub_v1
+profile: helyx_cuda
+command: "bash kernels/scripts/stub-deterministic.sh"
+runs: 5
+output: stdout
+expected_sha256: "cd1be5aaab2e8c6846f7b87d5069142cbf595c14e8b10652b4f9a64a1a5976f3"
+input_files:
+  - kernels/fixtures/input-b.bin
+  - kernels/fixtures/input-a.bin
+tags:
+  - smoke
+  - helyx
+env:
+  CUBLAS_WORKSPACE_CONFIG: ":4096:8"
+  CUDA_LAUNCH_BLOCKING: "1"
+hardware:
+  gpu: "RTX-3060-Laptop"
+  cuda: "13.2"
+  driver: "local"
+"#;
+
     #[test]
     fn loads_minimal_with_defaults() {
         let (_d, p) = write_temp(MINIMAL);
@@ -211,6 +294,39 @@ hardware:
         }
         assert_eq!(exp.env.get("CUBLAS_WORKSPACE_CONFIG"), Some(&":4096:8".to_string()));
         assert_eq!(exp.hardware.get("gpu"), Some(&"A100-80GB".to_string()));
+    }
+
+    #[test]
+    fn loads_helyx_contract_fields_and_sorts_lists() {
+        let (_d, p) = write_temp(HELYX_CONTRACT);
+        let exp = KernelExperiment::load(&p).unwrap();
+        assert_eq!(exp.template_version.as_deref(), Some("refineforge-bitexact-v1"));
+        assert_eq!(exp.producer.as_deref(), Some("helyx-kernels"));
+        assert_eq!(exp.kernel_id.as_deref(), Some("helyx.bitexact.stub_v1"));
+        assert_eq!(exp.profile, KernelProfile::HelyxCuda);
+        assert_eq!(
+            exp.expected_sha256.as_deref(),
+            Some("cd1be5aaab2e8c6846f7b87d5069142cbf595c14e8b10652b4f9a64a1a5976f3")
+        );
+        assert_eq!(
+            exp.input_files,
+            vec![
+                PathBuf::from("kernels/fixtures/input-a.bin"),
+                PathBuf::from("kernels/fixtures/input-b.bin"),
+            ]
+        );
+        assert_eq!(exp.tags, vec!["helyx".to_string(), "smoke".to_string()]);
+    }
+
+    #[test]
+    fn rejects_malformed_expected_sha256() {
+        let yaml = HELYX_CONTRACT.replace(
+            "cd1be5aaab2e8c6846f7b87d5069142cbf595c14e8b10652b4f9a64a1a5976f3",
+            "not-a-sha",
+        );
+        let (_d, p) = write_temp(&yaml);
+        let err = KernelExperiment::load(&p).unwrap_err();
+        assert!(err.to_string().contains("expected_sha256"), "{err}");
     }
 
     #[test]

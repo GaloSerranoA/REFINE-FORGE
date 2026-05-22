@@ -81,16 +81,23 @@ impl Report {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::experiment::OutputSource;
+use crate::experiment::{KernelProfile, OutputSource};
     use std::collections::BTreeMap;
 
     fn exp() -> KernelExperiment {
         KernelExperiment {
             id: "t".into(),
+            template_version: None,
             description: "".into(),
+            producer: None,
+            kernel_id: None,
+            profile: KernelProfile::Generic,
             command: "echo x".into(),
             runs: 3,
             output: OutputSource::Stdout,
+            expected_sha256: None,
+            input_files: vec![],
+            tags: vec![],
             env: BTreeMap::new(),
             hardware: BTreeMap::new(),
         }

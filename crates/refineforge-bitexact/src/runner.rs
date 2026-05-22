@@ -131,14 +131,22 @@ fn truncate(s: &str, n: usize) -> String {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+    use crate::experiment::KernelProfile;
 
     fn make_exp(cmd: &str, runs: usize, output: OutputSource) -> KernelExperiment {
         KernelExperiment {
             id: "test-runner".into(),
+            template_version: None,
             description: "".into(),
+            producer: None,
+            kernel_id: None,
+            profile: KernelProfile::Generic,
             command: cmd.into(),
             runs,
             output,
+            expected_sha256: None,
+            input_files: vec![],
+            tags: vec![],
             env: BTreeMap::new(),
             hardware: BTreeMap::new(),
         }
