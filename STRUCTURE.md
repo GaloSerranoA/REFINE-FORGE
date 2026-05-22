@@ -60,11 +60,14 @@ refineforge/
 │   └── runs/                   # refine-eval JSON outputs (gitignored)
 ├── templates/                  # scaffolding for `refine new`
 ├── artifacts/                  # exported verification bundles (committed for EXAMPLE-001)
+├── agent-reports/              # local `refine agent` outputs (gitignored)
+├── schemas/
+│   └── agent-report.schema.json # shared JSON contract for agent evidence
 ├── escalations/                # `refine autonomous` decision packets, one dir per CLAIM-ID
 ├── autonomous/                 # `refine autonomous` per-run RunReport JSONs (gitignored)
 ├── containers/                 # Section 3: Dockerfile.verifier and friends
 ├── release/                    # Section 3: release.sh / release.ps1 + signed-tag artifacts
-└── docs/                       # methodology, policies, refinement, release, verification docs
+└── docs/                       # methodology, policies, refinement, release, verification, agent docs
 ```
 
 ## Lean side (`lean/`)
@@ -434,6 +437,12 @@ crates/refineforge-cli/
 ├── Cargo.toml              # name = refineforge-cli; binary = refine
 └── src/
     ├── main.rs             # clap entry point; dispatches to modules
+    ├── agent/              # `refine agent` HELYX specialist control plane
+    │   ├── common.rs       # AgentReport, modes, trust levels, JSON/Markdown writers
+    │   ├── lean.rs         # Lean/check/scan/lint evidence wrapper
+    │   ├── devops.rs       # release-readiness evidence wrapper
+    │   ├── train.rs        # refine-train evidence wrapper
+    │   └── kernel.rs       # refine-bitexact evidence wrapper
     ├── claim.rs            # YAML schema + loader (Claim, RustSource, LeanInfo, Policy)
     ├── runner.rs           # `refine lean check[-all]` — policy gate → lake build → ProofReport
     ├── sorry_gate.rs       # comment-stripper + word-boundary scan for sorry/admit/axiom; unit-tested
@@ -451,6 +460,11 @@ crates/refineforge-cli/
 | Module | Lines | Tests |
 |---|---:|---:|
 | `main.rs` | ~150 | — |
+| `agent/common.rs` | ~250 | integration |
+| `agent/lean.rs` | ~70 | integration |
+| `agent/devops.rs` | ~90 | integration |
+| `agent/train.rs` | ~120 | integration |
+| `agent/kernel.rs` | ~120 | integration |
 | `claim.rs` | ~150 | — |
 | `runner.rs` | ~140 | — |
 | `sorry_gate.rs` | ~180 | 7 |
@@ -531,6 +545,8 @@ the bundle exporter once had is documented in `CHANGELOG.md`).
 | `verification/proof-inventory.md` | reviewers, maintainers | Current Lean-backed claim inventory: theorem shape, scope, and implementation-link status |
 | `release/release-readiness-inventory.md` | DevOps (Section 3) | Release infrastructure truth table: shipped-local, stub-tested, CI-pending, blocked, and planned surfaces |
 | `release/ci-audit-report.md` | DevOps (Section 3) | CI/release audit report template and current local blocker record |
+| `agents/README.md` | operator, AI agents | CLI-first HELYX specialist agents and the rule that JSON reports are the source of truth |
+| `agents/*-agent.md` | operator, AI agents | Role prompts for Lean, DevOps, training, and kernel agents, including forbidden claims |
 | `llm-repair-design.md` | ML engineer (Section 2) | Architecture of the repair loop + four-step swap-in recipe for a real LLM strategy |
 | `repair-evaluation.md` | ML engineer (Section 2) | Benchmark methodology, mutation taxonomy, training/eval separation rules |
 | `security.md` | DevOps (Section 3) | Threat model, supply chain, reviewer-side signature verification, first-CI-signing boundary, vuln reporting |

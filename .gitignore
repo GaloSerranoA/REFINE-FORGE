@@ -28,6 +28,9 @@ __pycache__/
 # eval run outputs — produced by refine-eval, not committed
 /eval/runs/
 
+# Agent control-plane run outputs
+/agent-reports/
+
 # Nix
 result
 result-*

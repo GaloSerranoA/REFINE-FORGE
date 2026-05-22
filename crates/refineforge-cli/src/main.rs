@@ -12,7 +12,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use refineforge_cli::{
-    autonomous, bundle, claim, lint, release, repair, runner, scaffold, scan,
+    agent, autonomous, bundle, claim, lint, release, repair, runner, scaffold, scan,
 };
 
 #[derive(Parser)]
@@ -67,6 +67,11 @@ enum Cmd {
     Release {
         #[command(subcommand)]
         cmd: ReleaseCmd,
+    },
+    /// Four HELYX-facing specialist agents backed by CLI evidence reports.
+    Agent {
+        #[command(subcommand)]
+        cmd: AgentCmd,
     },
     /// SKELETON: bounded LLM repair loop. Spawns `lake env lean
     /// --server`, collects diagnostics, asks the strategy for
@@ -264,6 +269,47 @@ enum ReleaseCmd {
     },
 }
 
+#[derive(Clone, clap::Args)]
+struct AgentCliOptions {
+    /// Agent mode: inspect is read-only, check runs gates, repair/execute may run heavier workflows.
+    #[arg(long, value_enum, default_value_t = agent::AgentMode::Inspect)]
+    mode: agent::AgentMode,
+    /// Target claim, release version, experiment id, kernel gate, or `helyx`.
+    #[arg(long, default_value = "helyx")]
+    target: String,
+    /// Evidence output directory.
+    #[arg(long, default_value = "agent-reports/latest")]
+    out: PathBuf,
+    /// Emit the JSON report to stdout after writing evidence files.
+    #[arg(long)]
+    json: bool,
+}
+
+impl AgentCliOptions {
+    fn into_agent_options(self) -> agent::AgentOptions {
+        agent::AgentOptions {
+            mode: self.mode,
+            target: self.target,
+            out_dir: self.out,
+            emit_json: self.json,
+        }
+    }
+}
+
+#[derive(Subcommand)]
+enum AgentCmd {
+    /// Lean 4 / verification specialist agent.
+    Lean(AgentCliOptions),
+    /// Release / infrastructure / DevOps specialist agent.
+    Devops(AgentCliOptions),
+    /// ML / training specialist agent.
+    Train(AgentCliOptions),
+    /// CUDA / GPU kernel specialist agent.
+    Kernel(AgentCliOptions),
+    /// Run all four agents and write a combined HELYX readiness dashboard.
+    RunAll(AgentCliOptions),
+}
+
 #[derive(Subcommand)]
 enum EscalationsCmd {
     /// List every escalation packet across the project,
@@ -341,6 +387,27 @@ fn main() -> Result<()> {
                     },
                 )
             }
+        },
+        Cmd::Agent { cmd } => match cmd {
+            AgentCmd::Lean(opts) => {
+                agent::run_role(&cli.root, agent::AgentRole::Lean, opts.into_agent_options())
+            }
+            AgentCmd::Devops(opts) => agent::run_role(
+                &cli.root,
+                agent::AgentRole::Devops,
+                opts.into_agent_options(),
+            ),
+            AgentCmd::Train(opts) => agent::run_role(
+                &cli.root,
+                agent::AgentRole::Train,
+                opts.into_agent_options(),
+            ),
+            AgentCmd::Kernel(opts) => agent::run_role(
+                &cli.root,
+                agent::AgentRole::Kernel,
+                opts.into_agent_options(),
+            ),
+            AgentCmd::RunAll(opts) => agent::run_all(&cli.root, opts.into_agent_options()),
         },
         Cmd::Repair {
             claim_id,

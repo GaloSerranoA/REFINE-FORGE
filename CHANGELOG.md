@@ -10,6 +10,19 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — HELYX agent control plane
+
+- Added `refine agent lean|devops|train|kernel|run-all` as CLI-first
+  specialist agents for HELYX development. Each role writes JSON and Markdown
+  evidence under `agent-reports/` instead of relying on prompt text as status.
+- Added `schemas/agent-report.schema.json` as the shared machine-readable
+  contract for agent reports, with explicit status and trust-level fields.
+- Added `docs/agents/` role prompts for the Lean, DevOps, training, and kernel
+  agents. The prompts require CLI evidence as source of truth and document
+  forbidden claims for each role.
+- Added integration tests for agent inspect reports, run-all dashboard output,
+  and pass/fail/blocked check-mode command evidence.
+
 ### Added — Plan 1 / Plan 2 execution artifacts
 
 - Added `docs/verification/proof-inventory.md`, classifying each Lean-backed

@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://refineforge.local/schemas/agent-report.schema.json",
+  "title": "Refine-Forge Agent Report",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "agent",
+    "mode",
+    "target",
+    "started_at",
+    "finished_at",
+    "status",
+    "trust_level",
+    "commands",
+    "changed_files",
+    "artifacts",
+    "blockers",
+    "warnings",
+    "summary"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agent-report-v1"
+    },
+    "agent": {
+      "enum": ["lean", "devops", "train", "kernel", "run_all"]
+    },
+    "mode": {
+      "enum": ["inspect", "check", "repair", "execute"]
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "enum": ["passed", "failed", "blocked", "partial"]
+    },
+    "trust_level": {
+      "enum": [
+        "blocked",
+        "measured-only",
+        "model-only",
+        "model-linked",
+        "release-ready-local",
+        "release-ready-ci",
+        "human-reviewed"
+      ]
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "changed_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "summary": {
+      "type": "string"
+    }
+  }
+}

@@ -30,6 +30,7 @@ Read in this order — each doc is short and points at the next.
 | [docs/verification/proof-inventory.md](docs/verification/proof-inventory.md) | Current Lean-backed claim inventory: theorem shape, scope, and implementation-link status |
 | [docs/release/release-readiness-inventory.md](docs/release/release-readiness-inventory.md) | Release infrastructure inventory: shipped-local, stub-tested, CI-pending, blocked, and planned surfaces |
 | [docs/release/ci-audit-report.md](docs/release/ci-audit-report.md) | CI/release audit report template and current local blocker record |
+| [docs/agents/README.md](docs/agents/README.md) | CLI-first HELYX specialist agents: Lean, DevOps, training, and kernel evidence reports |
 | [docs/bit-exact-reproducibility.md](docs/bit-exact-reproducibility.md) | GPU kernel bit-exact reproducibility: non-determinism sources + mitigations + gate primitive |
 | [docs/superpowers/plans/2026-05-22-gpu-kernel-bitexact-track.md](docs/superpowers/plans/2026-05-22-gpu-kernel-bitexact-track.md) | Part 4 execution plan for the HELYX `helyx-kernels` → Refine-Forge `refineforge-bitexact` handoff |
 | [docs/escalation-criteria.md](docs/escalation-criteria.md) | **CONTRACT v0.3** (operator-signed; v0.2 superseded same-day with Q1/Q3/Q4 revisions). 9 categories that always escalate to the human during `refine autonomous` runs. Enforced by `crates/refineforge-escalation` |
@@ -162,6 +163,9 @@ refineforge/
 │   ├── src/                    # actual .cu source (empty; CUDA engineer fills)
 │   └── runs/                   # refine-bitexact per-gate output (gitignored)
 ├── artifacts/                  # exported verification bundles
+├── agent-reports/              # local `refine agent` run outputs (gitignored)
+├── schemas/
+│   └── agent-report.schema.json # machine-readable agent evidence contract
 ├── escalations/                # `refine autonomous` writes decision packets here (one dir per CLAIM-ID)
 ├── autonomous/                 # `refine autonomous` per-run RunReport JSONs (gitignored)
 ├── containers/
@@ -179,6 +183,7 @@ refineforge/
     ├── security.md             # threat model + signing chain
     ├── reproducible-build.md   # Nix flake + bit-identical methodology
     ├── bit-exact-reproducibility.md  # GPU kernel determinism + gate primitive
+    ├── agents/               # role prompts and CLI evidence rules for the four agents
     ├── escalation-criteria.md  # CONTRACT v0.3 — 9 categories `refine autonomous` escalates on
     ├── HELYX-CASE-STUDY.md     # link to external worked example
     └── plans/
@@ -238,6 +243,7 @@ cargo build --release
 | `refine bundle verify <bundle-dir> --verify-signature` | Hashes + Sigstore signature (via cosign). See [SECURITY.md](SECURITY.md) |
 | `refine repair <id>`                   | Bounded LLM repair loop against Lean's LSP server. Strategies: `mock` (declines all), `anthropic-mock` (canned), `anthropic` (real HTTP, needs `ANTHROPIC_API_KEY`), and `local-finetune` (needs a promoted weights/runtime directory). See [`docs/llm-repair-design.md`](docs/llm-repair-design.md) |
 | `refine autonomous <id> [flags]` | Drives a claim end-to-end (lean check → scan → bundle), escalating per criteria v0.3 via `crates/refineforge-escalation`. Flags: `--strategy mock\|anthropic-mock\|anthropic`, `--max-cost-usd N`, `--operator EMAIL`, `--dry-run`, `--auto-repair` (inject Repair after failed LeanCheck), `--await-decisions` (block-poll operator packet decisions; Phase 3.8 preserves APPROVED packets across re-runs), `--inject-counter-idealisation` (EXAMPLE-002 Cat 2 bait), `--inject-training PATH` (repeatable; appends `refine-train run PATH --dry-run` step), `--inject-bitexact PATH` (repeatable; appends `refine-bitexact run PATH` step). Anthropic `UsageStats` in the RunReport: per-call `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, and `stop_reasons` (`end_turn` / `max_tokens` / etc.). All plan §3 phases closed; see [docs/plans/autonomous-driver-plan.md](docs/plans/autonomous-driver-plan.md) |
+| `refine agent <lean\|devops\|train\|kernel\|run-all>` | CLI-first HELYX specialist agents. Modes: `inspect`, `check`, `repair`, `execute`; each writes JSON + Markdown evidence under `agent-reports/` using `schemas/agent-report.schema.json`. See [`docs/agents/README.md`](docs/agents/README.md) |
 | `refine escalations list [--claim X] [--age-gt N]` | Operator queue dashboard for `escalations/<CLAIM-ID>/*.md`; PENDING vs DECIDED sorted by age. Per criteria v0.3 the driver never auto-rejects |
 | `refine-eval --corpus … --strategy …`  | Drive `refine repair` against a JSONL corpus; emit JSON report. See [`docs/repair-evaluation.md`](docs/repair-evaluation.md) |
 | `refine-train data audit <jsonl>`      | Validate proof-repair SFT JSONL counts, split counts, patch JSON, duplicate ids, and SHA-256 before training |
