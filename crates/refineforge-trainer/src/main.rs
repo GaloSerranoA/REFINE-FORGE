@@ -12,6 +12,7 @@
 //! - `resume <run_dir>` — re-run from the latest checkpoint
 //! - `monitor <run_dir>` — tail progress + show latest metrics
 //! - `report <run_dir>` — emit final report.json
+//! - `promote <run_dir>` — write a local-finetune manifest for a successful checkpoint
 //!
 //! Owned by Section 2 ([../../ARCHITECTURE.md](../../ARCHITECTURE.md)).
 
@@ -20,6 +21,7 @@ mod dataset;
 mod experiment;
 mod failure;
 mod progress;
+mod promotion;
 mod report;
 mod runner;
 mod sweep;
@@ -90,6 +92,29 @@ enum Cmd {
         /// Run directory.
         run_dir: PathBuf,
     },
+    /// Promote a successful checkpoint into a local-finetune runtime directory.
+    Promote {
+        /// Run directory containing report.json.
+        run_dir: PathBuf,
+        /// Output directory for refineforge-local-finetune.json and promotion-report.json.
+        #[arg(long)]
+        out_dir: PathBuf,
+        /// Model id written into the local-finetune manifest.
+        #[arg(long)]
+        model_id: String,
+        /// Runtime command program written into the manifest.
+        #[arg(long)]
+        command: String,
+        /// Runtime command argument. May be repeated.
+        #[arg(long = "command-arg", allow_hyphen_values = true)]
+        command_args: Vec<String>,
+        /// Trainer/runtime producer label.
+        #[arg(long, default_value = "manual")]
+        producer: String,
+        /// Require report.json final_outcome == "success".
+        #[arg(long)]
+        require_success: bool,
+    },
     /// List all checkpoints in a run dir.
     Checkpoints {
         run_dir: PathBuf,
@@ -122,6 +147,23 @@ fn main() -> Result<()> {
         Cmd::Sweep { sweep, fail_fast } => cmd_sweep(&cli.runs_root, &sweep, fail_fast),
         Cmd::Monitor { run_dir, tail, no_follow } => cmd_monitor(&run_dir, tail, no_follow),
         Cmd::Report { run_dir } => cmd_report(&run_dir),
+        Cmd::Promote {
+            run_dir,
+            out_dir,
+            model_id,
+            command,
+            command_args,
+            producer,
+            require_success,
+        } => cmd_promote(
+            run_dir,
+            out_dir,
+            model_id,
+            command,
+            command_args,
+            producer,
+            require_success,
+        ),
         Cmd::Checkpoints { run_dir } => cmd_checkpoints(&run_dir),
     }
 }
@@ -331,6 +373,36 @@ fn cmd_report(run_dir: &Path) -> Result<()> {
     let r = report::build(&exp, &paths, "rebuilt", 0)?;
     report::write(&r, &paths)?;
     println!("Wrote {}", paths.run_dir.join("report.json").display());
+    Ok(())
+}
+
+fn cmd_promote(
+    run_dir: PathBuf,
+    out_dir: PathBuf,
+    model_id: String,
+    command: String,
+    command_args: Vec<String>,
+    producer: String,
+    require_success: bool,
+) -> Result<()> {
+    let mut manifest_command = vec![command];
+    manifest_command.extend(command_args);
+    let report = promotion::promote(&promotion::PromotionOptions {
+        run_dir,
+        out_dir,
+        model_id,
+        command: manifest_command,
+        producer,
+        require_success,
+    })?;
+    println!("promotion {}: model_id={}", report.status, report.model_id);
+    if let Some(checkpoint) = &report.checkpoint {
+        println!("  checkpoint: step={} path={}", checkpoint.step, checkpoint.path);
+    }
+    if let Some(path) = &report.manifest_path {
+        println!("  manifest:   {path}");
+    }
+    println!("  report:     {}/promotion-report.json", report.out_dir);
     Ok(())
 }
 

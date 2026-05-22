@@ -9,6 +9,7 @@ pub mod dataset;
 pub mod experiment;
 pub mod failure;
 pub mod progress;
+pub mod promotion;
 pub mod report;
 pub mod runner;
 pub mod sweep;
