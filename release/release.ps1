@@ -87,28 +87,35 @@ if (-not $DryRun) {
     Write-Host "DRY-RUN: would set [workspace.package].version = `"$Version`""
 }
 
-# 7-9. Build + test + lean check.
-Step "7. cargo check --workspace"
-Run "cargo check --workspace"
-
-Step "8. cargo nextest run --workspace"
-Run "cargo nextest run --workspace"
-
-Step "9. refine lean check-all"
+# 7. Release readiness gate.
+Step "7. refine release ready"
 $refine = $env:REFINE_BIN
 if (-not $refine) {
-    if (Test-Path .\target\release\refine.exe) { $refine = '.\target\release\refine.exe' }
-    else { Run "cargo build --release --bin refine"; $refine = '.\target\release\refine.exe' }
+    $targetDir = $null
+    try {
+        $targetDir = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).target_directory
+    } catch {
+        $targetDir = Join-Path $Root 'target'
+    }
+    $defaultRefine = Join-Path $targetDir 'release\refine.exe'
+    if (Test-Path $defaultRefine) { $refine = $defaultRefine }
+    else { Run "cargo build --release --bin refine"; $refine = $defaultRefine }
 }
-Run "$refine lean check-all"
+# The script checked cleanliness before the release-version edits.
+# This allow-dirty is scoped to Cargo.toml/CHANGELOG.md before step 8 commits them.
+$readyArgs = "--root . release ready --version $Version --allow-dirty --evidence-dir release/evidence/$Tag"
+if ($DryRun) {
+    $readyArgs = "$readyArgs --dry-run --skip-docker --skip-signature"
+}
+Run "$refine $readyArgs"
 
-# 10. Commit.
-Step "10. committing version bump"
+# 8. Commit.
+Step "8. committing version bump"
 Run "git add Cargo.toml CHANGELOG.md"
 Run "git commit -m 'release: $Tag'"
 
-# 11. Tag + optional cosign.
-Step "11. creating annotated tag $Tag"
+# 9. Tag + optional cosign.
+Step "9. creating annotated tag $Tag"
 Run "git tag -a $Tag -m 'refineforge $Tag'"
 $cosignAvailable = Get-Command cosign -ErrorAction SilentlyContinue
 if ($cosignAvailable) {
@@ -128,7 +135,7 @@ if ($cosignAvailable) {
     Write-Host "(cosign not on PATH — skipping tag-commit signing; CI will sign bundles)"
 }
 
-# 12. Push instructions.
+# 10. Push instructions.
 Write-Host ""
 Step "DONE"
 Write-Host "Local commit + tag are ready. To publish:"

@@ -267,7 +267,7 @@ Where each thing currently lives:
 | Verifier Docker image                      | ✅ `containers/Dockerfile.verifier` — multi-stage build, elan + Lean v4.29.1 preinstalled |
 | Multi-arch CI matrix                       | ✅ Ubuntu + macOS + Windows with elan / lake / cargo caches |
 | Sigstore signing in CI + `--verify-signature` | ⚠️ CI workflow authored and verifier-side `refine bundle verify --verify-signature` shipped; first real GitHub OIDC signed-bundle run pending until the repo has a remote |
-| Release scripting (`release/release.{sh,ps1}`) | ✅ semver check, CHANGELOG check, version bump, test run, tag + optional cosign tag-commit sig |
+| Release scripting (`release/release.{sh,ps1}`) | ✅ semver check, CHANGELOG check, version bump, `refine release ready` evidence gate, tag + optional cosign tag-commit sig |
 | Nix flake for hermetic builds              | ⚠️ authored (`flake.nix`); first-build verification pending (see [docs/reproducible-build.md](docs/reproducible-build.md) §8) |
 | Mathlib mutation pipeline (corpus at N≥1000) | ✅ shipped: `training/data/mathlib-proof-repair-v1/` has 1000 Mathlib mutation rows plus finalized Anthropic SFT train/val/heldout splits |
 | `local-finetune` runtime bridge            | ✅ command-manifest strategy shipped; real checkpoint integration pending |

@@ -43,3 +43,17 @@ fn release_ready_dry_run_writes_evidence_files() {
     assert!(evidence.join("sbom.cyclonedx.json").exists());
     assert!(evidence.join("provenance.intoto.json").exists());
 }
+
+#[test]
+fn release_scripts_delegate_to_refine_release_ready() {
+    let root = workspace_root();
+    let sh = std::fs::read_to_string(root.join("release/release.sh")).unwrap();
+    let ps1 = std::fs::read_to_string(root.join("release/release.ps1")).unwrap();
+
+    assert!(sh.contains("release ready --version"));
+    assert!(sh.contains("--evidence-dir"));
+    assert!(!sh.contains("cargo nextest run --workspace"));
+    assert!(ps1.contains("release ready --version"));
+    assert!(ps1.contains("--evidence-dir"));
+    assert!(!ps1.contains("cargo nextest run --workspace"));
+}

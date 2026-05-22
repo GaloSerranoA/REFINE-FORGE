@@ -14,15 +14,14 @@
 #   5. Confirms CHANGELOG.md contains a section for the new version,
 #      OR moves [Unreleased] entries into a new [<version>] section.
 #   6. Bumps the workspace-package `version` field in Cargo.toml.
-#   7. Runs `cargo check --workspace` to catch obvious breakage.
-#   8. Runs `cargo nextest run --workspace`. STOP on any failure.
-#   9. Runs `refine lean check-all`. STOP on any failure.
-#  10. Stages the version bump + CHANGELOG, commits with the message
+#   7. Runs `refine release ready` to execute the release gate suite
+#      and write SBOM/provenance/readiness evidence.
+#   8. Stages the version bump + CHANGELOG, commits with the message
 #      `release: v<version>`.
-#  11. Creates an annotated tag `v<version>`. If `cosign` is on PATH,
+#   9. Creates an annotated tag `v<version>`. If `cosign` is on PATH,
 #      ALSO produces a detached signature `release/v<version>.sig`
 #      via `cosign sign-blob` on the tag's commit SHA.
-#  12. Prints push instructions; does NOT push automatically.
+#  10. Prints push instructions; does NOT push automatically.
 #
 # Owned by Section 3 (DevOps). See ARCHITECTURE.md.
 
@@ -142,16 +141,8 @@ print(f"bumped version -> {v}")
 PY
 fi
 
-# 7. cargo check.
-step "7. cargo check --workspace"
-run "cargo check --workspace"
-
-# 8. cargo nextest.
-step "8. cargo nextest run --workspace (release profile to match CI)"
-run "cargo nextest run --workspace"
-
-# 9. lean check-all.
-step "9. refine lean check-all"
+# 7. Release readiness gate.
+step "7. refine release ready"
 # Discover the cargo target directory (respects CARGO_TARGET_DIR
 # env override + workspace-shared target dirs) instead of
 # assuming ./target/release/.
@@ -167,15 +158,21 @@ if ! command -v refine >/dev/null 2>&1 && [ ! -x "$DEFAULT_REFINE_BIN" ] && [ -z
   run "cargo build --release --bin refine"
 fi
 REFINE_BIN="${REFINE_BIN:-$DEFAULT_REFINE_BIN}"
-run "$REFINE_BIN lean check-all"
+# The script checked cleanliness before the release-version edits.
+# This allow-dirty is scoped to Cargo.toml/CHANGELOG.md before step 8 commits them.
+READY_ARGS="--root . release ready --version $VERSION --allow-dirty --evidence-dir release/evidence/$TAG"
+if [ "$DRY_RUN" -eq 1 ]; then
+  READY_ARGS="$READY_ARGS --dry-run --skip-docker --skip-signature"
+fi
+run "$REFINE_BIN $READY_ARGS"
 
-# 10. Commit.
-step "10. committing version bump"
+# 8. Commit.
+step "8. committing version bump"
 run "git add Cargo.toml CHANGELOG.md"
 run "git commit -m 'release: $TAG'"
 
-# 11. Tag (+ optional cosign sign-blob of the tag commit SHA).
-step "11. creating annotated tag $TAG"
+# 9. Tag (+ optional cosign sign-blob of the tag commit SHA).
+step "9. creating annotated tag $TAG"
 run "git tag -a $TAG -m 'refineforge $TAG'"
 if command -v cosign >/dev/null 2>&1; then
   COMMIT="$(git rev-parse "$TAG^{commit}")"
@@ -194,7 +191,7 @@ else
   echo "(cosign not on PATH — skipping tag-commit signing; CI will sign bundles)"
 fi
 
-# 12. Push instructions.
+# 10. Push instructions.
 echo
 step "DONE"
 echo "Local commit + tag are ready. To publish:"
