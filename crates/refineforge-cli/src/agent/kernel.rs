@@ -1,6 +1,7 @@
 use super::common::{
     action_intent, capability, existing_artifact, repo_tool_check, seal_runtime,
-    set_production_proof, ActionIntent, AgentMode, AgentReport, AgentStatus, CommandRecord,
+    set_production_proof, string_field_nonempty, validate_human_approval, validate_json_file,
+    ActionIntent, AgentMode, AgentReport, AgentStatus, CommandRecord, EvidenceValidation,
     ProductionProofStatus, ProductionRequirement, TrustLevel,
 };
 use std::path::{Path, PathBuf};
@@ -152,9 +153,20 @@ fn apply_kernel_production_proof(
 ) {
     let mut blockers = Vec::new();
     let mut requirements = Vec::new();
+    let role_evidence_dir = kernel_evidence_dir();
     let config = config_for_target(root, target);
     let source_contract = kernel_source_contract(root, &config);
-    let real_source = has_real_kernel_source(root) && source_contract.is_real_source();
+    let evidence_source = role_evidence_dir
+        .as_deref()
+        .and_then(|dir| kernel_file_path(dir, "kernels/src/hvector_add.cu", "source.cu"));
+    let real_source = (has_real_kernel_source(root) && source_contract.is_real_source())
+        || evidence_source.as_ref().is_some_and(|path| {
+            path.exists()
+                && matches!(
+                    path.extension().and_then(|ext| ext.to_str()),
+                    Some("cu" | "cuh" | "rs")
+                )
+        });
 
     requirements.push(ProductionRequirement::new_owned(
         "kernel.real_source",
@@ -165,8 +177,11 @@ fn apply_kernel_production_proof(
             AgentStatus::Blocked
         },
         vec![if real_source {
-            "config source points at real kernel source and kernels/src contains candidate source"
-                .to_string()
+            evidence_source.map_or_else(
+                || "config source points at real kernel source and kernels/src contains candidate source"
+                    .to_string(),
+                |path| path.display().to_string(),
+            )
         } else {
             source_contract.evidence.clone()
         }],
@@ -221,10 +236,15 @@ fn apply_kernel_production_proof(
         blockers.push("complete bit-exact run evidence is missing".to_string());
     }
 
-    let hardware_matrix = std::env::var("REFINEFORGE_KERNEL_HARDWARE_MATRIX").ok();
+    let hardware_matrix = kernel_evidence_path(
+        role_evidence_dir.as_deref(),
+        "REFINEFORGE_KERNEL_HARDWARE_MATRIX",
+        "kernels/hardware-matrix.json",
+        "hardware-matrix.json",
+    );
     let hardware_matrix_valid = hardware_matrix
         .as_deref()
-        .is_some_and(|path| production_hardware_matrix_passes(Path::new(path)));
+        .is_some_and(production_hardware_matrix_passes);
     requirements.push(ProductionRequirement::new_owned(
         "kernel.hardware_matrix",
         "Hardware matrix records GPU, driver, CUDA toolkit, OS, and CPU architecture",
@@ -233,83 +253,94 @@ fn apply_kernel_production_proof(
         } else {
             AgentStatus::Blocked
         },
-        vec![hardware_matrix.unwrap_or_else(|| {
-            "production hardware matrix not provided via REFINEFORGE_KERNEL_HARDWARE_MATRIX"
-                .to_string()
-        })],
+        vec![hardware_matrix.map_or_else(
+            || {
+                "production hardware matrix not provided via REFINEFORGE_KERNEL_HARDWARE_MATRIX"
+                    .to_string()
+            },
+            |path| path.display().to_string(),
+        )],
     ));
     if !hardware_matrix_valid {
         blockers
             .push("CUDA hardware matrix evidence is missing or not production-passed".to_string());
     }
 
-    let compiler_metadata = std::env::var("REFINEFORGE_KERNEL_COMPILER_METADATA").ok();
+    let compiler_metadata = validate_compiler_metadata(role_evidence_dir.as_deref());
     requirements.push(ProductionRequirement::new_owned(
         "kernel.compiler_runtime_metadata",
         "Compiler and runtime metadata record rustc, nvcc, driver, and build flags",
-        if compiler_metadata.is_some() {
+        if compiler_metadata.passed {
             AgentStatus::Passed
         } else {
             AgentStatus::Blocked
         },
-        vec![compiler_metadata.unwrap_or_else(|| {
-            "compiler/runtime metadata not provided via REFINEFORGE_KERNEL_COMPILER_METADATA"
-                .to_string()
-        })],
+        compiler_metadata.evidence,
     ));
-    if std::env::var("REFINEFORGE_KERNEL_COMPILER_METADATA").is_err() {
+    if !compiler_metadata.passed {
         blockers.push("compiler/runtime metadata is missing".to_string());
     }
 
-    let performance_baseline = std::env::var("REFINEFORGE_KERNEL_PERFORMANCE_BASELINE").ok();
+    let performance_baseline = validate_kernel_json_evidence(
+        role_evidence_dir.as_deref(),
+        "REFINEFORGE_KERNEL_PERFORMANCE_BASELINE",
+        "kernels/performance-baseline.json",
+        "performance-baseline.json",
+        "kernel performance baseline",
+        &["passed"],
+    );
     requirements.push(ProductionRequirement::new_owned(
         "kernel.performance_baseline",
         "Performance baseline records latency/throughput and regression threshold",
-        if performance_baseline.is_some() {
+        if performance_baseline.passed {
             AgentStatus::Passed
         } else {
             AgentStatus::Blocked
         },
-        vec![performance_baseline.unwrap_or_else(|| {
-            "performance baseline not provided via REFINEFORGE_KERNEL_PERFORMANCE_BASELINE"
-                .to_string()
-        })],
+        performance_baseline.evidence,
     ));
-    if std::env::var("REFINEFORGE_KERNEL_PERFORMANCE_BASELINE").is_err() {
+    if !performance_baseline.passed {
         blockers.push("kernel performance baseline is missing".to_string());
     }
 
-    let handoff = std::env::var("REFINEFORGE_KERNEL_HELYX_HANDOFF").ok();
+    let handoff = validate_kernel_json_evidence(
+        role_evidence_dir.as_deref(),
+        "REFINEFORGE_KERNEL_HELYX_HANDOFF",
+        "kernels/helyx-handoff.json",
+        "helyx-handoff.json",
+        "HELYX kernel handoff",
+        &["accepted", "passed"],
+    );
     requirements.push(ProductionRequirement::new_owned(
         "kernel.helyx_handoff",
         "HELYX handoff records source, config, and evidence bundle hashes",
-        if handoff.is_some() {
+        if handoff.passed {
             AgentStatus::Passed
         } else {
             AgentStatus::Blocked
         },
-        vec![handoff.unwrap_or_else(|| {
-            "HELYX kernel handoff not provided via REFINEFORGE_KERNEL_HELYX_HANDOFF".to_string()
-        })],
+        handoff.evidence,
     ));
-    if std::env::var("REFINEFORGE_KERNEL_HELYX_HANDOFF").is_err() {
+    if !handoff.passed {
         blockers.push("HELYX kernel handoff evidence is missing".to_string());
     }
 
-    let approval = std::env::var("REFINEFORGE_KERNEL_HUMAN_APPROVAL").ok();
+    let approval = validate_kernel_approval(role_evidence_dir.as_deref());
     requirements.push(ProductionRequirement::new_owned(
         "kernel.human_kernel_approval",
         "Named human reviewer approved CUDA correctness and performance evidence",
-        if approval.is_some() {
+        if approval.passed {
             AgentStatus::Passed
         } else {
             AgentStatus::Blocked
         },
-        vec![approval
-            .clone()
-            .unwrap_or_else(|| "human kernel approval is absent".to_string())],
+        if approval.evidence.is_empty() {
+            vec!["human kernel approval is absent".to_string()]
+        } else {
+            approval.evidence
+        },
     ));
-    if approval.is_none() {
+    if !approval.passed {
         blockers.push("human kernel approval is missing".to_string());
     }
 
@@ -321,9 +352,84 @@ fn apply_kernel_production_proof(
             ProductionProofStatus::Blocked
         },
         requirements,
-        approval.into_iter().collect(),
+        approval.reviewer_evidence.into_iter().collect(),
         blockers,
     );
+}
+
+fn kernel_evidence_dir() -> Option<PathBuf> {
+    std::env::var_os("REFINEFORGE_KERNEL_EVIDENCE_DIR").map(PathBuf::from)
+}
+
+fn kernel_evidence_path(
+    evidence_dir: Option<&Path>,
+    env_name: &str,
+    conventional: &str,
+    local: &str,
+) -> Option<PathBuf> {
+    evidence_dir
+        .and_then(|dir| kernel_file_path(dir, conventional, local))
+        .or_else(|| std::env::var_os(env_name).map(PathBuf::from))
+}
+
+fn kernel_file_path(dir: &Path, conventional: &str, local: &str) -> Option<PathBuf> {
+    let conventional = dir.join(conventional);
+    if conventional.exists() {
+        return Some(conventional);
+    }
+    let local = dir.join(local);
+    if local.exists() {
+        return Some(local);
+    }
+    None
+}
+
+fn validate_kernel_json_evidence(
+    evidence_dir: Option<&Path>,
+    env_name: &str,
+    conventional: &str,
+    local: &str,
+    label: &str,
+    status_values: &[&str],
+) -> EvidenceValidation {
+    let path = kernel_evidence_path(evidence_dir, env_name, conventional, local);
+    validate_json_file(path.as_deref(), label, status_values)
+}
+
+fn validate_compiler_metadata(evidence_dir: Option<&Path>) -> EvidenceValidation {
+    let path = kernel_evidence_path(
+        evidence_dir,
+        "REFINEFORGE_KERNEL_COMPILER_METADATA",
+        "kernels/compiler-metadata.json",
+        "compiler-metadata.json",
+    );
+    let mut validation = validate_json_file(path.as_deref(), "compiler/runtime metadata", &[]);
+    if !validation.passed {
+        return validation;
+    }
+    let Some(path) = path else {
+        return validation;
+    };
+    let Some(value) = super::common::read_json_value(&path) else {
+        validation.passed = false;
+        return validation;
+    };
+    validation.passed = string_field_nonempty(&value, "rustc")
+        || string_field_nonempty(&value, "nvcc")
+        || string_field_nonempty(&value, "compiler");
+    if !validation.passed {
+        validation.evidence.push(
+            "compiler metadata must include a non-empty rustc, nvcc, or compiler field".to_string(),
+        );
+    }
+    validation
+}
+
+fn validate_kernel_approval(evidence_dir: Option<&Path>) -> EvidenceValidation {
+    let path = evidence_dir
+        .and_then(|dir| kernel_file_path(dir, "approvals/kernel.json", "kernel-approval.json"))
+        .or_else(|| std::env::var_os("REFINEFORGE_KERNEL_HUMAN_APPROVAL").map(PathBuf::from));
+    validate_human_approval(path.as_deref(), "kernel", "kernel human approval")
 }
 
 fn has_real_kernel_source(root: &Path) -> bool {

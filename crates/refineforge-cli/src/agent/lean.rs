@@ -1,7 +1,8 @@
 use super::common::{
     action_intent, capability, existing_artifact, repo_tool_check, seal_runtime,
-    set_production_proof, ActionIntent, AgentMode, AgentReport, AgentStatus, CommandRecord,
-    ProductionProofStatus, ProductionRequirement, TrustLevel,
+    set_production_proof, valid_sha256, validate_human_approval, validate_json_file, ActionIntent,
+    AgentMode, AgentReport, AgentStatus, CommandRecord, EvidenceValidation, ProductionProofStatus,
+    ProductionRequirement, TrustLevel,
 };
 use crate::{claim, lint, runner, scan};
 use anyhow::{bail, Result};
@@ -146,6 +147,9 @@ fn apply_lean_production_proof(
     let mut requirements = Vec::new();
     let mut blockers = Vec::new();
     let mut reviewer_evidence = Vec::new();
+    let evidence_dir = lean_evidence_dir();
+    let bundle_hashes = validate_lean_bundle_hashes(evidence_dir.as_deref());
+    let role_approval = validate_lean_approval(evidence_dir.as_deref());
 
     requirements.push(ProductionRequirement::new(
         "lean.no_sorry_gate",
@@ -245,17 +249,12 @@ fn apply_lean_production_proof(
                     missing_refinement_docs.join(", ")
                 ));
             }
-            if !missing_review.is_empty() {
+            if !missing_review.is_empty() && !role_approval.passed {
                 blockers.push(format!(
                     "missing human review blocks production proof: {}",
                     missing_review.join(", ")
                 ));
             }
-            blockers.push(
-                "Lean production proof requires exported bundle hash evidence for selected claims"
-                    .to_string(),
-            );
-
             requirements.push(ProductionRequirement::new_owned(
                 "lean.claim_scope_model_refined",
                 "Every selected implementation claim uses model+refined scope",
@@ -280,21 +279,42 @@ fn apply_lean_production_proof(
                     format!("missing docs: {}", missing_refinement_docs.join(", "))
                 }],
             ));
-            requirements.push(ProductionRequirement::new(
+            requirements.push(ProductionRequirement::new_owned(
                 "lean.bundle_hashes",
                 "Selected claims have exported verification bundle hashes",
-                AgentStatus::Blocked,
-                &["bundle export is not run by the Lean agent yet"],
-            ));
-            requirements.push(ProductionRequirement::new_owned(
-                "lean.human_review",
-                "Every selected implementation claim has explicit human review",
-                if missing_review.is_empty() && !reviewer_evidence.is_empty() {
+                if bundle_hashes.passed {
                     AgentStatus::Passed
                 } else {
                     AgentStatus::Blocked
                 },
-                if reviewer_evidence.is_empty() {
+                if bundle_hashes.evidence.is_empty() {
+                    vec!["bundle export evidence is absent".to_string()]
+                } else {
+                    bundle_hashes.evidence.clone()
+                },
+            ));
+            if !bundle_hashes.passed {
+                blockers.push(
+                    "Lean production proof requires exported bundle hash evidence for selected claims"
+                        .to_string(),
+                );
+            }
+            if let Some(reviewer) = &role_approval.reviewer_evidence {
+                reviewer_evidence.push(reviewer.clone());
+            }
+            requirements.push(ProductionRequirement::new_owned(
+                "lean.human_review",
+                "Every selected implementation claim has explicit human review",
+                if (missing_review.is_empty() && !reviewer_evidence.is_empty())
+                    || role_approval.passed
+                {
+                    AgentStatus::Passed
+                } else {
+                    AgentStatus::Blocked
+                },
+                if !role_approval.evidence.is_empty() {
+                    role_approval.evidence.clone()
+                } else if reviewer_evidence.is_empty() {
                     vec!["review.human_operator is absent for selected claims".to_string()]
                 } else {
                     reviewer_evidence.clone()
@@ -340,6 +360,62 @@ fn apply_lean_production_proof(
         ProductionProofStatus::Blocked
     };
     set_production_proof(report, status, requirements, reviewer_evidence, blockers);
+}
+
+fn lean_evidence_dir() -> Option<PathBuf> {
+    std::env::var_os("REFINEFORGE_LEAN_EVIDENCE_DIR").map(PathBuf::from)
+}
+
+fn lean_file_path(dir: &Path, conventional: &str, local: &str) -> Option<PathBuf> {
+    let conventional = dir.join(conventional);
+    if conventional.exists() {
+        return Some(conventional);
+    }
+    let local = dir.join(local);
+    if local.exists() {
+        return Some(local);
+    }
+    None
+}
+
+fn validate_lean_bundle_hashes(evidence_dir: Option<&Path>) -> EvidenceValidation {
+    let path = evidence_dir
+        .and_then(|dir| lean_file_path(dir, "lean/bundle-hashes.json", "bundle-hashes.json"));
+    let mut validation = validate_json_file(path.as_deref(), "Lean bundle hashes", &["passed"]);
+    if !validation.passed {
+        return validation;
+    }
+    let Some(path) = path else {
+        return validation;
+    };
+    let Some(value) = super::common::read_json_value(&path) else {
+        validation.passed = false;
+        return validation;
+    };
+    validation.passed = value
+        .get("bundles")
+        .and_then(|bundles| bundles.as_array())
+        .is_some_and(|bundles| {
+            !bundles.is_empty()
+                && bundles.iter().all(|bundle| {
+                    bundle
+                        .get("sha256")
+                        .and_then(|hash| hash.as_str())
+                        .is_some_and(valid_sha256)
+                })
+        });
+    if !validation.passed {
+        validation
+            .evidence
+            .push("bundle hashes must contain non-empty bundles with sha256".to_string());
+    }
+    validation
+}
+
+fn validate_lean_approval(evidence_dir: Option<&Path>) -> EvidenceValidation {
+    let path = evidence_dir
+        .and_then(|dir| lean_file_path(dir, "approvals/lean.json", "lean-approval.json"));
+    validate_human_approval(path.as_deref(), "lean", "Lean human approval")
 }
 
 fn lean_action_intents(mode: AgentMode) -> Vec<ActionIntent> {

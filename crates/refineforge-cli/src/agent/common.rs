@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -353,6 +354,178 @@ pub struct ProductionRequirement {
     pub description: String,
     pub status: AgentStatus,
     pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EvidenceValidation {
+    pub passed: bool,
+    pub evidence: Vec<String>,
+    pub reviewer_evidence: Option<String>,
+    pub artifact: Option<PathBuf>,
+}
+
+pub fn validate_existing_file(path: Option<&Path>, label: &str) -> EvidenceValidation {
+    let Some(path) = path else {
+        return EvidenceValidation {
+            passed: false,
+            evidence: vec![format!("{label} path is absent")],
+            reviewer_evidence: None,
+            artifact: None,
+        };
+    };
+    if path.exists() && path.is_file() {
+        EvidenceValidation {
+            passed: true,
+            evidence: vec![path.display().to_string()],
+            reviewer_evidence: None,
+            artifact: Some(path.to_path_buf()),
+        }
+    } else {
+        EvidenceValidation {
+            passed: false,
+            evidence: vec![format!("{label} file is missing: {}", path.display())],
+            reviewer_evidence: None,
+            artifact: None,
+        }
+    }
+}
+
+pub fn validate_json_file(
+    path: Option<&Path>,
+    label: &str,
+    status_values: &[&str],
+) -> EvidenceValidation {
+    let mut validation = validate_existing_file(path, label);
+    if !validation.passed {
+        return validation;
+    }
+    let Some(path) = path else {
+        return validation;
+    };
+    let Some(value) = read_json_value(path) else {
+        validation.passed = false;
+        validation
+            .evidence
+            .push(format!("{label} is not valid JSON"));
+        return validation;
+    };
+    if !status_values.is_empty() && !json_status_in(&value, status_values) {
+        validation.passed = false;
+        validation.evidence.push(format!(
+            "{label} status is not one of {}",
+            status_values.join(", ")
+        ));
+    }
+    validation
+}
+
+pub fn validate_human_approval(path: Option<&Path>, role: &str, label: &str) -> EvidenceValidation {
+    let mut validation = validate_json_file(path, label, &[]);
+    if !validation.passed {
+        return validation;
+    }
+    let Some(path) = path else {
+        return validation;
+    };
+    let Some(value) = read_json_value(path) else {
+        validation.passed = false;
+        validation
+            .evidence
+            .push(format!("{label} is not valid JSON"));
+        return validation;
+    };
+    let operator = value
+        .get("human_operator")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    let schema_ok = value
+        .get("schema_version")
+        .and_then(Value::as_str)
+        .is_some_and(|schema| schema == "refineforge-human-approval-v1");
+    let role_ok = value
+        .get("role")
+        .and_then(Value::as_str)
+        .is_some_and(|actual| actual.eq_ignore_ascii_case(role));
+    let decision_ok = value
+        .get("decision")
+        .and_then(Value::as_str)
+        .is_some_and(|decision| decision.eq_ignore_ascii_case("approved"));
+    let approved_at_ok = value
+        .get("approved_at")
+        .and_then(Value::as_str)
+        .is_some_and(|approved_at| !approved_at.trim().is_empty());
+    let summary_ok = value
+        .get("evidence_summary")
+        .and_then(Value::as_str)
+        .is_some_and(|summary| !summary.trim().is_empty());
+    let human_ok = !operator.is_empty() && !is_automated_operator(operator);
+    validation.passed =
+        schema_ok && role_ok && decision_ok && approved_at_ok && summary_ok && human_ok;
+    validation
+        .evidence
+        .push(format!("human_operator={operator}"));
+    if validation.passed {
+        validation.reviewer_evidence = Some(format!("{role}: {operator} ({})", path.display()));
+    } else if !human_ok {
+        validation
+            .evidence
+            .push(format!("AI/automated approval rejected: {operator}"));
+    } else {
+        validation.evidence.push(format!(
+            "{label} must have schema refineforge-human-approval-v1, role {role}, decision approved, approved_at, human_operator, and evidence_summary"
+        ));
+    }
+    validation
+}
+
+pub fn read_json_value(path: &Path) -> Option<Value> {
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+pub fn json_status_in(value: &Value, statuses: &[&str]) -> bool {
+    value
+        .get("status")
+        .and_then(Value::as_str)
+        .is_some_and(|status| statuses.contains(&status))
+}
+
+pub fn string_field_nonempty(value: &Value, field: &str) -> bool {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .is_some_and(|text| !text.trim().is_empty())
+}
+
+pub fn valid_sha256(value: &str) -> bool {
+    value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+pub fn is_automated_operator(operator: &str) -> bool {
+    let lower = operator.to_ascii_lowercase();
+    let tokens: Vec<&str> = lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .collect();
+    let blocked = [
+        "ai",
+        "automated",
+        "automation",
+        "bot",
+        "chatgpt",
+        "claude",
+        "codex",
+        "gemini",
+        "gpt",
+        "llm",
+        "none",
+        "null",
+        "placeholder",
+        "tbd",
+        "todo",
+    ];
+    tokens.iter().any(|token| blocked.contains(token))
 }
 
 impl ProductionRequirement {

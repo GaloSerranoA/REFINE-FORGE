@@ -246,15 +246,19 @@ fn write_json(path: &Path, value: Value) {
 }
 
 fn write_training_approval(path: &Path, operator: &str) {
+    write_role_approval(path, "training", operator);
+}
+
+fn write_role_approval(path: &Path, role: &str, operator: &str) {
     write_json(
         path,
         serde_json::json!({
             "schema_version": "refineforge-human-approval-v1",
             "human_operator": operator,
-            "role": "training",
+            "role": role,
             "decision": "approved",
             "approved_at": "2026-05-25T00:00:00Z",
-            "evidence_summary": "training production evidence reviewed"
+            "evidence_summary": format!("{role} production evidence reviewed")
         }),
     );
 }
@@ -354,6 +358,17 @@ fn hex_sha256(bytes: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
+fn requirement_status<'a>(report: &'a Value, id: &str) -> &'a str {
+    report["production_proof"]["requirements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|requirement| requirement["id"] == id)
+        .unwrap_or_else(|| panic!("missing production requirement {id}"))["status"]
+        .as_str()
+        .unwrap()
+}
+
 #[test]
 fn agent_lean_inspect_writes_report() {
     let td = tempfile::tempdir().unwrap();
@@ -418,6 +433,74 @@ fn agent_lean_model_only_claims_block_production_proof() {
             .iter()
             .any(|b| b.as_str().unwrap().contains("model-only")),
         "model-only claims must block implementation production proof"
+    );
+}
+
+#[test]
+fn agent_lean_evidence_dir_consumes_bundle_evidence_without_overriding_model_only_scope() {
+    let td = tempfile::tempdir().unwrap();
+    let evidence_dir = td.path().join("lean-evidence");
+    write_json(
+        &evidence_dir.join("lean/claims-report.json"),
+        serde_json::json!({
+            "claims": [{
+                "id": "CRS-001",
+                "scope": "implementation-linked",
+                "refinement_doc": "docs/refinement/CRS-001.md",
+                "rust_symbols": ["refineforge::crs::example"],
+                "lean_theorems": ["Refineforge.CRS.example"]
+            }]
+        }),
+    );
+    std::fs::write(
+        evidence_dir.join("lean/proof-inventory.md"),
+        "CRS-001 implementation-linked\n",
+    )
+    .unwrap();
+    write_json(
+        &evidence_dir.join("lean/refinement-links.json"),
+        serde_json::json!({"status": "passed", "links": ["CRS-001"]}),
+    );
+    write_json(
+        &evidence_dir.join("lean/bundle-hashes.json"),
+        serde_json::json!({
+            "status": "passed",
+            "bundles": [{
+                "claim_id": "CRS-001",
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }]
+        }),
+    );
+    write_role_approval(
+        &evidence_dir.join("approvals/lean.json"),
+        "lean",
+        "Galo Lean Operator",
+    );
+    let out = td.path().join("lean-evidence-out");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .env("REFINEFORGE_LEAN_EVIDENCE_DIR", &evidence_dir)
+        .args([
+            "--root", ".", "agent", "lean", "--mode", "check", "--target", "helyx", "--out",
+        ])
+        .arg(&out)
+        .arg("--json")
+        .output()
+        .expect("run lean evidence check");
+
+    assert_success(&output);
+    let report = read_json(&out.join("lean.json"));
+    assert_eq!(requirement_status(&report, "lean.bundle_hashes"), "passed");
+    assert_eq!(requirement_status(&report, "lean.human_review"), "passed");
+    assert_eq!(report["production_proof"]["status"], "blocked");
+    assert!(
+        report["production_proof"]["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b.as_str().unwrap().contains("model-only")),
+        "evidence files must not override current model-only claim scopes"
     );
 }
 
@@ -527,6 +610,44 @@ fn agent_devops_local_report_cannot_claim_release_ready_ci() {
             .iter()
             .any(|b| b.as_str().unwrap().contains("hosted CI")),
         "hosted CI evidence must block DevOps production proof"
+    );
+}
+
+#[test]
+fn agent_devops_rejects_fake_env_presence_as_production_evidence() {
+    let td = tempfile::tempdir().unwrap();
+    let out = td.path().join("devops-fake-env");
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .env("REFINEFORGE_HOSTED_CI_EVIDENCE", "missing-ci-url-or-file")
+        .env("REFINEFORGE_SIGSTORE_EVIDENCE", "missing-sigstore-file")
+        .env("REFINEFORGE_VERIFIER_CONTAINER_DIGEST", "not-a-digest")
+        .env("REFINEFORGE_HUMAN_RELEASE_APPROVAL", "Codex GPT-5.5")
+        .args([
+            "--root", ".", "agent", "devops", "--mode", "inspect", "--target", "0.2.2", "--out",
+        ])
+        .arg(&out)
+        .arg("--json")
+        .output()
+        .expect("run devops fake-env inspect");
+
+    assert_success(&output);
+    let report = read_json(&out.join("devops.json"));
+    assert_ne!(
+        requirement_status(&report, "devops.hosted_ci_artifacts"),
+        "passed"
+    );
+    assert_ne!(
+        requirement_status(&report, "devops.sigstore_oidc_signature"),
+        "passed"
+    );
+    assert_ne!(
+        requirement_status(&report, "devops.verifier_container_digest"),
+        "passed"
+    );
+    assert_ne!(
+        requirement_status(&report, "devops.human_release_approval"),
+        "passed"
     );
 }
 
@@ -1144,5 +1265,49 @@ fn agent_kernel_stub_fixture_cannot_claim_cuda_correctness() {
             .iter()
             .any(|b| b.as_str().unwrap().contains("source.kind is stub")),
         "stub source must block Kernel CUDA production proof"
+    );
+}
+
+#[test]
+fn agent_kernel_rejects_fake_env_presence_as_production_evidence() {
+    let td = tempfile::tempdir().unwrap();
+    let out = td.path().join("kernel-fake-env");
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .env(
+            "REFINEFORGE_KERNEL_COMPILER_METADATA",
+            "missing-compiler.json",
+        )
+        .env(
+            "REFINEFORGE_KERNEL_PERFORMANCE_BASELINE",
+            "missing-performance.json",
+        )
+        .env("REFINEFORGE_KERNEL_HELYX_HANDOFF", "missing-handoff.json")
+        .env("REFINEFORGE_KERNEL_HUMAN_APPROVAL", "Codex GPT-5.5")
+        .args([
+            "--root", ".", "agent", "kernel", "--mode", "inspect", "--target", "helyx", "--out",
+        ])
+        .arg(&out)
+        .arg("--json")
+        .output()
+        .expect("run kernel fake-env inspect");
+
+    assert_success(&output);
+    let report = read_json(&out.join("kernel.json"));
+    assert_ne!(
+        requirement_status(&report, "kernel.compiler_runtime_metadata"),
+        "passed"
+    );
+    assert_ne!(
+        requirement_status(&report, "kernel.performance_baseline"),
+        "passed"
+    );
+    assert_ne!(
+        requirement_status(&report, "kernel.helyx_handoff"),
+        "passed"
+    );
+    assert_ne!(
+        requirement_status(&report, "kernel.human_kernel_approval"),
+        "passed"
     );
 }

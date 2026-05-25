@@ -1,7 +1,8 @@
 use super::common::{
     action_intent, capability, existing_artifact, repo_tool_check, seal_runtime,
-    set_production_proof, tool_check, ActionIntent, AgentMode, AgentReport, AgentStatus,
-    CommandRecord, ProductionProofStatus, ProductionRequirement, TrustLevel,
+    set_production_proof, tool_check, valid_sha256, validate_existing_file,
+    validate_human_approval, validate_json_file, ActionIntent, AgentMode, AgentReport, AgentStatus,
+    CommandRecord, EvidenceValidation, ProductionProofStatus, ProductionRequirement, TrustLevel,
 };
 use crate::release::{self, ReleaseReadyOptions};
 use std::path::{Path, PathBuf};
@@ -173,6 +174,7 @@ fn apply_devops_production_proof(
 ) {
     let mut blockers = Vec::new();
     let mut requirements = Vec::new();
+    let role_evidence_dir = release_evidence_dir().or_else(|| evidence_dir.map(Path::to_path_buf));
 
     requirements.push(ProductionRequirement::new_owned(
         "devops.local_release_ready",
@@ -191,134 +193,158 @@ fn apply_devops_production_proof(
         blockers.push("local release readiness evidence is missing or failed".to_string());
     }
 
-    let hosted_ci_evidence = std::env::var("REFINEFORGE_HOSTED_CI_EVIDENCE").ok();
+    let hosted_ci = validate_hosted_ci(role_evidence_dir.as_deref());
     requirements.push(ProductionRequirement::new_owned(
         "devops.hosted_ci_artifacts",
         "Hosted CI workflow passed and uploaded release evidence artifacts",
-        if hosted_ci_evidence.is_some() {
+        if hosted_ci.passed {
             AgentStatus::Passed
         } else {
             AgentStatus::Blocked
         },
-        vec![hosted_ci_evidence.unwrap_or_else(|| {
-            "hosted CI evidence path/URL not provided via REFINEFORGE_HOSTED_CI_EVIDENCE"
-                .to_string()
-        })],
+        hosted_ci.evidence,
     ));
-    if std::env::var("REFINEFORGE_HOSTED_CI_EVIDENCE").is_err() {
+    if !hosted_ci.passed {
         blockers.push("hosted CI evidence blocks release-ready-ci production proof".to_string());
     }
 
-    let sigstore_evidence = std::env::var("REFINEFORGE_SIGSTORE_EVIDENCE").ok();
+    let sigstore = validate_release_json_evidence(
+        role_evidence_dir.as_deref(),
+        "REFINEFORGE_SIGSTORE_EVIDENCE",
+        "release/cosign-verify.json",
+        "cosign-verify.json",
+        "Sigstore evidence",
+        &["passed"],
+    );
     requirements.push(ProductionRequirement::new_owned(
         "devops.sigstore_oidc_signature",
         "Sigstore keyless signing ran from GitHub OIDC and verified signer identity",
-        if sigstore_evidence.is_some() {
+        if sigstore.passed {
             AgentStatus::Passed
         } else {
             AgentStatus::Blocked
         },
-        vec![sigstore_evidence.unwrap_or_else(|| {
-            if allow_expensive {
+        if sigstore.evidence.is_empty() {
+            vec![if allow_expensive {
                 "local expensive gates do not replace hosted OIDC Sigstore evidence".to_string()
             } else {
                 "Sigstore evidence not run; --allow-expensive was not requested".to_string()
-            }
-        })],
+            }]
+        } else {
+            sigstore.evidence
+        },
     ));
-    if std::env::var("REFINEFORGE_SIGSTORE_EVIDENCE").is_err() {
+    if !sigstore.passed {
         blockers.push("Sigstore OIDC signing evidence is missing".to_string());
     }
 
-    let container_digest = std::env::var("REFINEFORGE_VERIFIER_CONTAINER_DIGEST").ok();
+    let container_digest = validate_container_digest();
     requirements.push(ProductionRequirement::new_owned(
         "devops.verifier_container_digest",
         "Verifier container image is built, smoke-tested, and digest-recorded",
-        if container_digest.is_some() {
+        if container_digest.passed {
             AgentStatus::Passed
         } else {
             AgentStatus::Blocked
         },
-        vec![container_digest.unwrap_or_else(|| {
-            "verifier container digest not provided via REFINEFORGE_VERIFIER_CONTAINER_DIGEST"
-                .to_string()
-        })],
+        container_digest.evidence,
     ));
-    if std::env::var("REFINEFORGE_VERIFIER_CONTAINER_DIGEST").is_err() {
+    if !container_digest.passed {
         blockers.push("verifier container digest is missing".to_string());
     }
 
-    let sbom = evidence_dir
-        .map(|dir| dir.join("sbom.cyclonedx.json"))
-        .filter(|path| path.exists());
-    let provenance = evidence_dir
-        .map(|dir| dir.join("provenance.intoto.json"))
-        .filter(|path| path.exists());
+    let sbom = validate_release_file(
+        role_evidence_dir.as_deref(),
+        "release/sbom.cyclonedx.json",
+        "sbom.cyclonedx.json",
+        "SBOM",
+    );
+    let provenance = validate_release_file(
+        role_evidence_dir.as_deref(),
+        "release/provenance.intoto.json",
+        "provenance.intoto.json",
+        "provenance",
+    );
     requirements.push(ProductionRequirement::new_owned(
         "devops.sbom_provenance_uploaded",
         "SBOM and provenance artifacts are generated and uploaded from CI",
-        if sbom.is_some()
-            && provenance.is_some()
-            && std::env::var("REFINEFORGE_HOSTED_CI_EVIDENCE").is_ok()
-        {
+        if sbom.passed && provenance.passed && hosted_ci.passed {
             AgentStatus::Passed
         } else {
             AgentStatus::Blocked
         },
-        vec![
-            sbom.map_or_else(
-                || "sbom.cyclonedx.json missing from local evidence".to_string(),
-                |path| path.display().to_string(),
-            ),
-            provenance.map_or_else(
-                || "provenance.intoto.json missing from local evidence".to_string(),
-                |path| path.display().to_string(),
-            ),
-        ],
+        [sbom.evidence, provenance.evidence].concat(),
     ));
 
-    let flake_lock = root.join("flake.lock");
-    requirements.push(ProductionRequirement::new(
+    let flake_lock = role_evidence_dir
+        .as_deref()
+        .and_then(|dir| release_file_path(dir, "release/flake.lock", "flake.lock"))
+        .unwrap_or_else(|| root.join("flake.lock"));
+    let nix_check = role_evidence_dir
+        .as_deref()
+        .and_then(|dir| release_file_path(dir, "release/nix-check.log", "nix-check.log"));
+    let nix_lock = validate_existing_file(Some(&flake_lock), "Nix flake lock");
+    let nix_check_passed = nix_check
+        .as_deref()
+        .is_some_and(|path| text_contains(path, "passed"));
+    let nix_check_evidence = nix_check.as_ref().map_or_else(
+        || "nix check log is missing".to_string(),
+        |p| p.display().to_string(),
+    );
+    requirements.push(ProductionRequirement::new_owned(
         "devops.nix_locked_check",
         "Nix flake is locked and nix flake check passes without updating the lock",
-        if flake_lock.exists() {
+        if nix_lock.passed && nix_check_passed {
+            AgentStatus::Passed
+        } else if nix_lock.passed {
             AgentStatus::Partial
         } else {
             AgentStatus::Blocked
         },
-        &[if flake_lock.exists() {
-            "flake.lock exists; nix check evidence still required"
-        } else {
-            "flake.lock is missing"
-        }],
+        vec![format!(
+            "{}; {}",
+            nix_lock.evidence.join("; "),
+            nix_check_evidence
+        )],
     ));
-    if !flake_lock.exists() {
-        blockers.push(
-            "Nix reproducibility evidence is missing because flake.lock is absent".to_string(),
-        );
+    if !nix_lock.passed || !nix_check_passed {
+        blockers
+            .push("Nix reproducibility evidence is missing or nix check did not pass".to_string());
     }
 
-    requirements.push(ProductionRequirement::new(
+    let architecture_matrix = validate_architecture_matrix(role_evidence_dir.as_deref());
+    requirements.push(ProductionRequirement::new_owned(
         "devops.architecture_matrix",
         "Release evidence records runner OS and CPU architecture for every lane",
-        AgentStatus::Blocked,
-        &["runner architecture matrix evidence is only authoritative from hosted CI"],
-    ));
-    blockers.push("hosted architecture matrix evidence is missing".to_string());
-
-    let approval = std::env::var("REFINEFORGE_HUMAN_RELEASE_APPROVAL").ok();
-    requirements.push(ProductionRequirement::new_owned(
-        "devops.human_release_approval",
-        "Named human release approval is present for this version",
-        if approval.is_some() {
+        if architecture_matrix.passed {
             AgentStatus::Passed
         } else {
             AgentStatus::Blocked
         },
-        vec![approval
-            .unwrap_or_else(|| format!("no human release approval provided for target {target}"))],
+        architecture_matrix.evidence,
     ));
-    if std::env::var("REFINEFORGE_HUMAN_RELEASE_APPROVAL").is_err() {
+    if !architecture_matrix.passed {
+        blockers.push("hosted architecture matrix evidence is missing".to_string());
+    }
+
+    let approval = validate_release_approval(role_evidence_dir.as_deref());
+    requirements.push(ProductionRequirement::new_owned(
+        "devops.human_release_approval",
+        "Named human release approval is present for this version",
+        if approval.passed {
+            AgentStatus::Passed
+        } else {
+            AgentStatus::Blocked
+        },
+        if approval.evidence.is_empty() {
+            vec![format!(
+                "no human release approval provided for target {target}"
+            )]
+        } else {
+            approval.evidence
+        },
+    ));
+    if !approval.passed {
         blockers.push("human release approval is missing".to_string());
     }
 
@@ -330,12 +356,163 @@ fn apply_devops_production_proof(
             ProductionProofStatus::Blocked
         },
         requirements,
-        std::env::var("REFINEFORGE_HUMAN_RELEASE_APPROVAL")
-            .ok()
-            .into_iter()
-            .collect(),
+        approval.reviewer_evidence.into_iter().collect(),
         blockers,
     );
+}
+
+fn release_evidence_dir() -> Option<PathBuf> {
+    std::env::var_os("REFINEFORGE_RELEASE_EVIDENCE_DIR").map(PathBuf::from)
+}
+
+fn validate_hosted_ci(evidence_dir: Option<&Path>) -> EvidenceValidation {
+    if let Some(path) = evidence_dir
+        .and_then(|dir| release_file_path(dir, "release/hosted-ci.json", "hosted-ci.json"))
+    {
+        return validate_json_file(Some(&path), "hosted CI evidence", &["passed"]);
+    }
+    let Some(raw) = std::env::var("REFINEFORGE_HOSTED_CI_EVIDENCE").ok() else {
+        return EvidenceValidation {
+            passed: false,
+            evidence: vec![
+                "hosted CI evidence path/URL not provided via REFINEFORGE_HOSTED_CI_EVIDENCE"
+                    .to_string(),
+            ],
+            reviewer_evidence: None,
+            artifact: None,
+        };
+    };
+    if raw.starts_with("https://github.com/") && raw.contains("/actions/runs/") {
+        return EvidenceValidation {
+            passed: true,
+            evidence: vec![raw],
+            reviewer_evidence: None,
+            artifact: None,
+        };
+    }
+    let path = PathBuf::from(&raw);
+    if path.exists() {
+        validate_json_file(Some(&path), "hosted CI evidence", &["passed"])
+    } else {
+        EvidenceValidation {
+            passed: false,
+            evidence: vec![format!(
+                "hosted CI evidence is not a GitHub Actions run URL or existing file: {raw}"
+            )],
+            reviewer_evidence: None,
+            artifact: None,
+        }
+    }
+}
+
+fn validate_release_json_evidence(
+    evidence_dir: Option<&Path>,
+    env_name: &str,
+    conventional: &str,
+    local: &str,
+    label: &str,
+    status_values: &[&str],
+) -> EvidenceValidation {
+    if let Some(path) = evidence_dir.and_then(|dir| release_file_path(dir, conventional, local)) {
+        return validate_json_file(Some(&path), label, status_values);
+    }
+    let Some(raw) = std::env::var(env_name).ok() else {
+        return EvidenceValidation {
+            passed: false,
+            evidence: Vec::new(),
+            reviewer_evidence: None,
+            artifact: None,
+        };
+    };
+    let path = PathBuf::from(&raw);
+    validate_json_file(Some(&path), label, status_values)
+}
+
+fn validate_release_file(
+    evidence_dir: Option<&Path>,
+    conventional: &str,
+    local: &str,
+    label: &str,
+) -> EvidenceValidation {
+    let path = evidence_dir.and_then(|dir| release_file_path(dir, conventional, local));
+    validate_existing_file(path.as_deref(), label)
+}
+
+fn validate_container_digest() -> EvidenceValidation {
+    let Some(digest) = std::env::var("REFINEFORGE_VERIFIER_CONTAINER_DIGEST").ok() else {
+        return EvidenceValidation {
+            passed: false,
+            evidence: vec![
+                "verifier container digest not provided via REFINEFORGE_VERIFIER_CONTAINER_DIGEST"
+                    .to_string(),
+            ],
+            reviewer_evidence: None,
+            artifact: None,
+        };
+    };
+    let digest_ok = digest.strip_prefix("sha256:").is_some_and(valid_sha256);
+    EvidenceValidation {
+        passed: digest_ok,
+        evidence: vec![format!("verifier_container_digest={digest}")],
+        reviewer_evidence: None,
+        artifact: None,
+    }
+}
+
+fn validate_architecture_matrix(evidence_dir: Option<&Path>) -> EvidenceValidation {
+    let path = evidence_dir.and_then(|dir| {
+        release_file_path(
+            dir,
+            "release/architecture-matrix.json",
+            "architecture-matrix.json",
+        )
+    });
+    let mut validation = validate_json_file(path.as_deref(), "architecture matrix", &[]);
+    if !validation.passed {
+        return validation;
+    }
+    let Some(path) = path else {
+        return validation;
+    };
+    let Some(value) = super::common::read_json_value(&path) else {
+        validation.passed = false;
+        return validation;
+    };
+    validation.passed = value
+        .get("runners")
+        .and_then(|runners| runners.as_array())
+        .is_some_and(|runners| !runners.is_empty());
+    if !validation.passed {
+        validation
+            .evidence
+            .push("architecture matrix runners array is missing or empty".to_string());
+    }
+    validation
+}
+
+fn validate_release_approval(evidence_dir: Option<&Path>) -> EvidenceValidation {
+    let path = evidence_dir
+        .and_then(|dir| release_file_path(dir, "approvals/release.json", "release-approval.json"))
+        .or_else(|| std::env::var_os("REFINEFORGE_HUMAN_RELEASE_APPROVAL").map(PathBuf::from));
+    validate_human_approval(path.as_deref(), "release", "release human approval")
+}
+
+fn release_file_path(dir: &Path, conventional: &str, local: &str) -> Option<PathBuf> {
+    let conventional = dir.join(conventional);
+    if conventional.exists() {
+        return Some(conventional);
+    }
+    let local = dir.join(local);
+    if local.exists() {
+        return Some(local);
+    }
+    None
+}
+
+fn text_contains(path: &Path, needle: &str) -> bool {
+    std::fs::read_to_string(path)
+        .map(|text| text.contains(needle))
+        .unwrap_or(false)
 }
 
 fn devops_action_intents(mode: AgentMode, allow_expensive: bool) -> Vec<ActionIntent> {

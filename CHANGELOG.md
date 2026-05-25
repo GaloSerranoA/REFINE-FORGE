@@ -10,6 +10,24 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Changed — Lean, DevOps, and Kernel evidence hardening
+
+- Added shared agent evidence validators for real files, JSON status checks,
+  SHA-256 strings, and named non-AI human approval JSON.
+- `refine agent devops` no longer treats hosted CI, Sigstore, verifier digest,
+  or human approval environment-variable presence as passed production-proof
+  evidence. Release evidence now requires real URLs, files, JSON content, Nix
+  check logs, architecture matrix data, and valid approval JSON.
+- `refine agent kernel` no longer treats compiler metadata, performance
+  baseline, HELYX handoff, or human approval environment-variable presence as
+  passed production-proof evidence. Kernel evidence now requires real files
+  and valid role approval JSON.
+- `refine agent lean` now consumes `REFINEFORGE_LEAN_EVIDENCE_DIR` for bundle
+  hashes and Lean approval evidence while still blocking production proof when
+  the live claim scopes remain model-only.
+- Added CLI regressions proving fake DevOps/Kernel environment evidence cannot
+  pass requirements and Lean evidence files cannot override model-only scope.
+
 ### Added — Training approval automation
 
 - Added `refine training-approval draft` to validate Training Agent reports,

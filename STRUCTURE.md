@@ -459,11 +459,11 @@ crates/refineforge-cli/
 └── src/
     ├── main.rs             # clap entry point; dispatches to modules
     ├── agent/              # `refine agent` HELYX specialist control plane
-    │   ├── common.rs       # AgentReport, liveness, capabilities, tool checks, modes, trust, writers
-    │   ├── lean.rs         # Lean/check/scan/lint evidence wrapper
-    │   ├── devops.rs       # release-readiness evidence wrapper
+    │   ├── common.rs       # AgentReport, liveness, shared evidence validators, trust, writers
+    │   ├── lean.rs         # Lean/check/scan/lint evidence wrapper + Lean evidence-dir validation
+    │   ├── devops.rs       # release-readiness wrapper + release evidence-dir validation
     │   ├── train.rs        # refine-train evidence wrapper
-    │   └── kernel.rs       # refine-bitexact evidence wrapper
+    │   └── kernel.rs       # refine-bitexact wrapper + kernel evidence-dir validation
     ├── claim.rs            # YAML schema + loader (Claim, RustSource, LeanInfo, Policy)
     ├── runner.rs           # `refine lean check[-all]` — policy gate → lake build → ProofReport
     ├── sorry_gate.rs       # comment-stripper + word-boundary scan for sorry/admit/axiom; unit-tested

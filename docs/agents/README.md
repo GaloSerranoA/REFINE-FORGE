@@ -54,6 +54,43 @@ of truth is always the CLI report:
 No agent may upgrade a claim beyond its report, and no prompt may replace human
 review.
 
+## Role Evidence Directories
+
+The agents accept role-specific evidence directories for production-proof
+validation. These directories reduce ad hoc environment variables, but they do
+not lower the trust bar:
+
+- `REFINEFORGE_LEAN_EVIDENCE_DIR`
+  - `lean/claims-report.json`
+  - `lean/proof-inventory.md`
+  - `lean/refinement-links.json`
+  - `lean/bundle-hashes.json`
+  - `approvals/lean.json`
+- `REFINEFORGE_RELEASE_EVIDENCE_DIR`
+  - `release/hosted-ci.json` or `REFINEFORGE_HOSTED_CI_EVIDENCE` as a GitHub
+    Actions run URL
+  - `release/cosign-verify.json`
+  - `release/sbom.cyclonedx.json`
+  - `release/provenance.intoto.json`
+  - `release/flake.lock`
+  - `release/nix-check.log`
+  - `release/architecture-matrix.json`
+  - `approvals/release.json`
+- `REFINEFORGE_KERNEL_EVIDENCE_DIR`
+  - `kernels/src/hvector_add.cu` or another real `*.cu`, `*.cuh`, or `*.rs`
+    source file
+  - `kernels/hardware-matrix.json`
+  - `kernels/compiler-metadata.json`
+  - `kernels/performance-baseline.json`
+  - `kernels/helyx-handoff.json`
+  - `approvals/kernel.json`
+
+Human approval files must use `schema_version:
+refineforge-human-approval-v1`, the correct role, `decision: approved`, a
+non-empty `approved_at`, a non-AI `human_operator`, and an
+`evidence_summary`. Bare environment-variable presence, fake file paths, and
+placeholder operators are blocked.
+
 See `docs/agents/runtime.md` for the enterprise runtime contract and the
 Hermes-style integration boundary.
 
