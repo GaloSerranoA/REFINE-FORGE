@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -291,6 +291,56 @@ pub fn write_evidence(
     Ok(())
 }
 
+fn copy_required_file(source: &Path, target: &Path, label: &str) -> Result<()> {
+    if !source.is_file() {
+        bail!("{label} file is missing: {}", source.display());
+    }
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+    std::fs::copy(source, target)
+        .with_context(|| format!("copying {} to {}", source.display(), target.display()))?;
+    Ok(())
+}
+
+fn resolve_input_path(root: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root.join(path)
+    }
+}
+
+fn write_json_value(path: &Path, value: &serde_json::Value) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+    std::fs::write(path, serde_json::to_vec_pretty(value)?)
+        .with_context(|| format!("writing {}", path.display()))?;
+    Ok(())
+}
+
+fn failed_required_gates(report: &serde_json::Value) -> Vec<&str> {
+    report
+        .get("gates")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|gate| {
+            gate.get("required")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+                && gate
+                    .get("status")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|status| status == "failed")
+        })
+        .filter_map(|gate| gate.get("name").and_then(serde_json::Value::as_str))
+        .collect()
+}
+
 pub fn sbom_from_cargo_metadata(
     metadata: &serde_json::Value,
     version: &str,
@@ -393,6 +443,16 @@ pub struct ReleaseReadyOptions {
     pub ci: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct OfflineProofOptions {
+    pub version: String,
+    pub evidence_dir: PathBuf,
+    pub release_ready_dir: PathBuf,
+    pub signature_file: PathBuf,
+    pub key_fingerprint: String,
+    pub verifier_log: PathBuf,
+}
+
 pub fn ready(root: &Path, opts: ReleaseReadyOptions) -> Result<()> {
     let report = build_ready_report(root, &opts)?;
     let metadata = cargo_metadata_json(root, opts.dry_run)?;
@@ -414,6 +474,129 @@ pub fn ready(root: &Path, opts: ReleaseReadyOptions) -> Result<()> {
             report.evidence_dir.display()
         ))
     }
+}
+
+pub fn offline_proof(root: &Path, opts: OfflineProofOptions) -> Result<()> {
+    let release_ready_dir = resolve_input_path(root, &opts.release_ready_dir);
+    let signature_file = resolve_input_path(root, &opts.signature_file);
+    let verifier_log = resolve_input_path(root, &opts.verifier_log);
+    let release_dir = opts.evidence_dir.join("release");
+    std::fs::create_dir_all(&release_dir)
+        .with_context(|| format!("creating {}", release_dir.display()))?;
+
+    for file in [
+        "release-report.json",
+        "release-report.md",
+        "sbom.cyclonedx.json",
+        "provenance.intoto.json",
+    ] {
+        copy_required_file(
+            &release_ready_dir.join(file),
+            &release_dir.join(file),
+            "release-ready evidence",
+        )?;
+    }
+
+    let report_path = release_dir.join("release-report.json");
+    let report: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&report_path)
+            .with_context(|| format!("reading {}", report_path.display()))?,
+    )
+    .with_context(|| format!("parsing {}", report_path.display()))?;
+    let requested_version = report
+        .get("requested_version")
+        .and_then(serde_json::Value::as_str)
+        .context("release-report.json is missing requested_version")?;
+    if requested_version != opts.version {
+        bail!(
+            "release report requested_version {requested_version} does not match --version {}",
+            opts.version
+        );
+    }
+    let failed = failed_required_gates(&report);
+    if !failed.is_empty() {
+        bail!(
+            "release report contains failed required gates: {}",
+            failed.join(", ")
+        );
+    }
+
+    if opts.key_fingerprint.trim().is_empty() {
+        bail!("--key-fingerprint must be non-empty");
+    }
+    if !signature_file.is_file() {
+        bail!(
+            "offline signature file is missing: {}",
+            signature_file.display()
+        );
+    }
+    if !verifier_log.is_file() {
+        bail!(
+            "offline verifier log is missing: {}",
+            verifier_log.display()
+        );
+    }
+
+    let signature_sha256 = sha256_file(&signature_file)?;
+    let verifier_log_sha256 = sha256_file(&verifier_log)?;
+    let now = Utc::now().to_rfc3339();
+    write_json_value(
+        &release_dir.join("offline-release-proof.json"),
+        &serde_json::json!({
+            "schema_version": "refineforge-offline-release-proof-v1",
+            "status": "passed",
+            "profile": "offline-local-release-proof",
+            "release_version": opts.version,
+            "generated_at": now,
+            "source_release_ready_dir": release_ready_dir,
+            "trust_boundary": "local/offline proof; does not satisfy hosted CI or GitHub OIDC"
+        }),
+    )?;
+    write_json_value(
+        &release_dir.join("offline-signature.json"),
+        &serde_json::json!({
+            "schema_version": "refineforge-offline-signature-evidence-v1",
+            "status": "passed",
+            "signature_mode": "offline-local-key",
+            "signature_file": signature_file,
+            "signature_sha256": signature_sha256,
+            "key_fingerprint": opts.key_fingerprint.trim()
+        }),
+    )?;
+    write_json_value(
+        &release_dir.join("offline-verifier.json"),
+        &serde_json::json!({
+            "schema_version": "refineforge-offline-verifier-evidence-v1",
+            "status": "passed",
+            "verifier": "offline verifier log",
+            "verifier_log": verifier_log,
+            "verifier_log_sha256": verifier_log_sha256,
+            "verified_artifacts": [
+                "release/release-report.json",
+                "release/sbom.cyclonedx.json",
+                "release/provenance.intoto.json",
+                "release/offline-signature.json"
+            ]
+        }),
+    )?;
+    write_json_value(
+        &release_dir.join("local-environment.json"),
+        &serde_json::json!({
+            "schema_version": "refineforge-local-release-environment-v1",
+            "status": "passed",
+            "os": std::env::consts::OS,
+            "arch": std::env::consts::ARCH,
+            "rustc_verbose_version": rustc_verbose_version(),
+            "generated_at": Utc::now().to_rfc3339()
+        }),
+    )?;
+
+    println!("offline release evidence: {}", opts.evidence_dir.display());
+    println!(
+        "offline proof:             {}",
+        release_dir.join("offline-release-proof.json").display()
+    );
+    Ok(())
 }
 
 pub fn build_ready_report(root: &Path, opts: &ReleaseReadyOptions) -> Result<ReleaseReport> {

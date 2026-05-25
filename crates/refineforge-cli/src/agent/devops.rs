@@ -2,7 +2,8 @@ use super::common::{
     action_intent, capability, existing_artifact, repo_tool_check, seal_runtime,
     set_production_proof, tool_check, valid_sha256, validate_existing_file,
     validate_human_approval, validate_json_file, ActionIntent, AgentMode, AgentReport, AgentStatus,
-    CommandRecord, EvidenceValidation, ProductionProofStatus, ProductionRequirement, TrustLevel,
+    AssuranceProfile, CommandRecord, EvidenceValidation, ProductionProofStatus,
+    ProductionRequirement, TrustLevel,
 };
 use crate::release::{self, ReleaseReadyOptions};
 use std::path::{Path, PathBuf};
@@ -36,6 +37,11 @@ pub fn build(
             "verifier-container",
             "tool_gated",
             "Docker verifier image is only claimed when --allow-expensive runs it successfully",
+        ),
+        capability(
+            "offline-release-proof",
+            "available",
+            "can ingest local/offline release evidence and human approval without upgrading hosted CI/OIDC trust",
         ),
     ]);
     report.tool_checks.extend([
@@ -81,6 +87,7 @@ pub fn build(
             "DevOps agent inspected release-readiness docs and CI surfaces. Live hosted signing is not claimed.",
         );
         apply_devops_production_proof(&mut report, root, false, allow_expensive, target, None);
+        apply_devops_offline_release_profile(&mut report, root);
         seal_runtime(
             root,
             Some(out_dir),
@@ -154,6 +161,7 @@ pub fn build(
         target,
         Some(&evidence_dir),
     );
+    apply_devops_offline_release_profile(&mut report, root);
     let production_status = report.production_proof.status;
     if report.status == AgentStatus::Passed
         && production_status == ProductionProofStatus::HumanReviewed
@@ -185,6 +193,168 @@ pub fn build(
         devops_action_intents(mode, allow_expensive),
     );
     report
+}
+
+fn apply_devops_offline_release_profile(report: &mut AgentReport, root: &Path) {
+    let Some(evidence_dir) = offline_release_evidence_dir() else {
+        return;
+    };
+
+    report
+        .artifacts
+        .push(relative_or_display(root, &evidence_dir));
+    let (requirements, reviewer_evidence, blockers) =
+        validate_offline_release_profile(&evidence_dir);
+    let passed = blockers.is_empty();
+    report.assurance_profiles.push(AssuranceProfile {
+        id: "devops.offline_release_proof".to_string(),
+        profile: "offline-local-release-proof".to_string(),
+        status: if passed {
+            AgentStatus::Passed
+        } else {
+            AgentStatus::Blocked
+        },
+        trust_effect: "supports release-ready-local only".to_string(),
+        requirements,
+        reviewer_evidence,
+        blockers: blockers.clone(),
+    });
+
+    if passed {
+        report.warnings.push(
+            "Offline release proof is local evidence only; hosted CI/OIDC production proof remains separate."
+                .to_string(),
+        );
+    } else {
+        report.warnings.push(format!(
+            "Offline release proof evidence was provided but did not pass: {}",
+            blockers.join("; ")
+        ));
+    }
+}
+
+fn validate_offline_release_profile(
+    evidence_dir: &Path,
+) -> (Vec<ProductionRequirement>, Vec<String>, Vec<String>) {
+    let mut requirements = Vec::new();
+    let mut reviewer_evidence = Vec::new();
+    let mut blockers = Vec::new();
+
+    let report = validate_offline_release_report(evidence_dir);
+    push_offline_requirement(
+        &mut requirements,
+        &mut blockers,
+        "devops.offline_release_report",
+        "Local release report exists and contains no failed gates",
+        report,
+        "offline release report is missing or has failed gates",
+    );
+
+    let proof = validate_offline_release_proof(evidence_dir);
+    push_offline_requirement(
+        &mut requirements,
+        &mut blockers,
+        "devops.offline_release_profile",
+        "Offline release proof declares the local/offline trust boundary",
+        proof,
+        "offline release proof profile is missing or invalid",
+    );
+
+    let signature = validate_offline_signature(evidence_dir);
+    push_offline_requirement(
+        &mut requirements,
+        &mut blockers,
+        "devops.offline_signature",
+        "Local/offline signature evidence is present and fingerprinted",
+        signature,
+        "offline signature evidence is missing or invalid",
+    );
+
+    let verifier = validate_offline_verifier(evidence_dir);
+    push_offline_requirement(
+        &mut requirements,
+        &mut blockers,
+        "devops.offline_verifier",
+        "Local/offline verifier evidence passed",
+        verifier,
+        "offline verifier evidence is missing or invalid",
+    );
+
+    let local_environment = validate_local_environment(evidence_dir);
+    push_offline_requirement(
+        &mut requirements,
+        &mut blockers,
+        "devops.local_environment",
+        "Local OS and architecture evidence is present",
+        local_environment,
+        "local environment evidence is missing or invalid",
+    );
+
+    let sbom = validate_release_file(
+        Some(evidence_dir),
+        "release/sbom.cyclonedx.json",
+        "sbom.cyclonedx.json",
+        "offline SBOM",
+    );
+    let provenance = validate_release_file(
+        Some(evidence_dir),
+        "release/provenance.intoto.json",
+        "provenance.intoto.json",
+        "offline provenance",
+    );
+    let artifacts_passed = sbom.passed && provenance.passed;
+    requirements.push(ProductionRequirement::new_owned(
+        "devops.offline_sbom_provenance",
+        "Local SBOM and provenance artifacts exist",
+        if artifacts_passed {
+            AgentStatus::Passed
+        } else {
+            AgentStatus::Blocked
+        },
+        [sbom.evidence, provenance.evidence].concat(),
+    ));
+    if !artifacts_passed {
+        blockers.push("offline SBOM/provenance evidence is missing".to_string());
+    }
+
+    let approval = validate_offline_release_approval(evidence_dir);
+    if let Some(evidence) = approval.reviewer_evidence.clone() {
+        reviewer_evidence.push(evidence);
+    }
+    push_offline_requirement(
+        &mut requirements,
+        &mut blockers,
+        "devops.offline_human_release_approval",
+        "Named human approval exists for local/offline release evidence",
+        approval,
+        "offline release human approval is missing",
+    );
+
+    (requirements, reviewer_evidence, blockers)
+}
+
+fn push_offline_requirement(
+    requirements: &mut Vec<ProductionRequirement>,
+    blockers: &mut Vec<String>,
+    id: &str,
+    description: &str,
+    validation: EvidenceValidation,
+    blocker: &str,
+) {
+    let passed = validation.passed;
+    requirements.push(ProductionRequirement::new_owned(
+        id,
+        description,
+        if passed {
+            AgentStatus::Passed
+        } else {
+            AgentStatus::Blocked
+        },
+        validation.evidence,
+    ));
+    if !passed {
+        blockers.push(blocker.to_string());
+    }
 }
 
 fn devops_production_only_missing_human_approval(report: &AgentReport) -> bool {
@@ -400,6 +570,222 @@ fn apply_devops_production_proof(
 
 fn release_evidence_dir() -> Option<PathBuf> {
     std::env::var_os("REFINEFORGE_RELEASE_EVIDENCE_DIR").map(PathBuf::from)
+}
+
+fn offline_release_evidence_dir() -> Option<PathBuf> {
+    std::env::var_os("REFINEFORGE_OFFLINE_RELEASE_EVIDENCE_DIR").map(PathBuf::from)
+}
+
+fn validate_offline_release_report(evidence_dir: &Path) -> EvidenceValidation {
+    let path = release_file_path(
+        evidence_dir,
+        "release/release-report.json",
+        "release-report.json",
+    );
+    let mut validation = validate_existing_file(path.as_deref(), "offline release report");
+    if !validation.passed {
+        return validation;
+    }
+    let Some(path) = path else {
+        return validation;
+    };
+    let Some(value) = super::common::read_json_value(&path) else {
+        validation.passed = false;
+        validation
+            .evidence
+            .push("offline release report is not valid JSON".to_string());
+        return validation;
+    };
+    let failed = failed_release_gate_names(&value);
+    if !failed.is_empty() {
+        validation.passed = false;
+        validation
+            .evidence
+            .push(format!("failed release gates: {}", failed.join(", ")));
+    }
+    validation
+}
+
+fn validate_offline_release_proof(evidence_dir: &Path) -> EvidenceValidation {
+    let path = release_file_path(
+        evidence_dir,
+        "release/offline-release-proof.json",
+        "offline-release-proof.json",
+    );
+    let mut validation = validate_json_file(path.as_deref(), "offline release proof", &["passed"]);
+    if !validation.passed {
+        return validation;
+    }
+    let Some(path) = path else {
+        return validation;
+    };
+    let Some(value) = super::common::read_json_value(&path) else {
+        validation.passed = false;
+        validation
+            .evidence
+            .push("offline release proof is not valid JSON".to_string());
+        return validation;
+    };
+    let profile = value
+        .get("profile")
+        .or_else(|| value.get("proof_profile"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    if !profile.contains("offline") || !profile.contains("local") {
+        validation.passed = false;
+        validation
+            .evidence
+            .push("offline release proof must declare offline/local profile".to_string());
+    }
+    validation
+}
+
+fn validate_offline_signature(evidence_dir: &Path) -> EvidenceValidation {
+    let path = release_file_path(
+        evidence_dir,
+        "release/offline-signature.json",
+        "offline-signature.json",
+    );
+    let mut validation = validate_json_file(
+        path.as_deref(),
+        "offline signature evidence",
+        &["passed", "verified"],
+    );
+    if !validation.passed {
+        return validation;
+    }
+    let Some(path) = path else {
+        return validation;
+    };
+    let Some(value) = super::common::read_json_value(&path) else {
+        validation.passed = false;
+        validation
+            .evidence
+            .push("offline signature evidence is not valid JSON".to_string());
+        return validation;
+    };
+    let mode = value
+        .get("signature_mode")
+        .or_else(|| value.get("mode"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let fingerprint_present = ["key_fingerprint", "signer_fingerprint", "public_key_sha256"]
+        .iter()
+        .any(|field| super::common::string_field_nonempty(&value, field));
+    if (!mode.contains("offline") && !mode.contains("local")) || !fingerprint_present {
+        validation.passed = false;
+        validation.evidence.push(
+            "offline signature must declare offline/local mode and a key fingerprint".to_string(),
+        );
+    }
+    validation
+}
+
+fn validate_offline_verifier(evidence_dir: &Path) -> EvidenceValidation {
+    let path = release_file_path(
+        evidence_dir,
+        "release/offline-verifier.json",
+        "offline-verifier.json",
+    );
+    let mut validation = validate_json_file(
+        path.as_deref(),
+        "offline verifier evidence",
+        &["passed", "verified"],
+    );
+    if !validation.passed {
+        return validation;
+    }
+    let Some(path) = path else {
+        return validation;
+    };
+    let Some(value) = super::common::read_json_value(&path) else {
+        validation.passed = false;
+        validation
+            .evidence
+            .push("offline verifier evidence is not valid JSON".to_string());
+        return validation;
+    };
+    let has_verifier = [
+        "verifier",
+        "command",
+        "verified_artifact",
+        "verified_bundle",
+    ]
+    .iter()
+    .any(|field| super::common::string_field_nonempty(&value, field))
+        || value
+            .get("verified_artifacts")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|artifacts| !artifacts.is_empty());
+    if !has_verifier {
+        validation.passed = false;
+        validation.evidence.push(
+            "offline verifier must identify the verifier command or verified artifact".to_string(),
+        );
+    }
+    validation
+}
+
+fn validate_local_environment(evidence_dir: &Path) -> EvidenceValidation {
+    let path = release_file_path(
+        evidence_dir,
+        "release/local-environment.json",
+        "local-environment.json",
+    );
+    let mut validation =
+        validate_json_file(path.as_deref(), "local environment evidence", &["passed"]);
+    if !validation.passed {
+        return validation;
+    }
+    let Some(path) = path else {
+        return validation;
+    };
+    let Some(value) = super::common::read_json_value(&path) else {
+        validation.passed = false;
+        validation
+            .evidence
+            .push("local environment evidence is not valid JSON".to_string());
+        return validation;
+    };
+    if !["os", "arch"]
+        .iter()
+        .all(|field| super::common::string_field_nonempty(&value, field))
+    {
+        validation.passed = false;
+        validation
+            .evidence
+            .push("local environment must include os and arch".to_string());
+    }
+    validation
+}
+
+fn validate_offline_release_approval(evidence_dir: &Path) -> EvidenceValidation {
+    let path = release_file_path(
+        evidence_dir,
+        "approvals/release-offline.json",
+        "release-offline-approval.json",
+    )
+    .or_else(|| std::env::var_os("REFINEFORGE_HUMAN_OFFLINE_RELEASE_APPROVAL").map(PathBuf::from));
+    validate_human_approval(
+        path.as_deref(),
+        "release-offline",
+        "offline release human approval",
+    )
+}
+
+fn failed_release_gate_names(value: &serde_json::Value) -> Vec<&str> {
+    value
+        .get("gates")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|gate| {
+            gate.get("status")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|status| status == "failed")
+        })
+        .filter_map(|gate| gate.get("name").and_then(serde_json::Value::as_str))
+        .collect()
 }
 
 fn validate_hosted_ci(evidence_dir: Option<&Path>) -> EvidenceValidation {

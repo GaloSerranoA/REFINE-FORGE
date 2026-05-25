@@ -65,6 +65,101 @@ fn release_ready_dry_run_writes_evidence_files() {
 }
 
 #[test]
+fn release_offline_proof_records_local_signature_and_verifier_evidence() {
+    let td = tempfile::tempdir().unwrap();
+    let source = td.path().join("release-ready");
+    let evidence = td.path().join("offline-proof");
+    let signature = td.path().join("release.sig");
+    let verifier_log = td.path().join("offline-verify.log");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(
+        source.join("release-report.json"),
+        r#"{"requested_version":"0.2.2","gates":[{"name":"docs-truth-audit","status":"passed","required":true}]}"#,
+    )
+    .unwrap();
+    std::fs::write(source.join("release-report.md"), "# release\n").unwrap();
+    std::fs::write(
+        source.join("sbom.cyclonedx.json"),
+        r#"{"bomFormat":"CycloneDX"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        source.join("provenance.intoto.json"),
+        r#"{"_type":"https://in-toto.io/Statement/v1"}"#,
+    )
+    .unwrap();
+    std::fs::write(&signature, "offline signature bytes\n").unwrap();
+    std::fs::write(&verifier_log, "local offline verifier passed\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .args([
+            "--root",
+            ".",
+            "release",
+            "offline-proof",
+            "--version",
+            "0.2.2",
+            "--release-ready-dir",
+        ])
+        .arg(&source)
+        .arg("--evidence-dir")
+        .arg(&evidence)
+        .arg("--signature-file")
+        .arg(&signature)
+        .arg("--key-fingerprint")
+        .arg("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        .arg("--verifier-log")
+        .arg(&verifier_log)
+        .output()
+        .expect("run refine release offline-proof");
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(evidence.join("release/release-report.json").exists());
+    assert!(evidence.join("release/sbom.cyclonedx.json").exists());
+    assert!(evidence.join("release/provenance.intoto.json").exists());
+
+    let proof: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(evidence.join("release/offline-release-proof.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(proof["status"], "passed");
+    assert_eq!(proof["profile"], "offline-local-release-proof");
+    assert_eq!(proof["release_version"], "0.2.2");
+
+    let signature: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(evidence.join("release/offline-signature.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(signature["status"], "passed");
+    assert_eq!(signature["signature_mode"], "offline-local-key");
+    assert_eq!(
+        signature["key_fingerprint"],
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+
+    let verifier: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(evidence.join("release/offline-verifier.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(verifier["status"], "passed");
+    assert_eq!(verifier["verifier"], "offline verifier log");
+
+    let environment: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(evidence.join("release/local-environment.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(environment["status"], "passed");
+    assert!(environment["os"].is_string());
+    assert!(environment["arch"].is_string());
+}
+
+#[test]
 fn release_scripts_delegate_to_refine_release_ready() {
     let root = workspace_root();
     let sh = std::fs::read_to_string(root.join("release/release.sh")).unwrap();

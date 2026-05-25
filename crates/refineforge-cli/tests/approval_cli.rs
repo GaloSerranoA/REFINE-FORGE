@@ -72,6 +72,15 @@ allowed_operator_names:
   - Galo Lean Operator
   - Galo Release Operator
 roles:
+  release-offline:
+    required_evidence:
+      - release/release-report.json
+      - release/offline-release-proof.json
+      - release/offline-signature.json
+      - release/offline-verifier.json
+      - release/local-environment.json
+      - release/sbom.cyclonedx.json
+      - release/provenance.intoto.json
   release:
     required_evidence:
       - release/release-report.json
@@ -268,6 +277,79 @@ fn write_release_evidence(evidence_dir: &Path) {
     );
 }
 
+fn write_offline_release_evidence(evidence_dir: &Path) {
+    write_json(
+        &evidence_dir.join("release/release-report.json"),
+        json!({
+            "requested_version": "0.2.2",
+            "gates": [
+                {"name": "git-clean", "status": "passed", "required": true},
+                {"name": "docs-truth-audit", "status": "passed", "required": true}
+            ]
+        }),
+    );
+    write_json(
+        &evidence_dir.join("release/offline-release-proof.json"),
+        json!({
+            "schema_version": "refineforge-offline-release-proof-v1",
+            "status": "passed",
+            "profile": "offline-local-release-proof",
+            "release_version": "0.2.2",
+            "trust_boundary": "local/offline proof; does not satisfy hosted CI or GitHub OIDC"
+        }),
+    );
+    write_json(
+        &evidence_dir.join("release/offline-signature.json"),
+        json!({
+            "status": "passed",
+            "signature_mode": "offline-local-key",
+            "key_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }),
+    );
+    write_json(
+        &evidence_dir.join("release/offline-verifier.json"),
+        json!({
+            "status": "passed",
+            "verifier": "refine bundle verify --offline",
+            "verified_artifacts": ["release/release-report.json"]
+        }),
+    );
+    write_json(
+        &evidence_dir.join("release/local-environment.json"),
+        json!({
+            "status": "passed",
+            "os": "windows",
+            "arch": "x86_64",
+            "runner": "local"
+        }),
+    );
+    write_json(
+        &evidence_dir.join("release/sbom.cyclonedx.json"),
+        json!({"bomFormat": "CycloneDX", "components": [{"name": "refine"}]}),
+    );
+    write_json(
+        &evidence_dir.join("release/provenance.intoto.json"),
+        json!({"_type": "https://in-toto.io/Statement/v1", "subject": [{"name": "refine"}]}),
+    );
+    write_json(
+        &evidence_dir.join("approvals/release-offline.review-request.json"),
+        json!({
+            "schema_version": "refineforge-human-review-request-v1",
+            "role": "release-offline",
+            "decision": "pending",
+            "requested_at": "2026-05-25T00:00:00Z",
+            "candidate": {
+                "release_version": "0.2.2",
+                "evidence_dir": evidence_dir.display().to_string()
+            },
+            "review_required": [
+                "Confirm local/offline release report, offline signature, offline verifier, local environment, SBOM, and provenance evidence."
+            ],
+            "non_approval_note": "This request approves only local/offline release evidence, not hosted CI or GitHub OIDC production proof."
+        }),
+    );
+}
+
 fn write_training_evidence(evidence_dir: &Path) {
     let checkpoint = b"checkpoint bytes";
     let checkpoint_sha256 = hex_sha256(checkpoint);
@@ -390,6 +472,44 @@ fn write_lean_evidence(evidence_dir: &Path, workspace: &Path) {
             "non_approval_note": "This request is not an approval."
         }),
     );
+}
+
+#[test]
+fn approval_release_offline_approve_validates_local_evidence_without_hosted_ci() {
+    let td = tempfile::tempdir().unwrap();
+    let evidence_dir = td.path().join("release-offline-evidence");
+    let policy = td.path().join("approval-policy.yaml");
+    write_offline_release_evidence(&evidence_dir);
+    write_role_policy(&policy);
+    let request = evidence_dir.join("approvals/release-offline.review-request.json");
+
+    let output = run_refine(&[
+        "--root",
+        ".",
+        "approval",
+        "approve",
+        "--review-request",
+        request.to_str().unwrap(),
+        "--policy",
+        policy.to_str().unwrap(),
+        "--operator",
+        "Galo Release Operator",
+        "--i-reviewed-this-evidence",
+        "--json",
+    ]);
+
+    assert_success(&output);
+    let approval = read_json(&evidence_dir.join("approvals/release-offline.json"));
+    assert_eq!(approval["schema_version"], "refineforge-human-approval-v1");
+    assert_eq!(approval["role"], "release-offline");
+    assert_eq!(approval["decision"], "approved");
+    assert_eq!(approval["human_operator"], "Galo Release Operator");
+    assert_eq!(approval["release_version"], "0.2.2");
+    assert!(!evidence_dir.join("release/hosted-ci.json").exists());
+    assert!(!evidence_dir.join("release/cosign-verify.json").exists());
+    let request = read_json(&request);
+    assert_eq!(request["status"], "approved");
+    assert_eq!(request["decision"], "approved");
 }
 
 #[test]

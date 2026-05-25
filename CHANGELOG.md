@@ -10,6 +10,23 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added - offline DevOps release assurance
+
+- Added `release-offline` to the approval CLI. It validates local release
+  report, offline proof, offline signature, offline verifier, local
+  environment, SBOM, and provenance evidence before writing
+  `approvals/release-offline.json`.
+- Added `refine release offline-proof` to assemble the local/offline evidence
+  pack from an existing `release ready` directory plus real local signature
+  and verifier-log files.
+- Added a DevOps `assurance_profiles` report section. When
+  `REFINEFORGE_OFFLINE_RELEASE_EVIDENCE_DIR` is set, the agent records
+  `devops.offline_release_proof` as local evidence with trust effect
+  `supports release-ready-local only`.
+- Documented that offline release approval never replaces hosted CI, GitHub
+  OIDC Sigstore, Nix, verifier-container digest, or `approvals/release.json`
+  production-proof evidence.
+
 ### Added — live Kernel and Lean production evidence packs
 
 - Added `kernels/src/hvector_add.cu`, `kernels/scripts/run-hvector-add-cuda.cmd`,

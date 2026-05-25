@@ -263,6 +263,67 @@ fn write_role_approval(path: &Path, role: &str, operator: &str) {
     );
 }
 
+fn write_offline_release_evidence(dir: &Path) {
+    write_json(
+        &dir.join("release/release-report.json"),
+        serde_json::json!({
+            "requested_version": "0.2.2",
+            "gates": [
+                {"name": "git-clean", "status": "passed", "required": true},
+                {"name": "docs-truth-audit", "status": "passed", "required": true}
+            ]
+        }),
+    );
+    write_json(
+        &dir.join("release/offline-release-proof.json"),
+        serde_json::json!({
+            "schema_version": "refineforge-offline-release-proof-v1",
+            "status": "passed",
+            "profile": "offline-local-release-proof",
+            "release_version": "0.2.2",
+            "trust_boundary": "local/offline proof; does not satisfy hosted CI or GitHub OIDC"
+        }),
+    );
+    write_json(
+        &dir.join("release/offline-signature.json"),
+        serde_json::json!({
+            "status": "passed",
+            "signature_mode": "offline-local-key",
+            "key_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }),
+    );
+    write_json(
+        &dir.join("release/offline-verifier.json"),
+        serde_json::json!({
+            "status": "passed",
+            "verifier": "refine bundle verify --offline",
+            "verified_artifacts": ["release/release-report.json"]
+        }),
+    );
+    write_json(
+        &dir.join("release/local-environment.json"),
+        serde_json::json!({
+            "status": "passed",
+            "os": "windows",
+            "arch": "x86_64",
+            "runner": "local"
+        }),
+    );
+    write_json(
+        &dir.join("release/sbom.cyclonedx.json"),
+        serde_json::json!({"bomFormat": "CycloneDX", "components": [{"name": "refine"}]}),
+    );
+    write_json(
+        &dir.join("release/provenance.intoto.json"),
+        serde_json::json!({"_type": "https://in-toto.io/Statement/v1", "subject": [{"name": "refine"}]}),
+    );
+    write_role_approval(
+        &dir.join("approvals/release-offline.json"),
+        "release-offline",
+        "Galo Release Operator",
+    );
+}
+
 fn write_complete_training_evidence(dir: &Path) {
     std::fs::create_dir_all(dir.join("training")).unwrap();
     let checkpoint_bytes = b"checkpoint bytes";
@@ -709,6 +770,47 @@ fn agent_devops_rejects_fake_env_presence_as_production_evidence() {
     assert_ne!(
         requirement_status(&report, "devops.human_release_approval"),
         "passed"
+    );
+}
+
+#[test]
+fn agent_devops_offline_release_proof_does_not_claim_hosted_ci_or_human_reviewed() {
+    let td = tempfile::tempdir().unwrap();
+    let evidence_dir = td.path().join("offline-release-evidence");
+    let out = td.path().join("devops-offline");
+    write_offline_release_evidence(&evidence_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .env("REFINEFORGE_OFFLINE_RELEASE_EVIDENCE_DIR", &evidence_dir)
+        .args([
+            "--root", ".", "agent", "devops", "--mode", "inspect", "--target", "0.2.2", "--out",
+        ])
+        .arg(&out)
+        .arg("--json")
+        .output()
+        .expect("run devops offline inspect");
+
+    assert_success(&output);
+    let report = read_json(&out.join("devops.json"));
+    assert_eq!(report["trust_level"], "release-ready-local");
+    assert_ne!(report["trust_level"], "release-ready-ci");
+    assert_eq!(report["production_proof"]["status"], "blocked");
+    assert_ne!(report["production_proof"]["status"], "human-reviewed");
+    assert_eq!(
+        requirement_status(&report, "devops.hosted_ci_artifacts"),
+        "blocked"
+    );
+    let profiles = report["assurance_profiles"].as_array().unwrap();
+    let offline = profiles
+        .iter()
+        .find(|profile| profile["id"] == "devops.offline_release_proof")
+        .expect("missing offline release assurance profile");
+    assert_eq!(offline["status"], "passed");
+    assert_eq!(offline["trust_effect"], "supports release-ready-local only");
+    assert_warning_contains(
+        &report,
+        "Offline release proof is local evidence only; hosted CI/OIDC production proof remains separate.",
     );
 }
 

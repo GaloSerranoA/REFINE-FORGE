@@ -68,7 +68,7 @@ and gate artifacts around those systems.
 | Part | Specialist role | Refine-Forge surface | HELYX boundary |
 |---:|---|---|---|
 | 1 | Lean 4 / verification engineer | `refine lean`, `refine scan`, bundle export/verify, template provenance, claim linting | Proves and packages claims about HELYX-adjacent Rust behavior |
-| 2 | Release / infrastructure / DevOps engineer | CI gates, release readiness, verifier container, SBOM/provenance evidence, docs truth audit, signed-bundle flow | Makes releases auditable; first real remote/OIDC signing still depends on hosted CI |
+| 2 | Release / infrastructure / DevOps engineer | CI gates, release readiness, verifier container, SBOM/provenance evidence, docs truth audit, signed-bundle flow, offline/local release assurance profile | Makes releases auditable; first real remote/OIDC signing still depends on hosted CI |
 | 3 | ML / training engineer | `refine-train` dataset audit, SFT packing, causal-LM preprocessing, built-in `refineforge_native` and `refineforge_native_causal_lm` smoke training, HELYX/HRM/PyTorch orchestration, checkpoints, reports, evidence generation, local-finetune promotion, and Training Agent evidence validation | Refine-Forge can run local native smoke training and produce evidence packs; production model trust still requires real held-out eval, regression, compute ledger, conversion, promotion lineage, and human approval evidence |
 | 4 | GPU / kernel Rust engineer | `refine-bitexact` lint/run/run-all, HELYX-compatible kernel metadata, input manifests, expected SHA-256 baselines, local CUDA smoke source/evidence, CI summary JSON | `helyx-kernels` implements production kernels; Refine-Forge proves bit-exact gate evidence |
 
@@ -334,6 +334,7 @@ Where each thing currently lives:
 | Verifier Docker image                      | ✅ `containers/Dockerfile.verifier` — multi-stage build, elan + Lean v4.29.1 preinstalled |
 | Multi-arch CI matrix                       | ✅ Ubuntu + macOS + Windows with elan / lake / cargo caches |
 | Sigstore signing in CI + `--verify-signature` | ⚠️ CI workflow authored and verifier-side `refine bundle verify --verify-signature` shipped; first real GitHub OIDC signed-bundle run pending until the repo has a remote |
+| Offline release assurance | ✅ `refine release offline-proof`, `release-offline` approval role, and `REFINEFORGE_OFFLINE_RELEASE_EVIDENCE_DIR`; supports `release-ready-local` only and does not replace hosted CI/OIDC |
 | Release scripting (`release/release.{sh,ps1}`) | ✅ semver check, CHANGELOG check, version bump, `refine release ready` evidence gate, tag + optional cosign tag-commit sig |
 | Nix flake for hermetic builds              | ⚠️ authored (`flake.nix`); first-build verification pending (see [docs/reproducible-build.md](docs/reproducible-build.md) §8) |
 | Mathlib mutation pipeline (corpus at N≥1000) | ✅ shipped: `training/data/mathlib-proof-repair-v1/` has 1000 Mathlib mutation rows plus finalized Anthropic SFT train/val/heldout splits |

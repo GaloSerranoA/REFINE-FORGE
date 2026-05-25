@@ -288,6 +288,27 @@ enum ReleaseCmd {
         #[arg(long)]
         ci: bool,
     },
+    /// Build a local/offline release proof pack from existing release-ready and verifier evidence.
+    OfflineProof {
+        /// Semver version being prepared, e.g. 0.2.2.
+        #[arg(long)]
+        version: String,
+        /// Evidence output directory.
+        #[arg(long)]
+        evidence_dir: PathBuf,
+        /// Existing `refine release ready` evidence directory.
+        #[arg(long)]
+        release_ready_dir: PathBuf,
+        /// Existing offline signature artifact produced by a local key workflow.
+        #[arg(long)]
+        signature_file: PathBuf,
+        /// Human-verifiable local key fingerprint for the offline signature.
+        #[arg(long)]
+        key_fingerprint: String,
+        /// Existing verifier log showing the offline verification command passed.
+        #[arg(long)]
+        verifier_log: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -587,6 +608,24 @@ fn main() -> Result<()> {
                     },
                 )
             }
+            ReleaseCmd::OfflineProof {
+                version,
+                evidence_dir,
+                release_ready_dir,
+                signature_file,
+                key_fingerprint,
+                verifier_log,
+            } => release::offline_proof(
+                &cli.root,
+                release::OfflineProofOptions {
+                    version,
+                    evidence_dir,
+                    release_ready_dir,
+                    signature_file,
+                    key_fingerprint,
+                    verifier_log,
+                },
+            ),
         },
         Cmd::Memory { cmd } => match cmd {
             MemoryCmd::Add {

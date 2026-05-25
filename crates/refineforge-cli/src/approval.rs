@@ -24,6 +24,7 @@ pub enum ApprovalRole {
     Kernel,
     Lean,
     Release,
+    ReleaseOffline,
 }
 
 impl ApprovalRole {
@@ -33,6 +34,7 @@ impl ApprovalRole {
             ApprovalRole::Kernel => "kernel",
             ApprovalRole::Lean => "lean",
             ApprovalRole::Release => "release",
+            ApprovalRole::ReleaseOffline => "release-offline",
         }
     }
 
@@ -42,6 +44,7 @@ impl ApprovalRole {
             ApprovalRole::Kernel => "kernel.draft.json",
             ApprovalRole::Lean => "lean.draft.json",
             ApprovalRole::Release => "release.draft.json",
+            ApprovalRole::ReleaseOffline => "release-offline.draft.json",
         }
     }
 
@@ -51,6 +54,7 @@ impl ApprovalRole {
             ApprovalRole::Kernel => "kernel.json",
             ApprovalRole::Lean => "lean.json",
             ApprovalRole::Release => "release.json",
+            ApprovalRole::ReleaseOffline => "release-offline.json",
         }
     }
 
@@ -60,6 +64,7 @@ impl ApprovalRole {
             ApprovalRole::Kernel => "kernel.review-request.json",
             ApprovalRole::Lean => "lean.review-request.json",
             ApprovalRole::Release => "release.review-request.json",
+            ApprovalRole::ReleaseOffline => "release-offline.review-request.json",
         }
     }
 }
@@ -259,6 +264,9 @@ fn validate_context(
             validate_lean_evidence(&evidence_dir, request_value.as_ref(), &role_policy)?
         }
         ApprovalRole::Release => validate_release_evidence(&evidence_dir, request_value.as_ref())?,
+        ApprovalRole::ReleaseOffline => {
+            validate_offline_release_evidence(&evidence_dir, request_value.as_ref())?
+        }
         ApprovalRole::Training => {
             let agent_report = agent_report_arg
                 .map(|path| resolve_path(root, path))
@@ -376,7 +384,7 @@ fn approval_draft_json(ctx: &ApprovalContext, drafted_at: &str) -> Value {
         ApprovalRole::Lean => {
             value["claim_id"] = json!(ctx.candidate_id);
         }
-        ApprovalRole::Release => {
+        ApprovalRole::Release | ApprovalRole::ReleaseOffline => {
             value["release_version"] = json!(ctx.candidate_id);
         }
     }
@@ -419,7 +427,7 @@ fn approval_json(ctx: &ApprovalContext, approved_at: &str) -> Value {
         ApprovalRole::Lean => {
             value["claim_id"] = json!(ctx.candidate_id);
         }
-        ApprovalRole::Release => {
+        ApprovalRole::Release | ApprovalRole::ReleaseOffline => {
             value["release_version"] = json!(ctx.candidate_id);
         }
     }
@@ -552,6 +560,7 @@ fn role_from_str(role: &str) -> Result<ApprovalRole> {
         "kernel" => Ok(ApprovalRole::Kernel),
         "lean" => Ok(ApprovalRole::Lean),
         "release" => Ok(ApprovalRole::Release),
+        "release-offline" | "release_offline" => Ok(ApprovalRole::ReleaseOffline),
         other => bail!("unsupported approval role {other}"),
     }
 }
@@ -831,6 +840,100 @@ fn validate_release_evidence(evidence_dir: &Path, request: Option<&Value>) -> Re
         .or_else(|| report.get("requested_version").and_then(Value::as_str))
         .map(str::to_string)
         .context("release approval requires candidate.release_version or release-report requested_version")
+}
+
+fn validate_offline_release_evidence(
+    evidence_dir: &Path,
+    request: Option<&Value>,
+) -> Result<String> {
+    let report_path = safe_join(evidence_dir, "release/release-report.json")?;
+    let report = load_json(&report_path)?;
+    reject_failed_release_gates(&report, &report_path)?;
+
+    let proof_path = safe_join(evidence_dir, "release/offline-release-proof.json")?;
+    let proof = load_json(&proof_path)?;
+    require_json_status_in(&proof, &["passed"], &proof_path)?;
+    let profile = proof
+        .get("profile")
+        .or_else(|| proof.get("proof_profile"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !profile.contains("offline") || !profile.contains("local") {
+        bail!(
+            "{} must identify an offline/local release proof profile",
+            proof_path.display()
+        );
+    }
+
+    let signature_path = safe_join(evidence_dir, "release/offline-signature.json")?;
+    let signature = load_json(&signature_path)?;
+    require_json_status_in(&signature, &["passed", "verified"], &signature_path)?;
+    require_offline_signature(&signature, &signature_path)?;
+
+    let verifier_path = safe_join(evidence_dir, "release/offline-verifier.json")?;
+    let verifier = load_json(&verifier_path)?;
+    require_json_status_in(&verifier, &["passed", "verified"], &verifier_path)?;
+    let has_verifier_field = [
+        "verifier",
+        "command",
+        "verified_artifact",
+        "verified_bundle",
+    ]
+    .iter()
+    .any(|field| string_field_nonempty(&verifier, field));
+    let has_verified_artifacts = verifier
+        .get("verified_artifacts")
+        .and_then(Value::as_array)
+        .is_some_and(|artifacts| !artifacts.is_empty());
+    if !has_verifier_field && !has_verified_artifacts {
+        bail!(
+            "{} must identify the local verifier command or verified artifact",
+            verifier_path.display()
+        );
+    }
+
+    let environment_path = safe_join(evidence_dir, "release/local-environment.json")?;
+    let environment = load_json(&environment_path)?;
+    require_json_status_in(&environment, &["passed"], &environment_path)?;
+    for field in ["os", "arch"] {
+        if !string_field_nonempty(&environment, field) {
+            bail!("{} must include {field}", environment_path.display());
+        }
+    }
+
+    request
+        .and_then(|value| value.get("candidate"))
+        .and_then(|candidate| candidate.get("release_version"))
+        .and_then(Value::as_str)
+        .or_else(|| proof.get("release_version").and_then(Value::as_str))
+        .or_else(|| report.get("requested_version").and_then(Value::as_str))
+        .map(str::to_string)
+        .context("release-offline approval requires candidate.release_version, offline proof release_version, or release-report requested_version")
+}
+
+fn require_offline_signature(value: &Value, path: &Path) -> Result<()> {
+    let mode = value
+        .get("signature_mode")
+        .or_else(|| value.get("mode"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !mode.contains("offline") && !mode.contains("local") {
+        bail!(
+            "{} must declare an offline/local signature mode",
+            path.display()
+        );
+    }
+    if !["key_fingerprint", "signer_fingerprint", "public_key_sha256"]
+        .iter()
+        .filter_map(|field| value.get(*field).and_then(Value::as_str))
+        .any(|text| !text.trim().is_empty())
+    {
+        bail!(
+            "{} must include key_fingerprint, signer_fingerprint, or public_key_sha256",
+            path.display()
+        );
+    }
+    Ok(())
 }
 
 fn reject_failed_release_gates(report: &Value, path: &Path) -> Result<()> {

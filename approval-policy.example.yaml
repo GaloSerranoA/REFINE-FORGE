@@ -7,6 +7,16 @@ allowed_operator_names:
   - Galo Release Operator
 
 roles:
+  release-offline:
+    required_evidence:
+      - release/release-report.json
+      - release/offline-release-proof.json
+      - release/offline-signature.json
+      - release/offline-verifier.json
+      - release/local-environment.json
+      - release/sbom.cyclonedx.json
+      - release/provenance.intoto.json
+
   release:
     required_evidence:
       - release/release-report.json

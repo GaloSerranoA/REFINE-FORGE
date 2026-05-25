@@ -11,6 +11,7 @@
     "liveness",
     "runtime",
     "production_proof",
+    "assurance_profiles",
     "capabilities",
     "tool_checks",
     "started_at",
@@ -328,6 +329,79 @@
           "type": "array",
           "items": {
             "type": "string"
+          }
+        }
+      }
+    },
+    "assurance_profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "profile",
+          "status",
+          "trust_effect",
+          "requirements",
+          "reviewer_evidence",
+          "blockers"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": ["passed", "failed", "blocked", "partial"]
+          },
+          "trust_effect": {
+            "type": "string",
+            "minLength": 1
+          },
+          "requirements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "description", "status", "evidence"],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "status": {
+                  "enum": ["passed", "failed", "blocked", "partial"]
+                },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          },
+          "reviewer_evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

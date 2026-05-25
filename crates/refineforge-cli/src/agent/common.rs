@@ -356,6 +356,17 @@ pub struct ProductionRequirement {
     pub evidence: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssuranceProfile {
+    pub id: String,
+    pub profile: String,
+    pub status: AgentStatus,
+    pub trust_effect: String,
+    pub requirements: Vec<ProductionRequirement>,
+    pub reviewer_evidence: Vec<String>,
+    pub blockers: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct EvidenceValidation {
     pub passed: bool,
@@ -562,6 +573,8 @@ pub struct AgentReport {
     pub liveness: LivenessRecord,
     pub runtime: AgentRuntime,
     pub production_proof: ProductionProof,
+    #[serde(default)]
+    pub assurance_profiles: Vec<AssuranceProfile>,
     pub capabilities: Vec<CapabilityRecord>,
     pub tool_checks: Vec<ToolCheck>,
     pub started_at: DateTime<Utc>,
@@ -595,6 +608,7 @@ impl AgentReport {
             },
             runtime: AgentRuntime::empty(agent, mode, target.clone()),
             production_proof: ProductionProof::blocked_default(agent),
+            assurance_profiles: Vec::new(),
             capabilities: Vec::new(),
             tool_checks: Vec::new(),
             started_at: now,
@@ -693,6 +707,35 @@ impl AgentReport {
             }
         }
         out.push('\n');
+        if !self.assurance_profiles.is_empty() {
+            out.push_str("## Assurance Profiles\n\n");
+            for profile in &self.assurance_profiles {
+                out.push_str(&format!(
+                    "- `{}`: `{}` — `{}`\n",
+                    profile.id,
+                    profile.status.as_str(),
+                    profile.trust_effect
+                ));
+                for requirement in &profile.requirements {
+                    out.push_str(&format!(
+                        "  - `{}`: `{}` — {}\n",
+                        requirement.id,
+                        requirement.status.as_str(),
+                        requirement.description
+                    ));
+                    for evidence in &requirement.evidence {
+                        out.push_str(&format!(
+                            "    - evidence: `{}`\n",
+                            evidence.replace('`', "'")
+                        ));
+                    }
+                }
+                for blocker in &profile.blockers {
+                    out.push_str(&format!("  - blocker: {blocker}\n"));
+                }
+            }
+            out.push('\n');
+        }
         out.push_str("## Capabilities\n\n");
         if self.capabilities.is_empty() {
             out.push_str("- None recorded.\n\n");

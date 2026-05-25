@@ -12,7 +12,7 @@ discipline split (Lean Specialist / ML Engineer / DevOps / CUDA Engineer) read
 | Part | Role | Primary local surface | Boundary |
 |---:|---|---|---|
 | 1 | Lean 4 / verification | `lean/`, `claims/`, `crates/refineforge-cli`, `refine agent lean`, templates, bundle artifacts | Lean proves the model; refinement docs and claim linting carry the human-reviewed Rust link |
-| 2 | Release / infrastructure / DevOps | `.github/workflows/ci.yml`, `release/`, `containers/Dockerfile.verifier`, `refine agent devops`, SBOM/provenance evidence | Local release-readiness works; Docker/signature gates require `--allow-expensive` or hosted CI; real hosted OIDC signing still requires a remote CI run |
+| 2 | Release / infrastructure / DevOps | `.github/workflows/ci.yml`, `release/`, `containers/Dockerfile.verifier`, `refine agent devops`, `refine release offline-proof`, SBOM/provenance evidence, `release-offline` approvals | Local release-readiness works; offline/local assurance is separate; Docker/signature gates require `--allow-expensive` or hosted CI; real hosted OIDC signing still requires a remote CI run |
 | 3 | ML / training engine | `crates/refineforge-trainer`, `training/`, `refine agent train`, local-finetune bridge in `refineforge-strategies` | Refine-Forge now runs native proof-repair smoke training and validates production evidence; HELYX/Axolotl/custom remain production-scale trainer backends |
 | 4 | GPU / kernel Rust | `crates/refineforge-bitexact`, `kernels/`, `refine agent kernel`, `docs/bit-exact-reproducibility.md` | Refine-Forge owns local CUDA smoke evidence and deterministic gates; `helyx-kernels` owns production kernels |
 
