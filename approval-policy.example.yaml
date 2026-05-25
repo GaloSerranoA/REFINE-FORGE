@@ -7,6 +7,18 @@ allowed_operator_names:
   - Galo Release Operator
 
 roles:
+  release:
+    required_evidence:
+      - release/release-report.json
+      - release/hosted-ci.json
+      - release/cosign-verify.json
+      - release/sbom.cyclonedx.json
+      - release/provenance.intoto.json
+      - release/flake.lock
+      - release/nix-check.log
+      - release/architecture-matrix.json
+      - release/verifier-container-digest.txt
+
   training:
     allow_smoke_runs: true
     required_evidence:

@@ -23,6 +23,7 @@ pub enum ApprovalRole {
     Training,
     Kernel,
     Lean,
+    Release,
 }
 
 impl ApprovalRole {
@@ -31,6 +32,7 @@ impl ApprovalRole {
             ApprovalRole::Training => "training",
             ApprovalRole::Kernel => "kernel",
             ApprovalRole::Lean => "lean",
+            ApprovalRole::Release => "release",
         }
     }
 
@@ -39,6 +41,7 @@ impl ApprovalRole {
             ApprovalRole::Training => "training.draft.json",
             ApprovalRole::Kernel => "kernel.draft.json",
             ApprovalRole::Lean => "lean.draft.json",
+            ApprovalRole::Release => "release.draft.json",
         }
     }
 
@@ -47,6 +50,7 @@ impl ApprovalRole {
             ApprovalRole::Training => "training.json",
             ApprovalRole::Kernel => "kernel.json",
             ApprovalRole::Lean => "lean.json",
+            ApprovalRole::Release => "release.json",
         }
     }
 
@@ -55,6 +59,7 @@ impl ApprovalRole {
             ApprovalRole::Training => "training.review-request.json",
             ApprovalRole::Kernel => "kernel.review-request.json",
             ApprovalRole::Lean => "lean.review-request.json",
+            ApprovalRole::Release => "release.review-request.json",
         }
     }
 }
@@ -253,6 +258,7 @@ fn validate_context(
         ApprovalRole::Lean => {
             validate_lean_evidence(&evidence_dir, request_value.as_ref(), &role_policy)?
         }
+        ApprovalRole::Release => validate_release_evidence(&evidence_dir, request_value.as_ref())?,
         ApprovalRole::Training => {
             let agent_report = agent_report_arg
                 .map(|path| resolve_path(root, path))
@@ -370,6 +376,9 @@ fn approval_draft_json(ctx: &ApprovalContext, drafted_at: &str) -> Value {
         ApprovalRole::Lean => {
             value["claim_id"] = json!(ctx.candidate_id);
         }
+        ApprovalRole::Release => {
+            value["release_version"] = json!(ctx.candidate_id);
+        }
     }
     value
 }
@@ -409,6 +418,9 @@ fn approval_json(ctx: &ApprovalContext, approved_at: &str) -> Value {
         }
         ApprovalRole::Lean => {
             value["claim_id"] = json!(ctx.candidate_id);
+        }
+        ApprovalRole::Release => {
+            value["release_version"] = json!(ctx.candidate_id);
         }
     }
     value
@@ -539,6 +551,7 @@ fn role_from_str(role: &str) -> Result<ApprovalRole> {
         "training" => Ok(ApprovalRole::Training),
         "kernel" => Ok(ApprovalRole::Kernel),
         "lean" => Ok(ApprovalRole::Lean),
+        "release" => Ok(ApprovalRole::Release),
         other => bail!("unsupported approval role {other}"),
     }
 }
@@ -751,6 +764,96 @@ fn validate_lean_evidence(
         .or_else(|| request.get("claim_id").and_then(Value::as_str))
         .map(str::to_string)
         .context("Lean approval requires candidate.claim_id")
+}
+
+fn validate_release_evidence(evidence_dir: &Path, request: Option<&Value>) -> Result<String> {
+    let report_path = safe_join(evidence_dir, "release/release-report.json")?;
+    let report = load_json(&report_path)?;
+    reject_failed_release_gates(&report, &report_path)?;
+
+    let hosted_ci_path = safe_join(evidence_dir, "release/hosted-ci.json")?;
+    let hosted_ci = load_json(&hosted_ci_path)?;
+    require_json_status_in(&hosted_ci, &["passed"], &hosted_ci_path)?;
+    if !["workflow_url", "workflow_run_url", "url"]
+        .iter()
+        .any(|field| string_field_nonempty(&hosted_ci, field))
+    {
+        bail!(
+            "{} must include a hosted workflow URL",
+            hosted_ci_path.display()
+        );
+    }
+
+    let cosign_path = safe_join(evidence_dir, "release/cosign-verify.json")?;
+    let cosign = load_json(&cosign_path)?;
+    require_json_status_in(&cosign, &["passed", "verified"], &cosign_path)?;
+    if !["signer_identity", "identity", "certificate_identity"]
+        .iter()
+        .any(|field| string_field_nonempty(&cosign, field))
+    {
+        bail!("{} must include a signer identity", cosign_path.display());
+    }
+
+    let nix_check_path = safe_join(evidence_dir, "release/nix-check.log")?;
+    let nix_check = std::fs::read_to_string(&nix_check_path)
+        .with_context(|| format!("could not read {}", nix_check_path.display()))?;
+    if !nix_check.to_ascii_lowercase().contains("passed") {
+        bail!(
+            "{} must contain passed Nix check evidence",
+            nix_check_path.display()
+        );
+    }
+
+    let architecture_path = safe_join(evidence_dir, "release/architecture-matrix.json")?;
+    let architecture = load_json(&architecture_path)?;
+    let runners_ok = architecture
+        .get("runners")
+        .and_then(Value::as_array)
+        .is_some_and(|runners| !runners.is_empty());
+    if !runners_ok {
+        bail!(
+            "{} must include a non-empty runners array",
+            architecture_path.display()
+        );
+    }
+
+    let digest_path = safe_join(evidence_dir, "release/verifier-container-digest.txt")?;
+    let digest = std::fs::read_to_string(&digest_path)
+        .with_context(|| format!("could not read {}", digest_path.display()))?;
+    if digest.trim().is_empty() {
+        bail!("{} must not be empty", digest_path.display());
+    }
+
+    request
+        .and_then(|value| value.get("candidate"))
+        .and_then(|candidate| candidate.get("release_version"))
+        .and_then(Value::as_str)
+        .or_else(|| report.get("requested_version").and_then(Value::as_str))
+        .map(str::to_string)
+        .context("release approval requires candidate.release_version or release-report requested_version")
+}
+
+fn reject_failed_release_gates(report: &Value, path: &Path) -> Result<()> {
+    let Some(gates) = report.get("gates").and_then(Value::as_array) else {
+        return Ok(());
+    };
+    let failed = gates
+        .iter()
+        .filter(|gate| {
+            gate.get("status")
+                .and_then(Value::as_str)
+                .is_some_and(|status| status == "failed")
+        })
+        .filter_map(|gate| gate.get("name").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+    if !failed.is_empty() {
+        bail!(
+            "{} contains failed release gates: {}",
+            path.display(),
+            failed.join(", ")
+        );
+    }
+    Ok(())
 }
 
 fn first_existing(base: &Path, candidates: &[&str]) -> Option<PathBuf> {

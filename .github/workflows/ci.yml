@@ -13,6 +13,7 @@ env:
   # Match the toolchain pinned in lean/lean-toolchain so cache keys
   # invalidate when we upgrade Lean.
   LEAN_TOOLCHAIN: leanprover/lean4:v4.29.1
+  REFINEFORGE_RELEASE_VERSION: 0.2.2
 
 jobs:
   # ─── Build + verify on every supported OS ──────────────────────────
@@ -168,7 +169,7 @@ jobs:
 
       - name: Write release evidence dry run
         run: |
-          cargo run --release --bin refine -- release ready --version 0.2.1 --dry-run --allow-dirty --skip-docker --skip-signature --evidence-dir release/evidence/ci-${{ runner.os }}
+          cargo run --release --bin refine -- release ready --version ${{ env.REFINEFORGE_RELEASE_VERSION }} --dry-run --allow-dirty --skip-docker --skip-signature --evidence-dir release/evidence/ci-${{ runner.os }}
 
       # ─── Upload unsigned bundles (signing happens in a separate job
       #     that only runs on the canonical builder) ───────────────────

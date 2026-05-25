@@ -6,7 +6,7 @@ enough; each role needs real evidence and a named human approval file.
 
 ## Shared Approval Pattern
 
-Training, Kernel, and Lean use one review flow:
+Release, Training, Kernel, and Lean use one review flow:
 
 1. `refine approval draft` validates the role evidence and writes
    `approvals/<role>.draft.json`.
@@ -22,16 +22,16 @@ Training, Kernel, and Lean use one review flow:
    `decision: "approved"` plus `resolved_at`, `resolved_by`, `approval_path`,
    and `resolution_summary`.
 
-| Field | Training | Kernel | Lean |
-|---|---|---|---|
-| Role value | `training` | `kernel` | `lean` |
-| Candidate id | `candidate_model_id` / promotion `model_id` | `candidate.kernel_id` or HELYX handoff `kernel_id` | `candidate.claim_id` |
-| Review request | `approvals/training.review-request.json` | `approvals/kernel.review-request.json` | `approvals/lean.review-request.json` |
-| Draft output | `approvals/training.draft.json` | `approvals/kernel.draft.json` | `approvals/lean.draft.json` |
-| Final approval | `approvals/training.json` | `approvals/kernel.json` | `approvals/lean.json` |
-| Required evidence | checkpoint, eval, regression, compute ledger, conversion, promotion, train agent report | CUDA source, reference output, bit-exact report, hardware matrix, compiler metadata, performance baseline, HELYX handoff | refinement doc, Rust symbol scan, Lean proof report, exported bundle hashes |
-| Extra policy checks | metric deltas and smoke-run policy | passed CUDA/hardware/performance/handoff evidence | candidate `claim_file`, `refinement_doc`, and `bundle_path` exist |
-| Trust boundary | approval can unlock Training Agent `human-reviewed` only after all production-proof gates pass | approval can unlock Kernel Agent `human-reviewed` only after real CUDA evidence passes | approval can unlock Lean Agent `human-reviewed` only when claim scope and implementation link already support it |
+| Field | Release | Training | Kernel | Lean |
+|---|---|---|---|---|
+| Role value | `release` | `training` | `kernel` | `lean` |
+| Candidate id | `candidate.release_version` or release report version | `candidate_model_id` / promotion `model_id` | `candidate.kernel_id` or HELYX handoff `kernel_id` | `candidate.claim_id` |
+| Review request | `approvals/release.review-request.json` | `approvals/training.review-request.json` | `approvals/kernel.review-request.json` | `approvals/lean.review-request.json` |
+| Draft output | `approvals/release.draft.json` | `approvals/training.draft.json` | `approvals/kernel.draft.json` | `approvals/lean.draft.json` |
+| Final approval | `approvals/release.json` | `approvals/training.json` | `approvals/kernel.json` | `approvals/lean.json` |
+| Required evidence | release report, hosted CI, OIDC signing, SBOM, provenance, Nix lock/check, architecture matrix, verifier digest | checkpoint, eval, regression, compute ledger, conversion, promotion, train agent report | CUDA source, reference output, bit-exact report, hardware matrix, compiler metadata, performance baseline, HELYX handoff | refinement doc, Rust symbol scan, Lean proof report, exported bundle hashes |
+| Extra policy checks | hosted workflow URL, signer identity, Nix check log, runner matrix, non-empty verifier digest | metric deltas and smoke-run policy | passed CUDA/hardware/performance/handoff evidence | candidate `claim_file`, `refinement_doc`, and `bundle_path` exist |
+| Trust boundary | approval can unlock DevOps Agent `human-reviewed` only after hosted release evidence passes | approval can unlock Training Agent `human-reviewed` only after all production-proof gates pass | approval can unlock Kernel Agent `human-reviewed` only after real CUDA evidence passes | approval can unlock Lean Agent `human-reviewed` only when claim scope and implementation link already support it |
 
 ## 1. DevOps / Release
 
@@ -53,7 +53,22 @@ Run the CI workflow and download the artifact named
 - `release/architecture-matrix.json`
 - `release/verifier-container-digest.txt`
 
-After a human reviews the artifact, add:
+After a human reviews the artifact, use the approval helper:
+
+```bash
+refine approval draft \
+  --review-request production-proof/evidence/devops/approvals/release.review-request.json \
+  --policy approval-policy.yaml \
+  --operator "Galo Release Operator"
+
+refine approval approve \
+  --draft production-proof/evidence/devops/approvals/release.draft.json \
+  --policy approval-policy.yaml \
+  --operator "Galo Release Operator" \
+  --i-reviewed-this-evidence
+```
+
+This writes:
 
 ```json
 {
@@ -66,7 +81,7 @@ After a human reviews the artifact, add:
 }
 ```
 
-Save it as `approvals/release.json` inside that evidence directory, then run:
+Save or keep it as `approvals/release.json` inside that evidence directory, then run:
 
 ```bash
 REFINEFORGE_RELEASE_EVIDENCE_DIR=production-proof/evidence/devops \

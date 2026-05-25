@@ -70,7 +70,19 @@ allowed_operator_names:
   - Galo Kernel Operator
   - Galo Training Operator
   - Galo Lean Operator
+  - Galo Release Operator
 roles:
+  release:
+    required_evidence:
+      - release/release-report.json
+      - release/hosted-ci.json
+      - release/cosign-verify.json
+      - release/sbom.cyclonedx.json
+      - release/provenance.intoto.json
+      - release/flake.lock
+      - release/nix-check.log
+      - release/architecture-matrix.json
+      - release/verifier-container-digest.txt
   kernel:
     required_evidence:
       - kernels/src/hvector_add.cu
@@ -180,6 +192,76 @@ fn write_kernel_evidence(evidence_dir: &Path) {
             },
             "review_required": [
                 "Confirm kernel evidence."
+            ],
+            "non_approval_note": "This request is not an approval."
+        }),
+    );
+}
+
+fn write_release_evidence(evidence_dir: &Path) {
+    write_json(
+        &evidence_dir.join("release/release-report.json"),
+        json!({
+            "requested_version": "0.2.2",
+            "gates": [
+                {"name": "git-clean", "status": "passed", "required": true},
+                {"name": "docs-truth-audit", "status": "passed", "required": true}
+            ]
+        }),
+    );
+    write_json(
+        &evidence_dir.join("release/hosted-ci.json"),
+        json!({
+            "status": "passed",
+            "workflow_url": "https://github.com/example/refineforge/actions/runs/1",
+            "artifact_name": "refineforge-devops-production-evidence"
+        }),
+    );
+    write_json(
+        &evidence_dir.join("release/cosign-verify.json"),
+        json!({
+            "status": "passed",
+            "signer_identity": "https://github.com/example/refineforge/.github/workflows/ci.yml@refs/heads/master",
+            "issuer": "https://token.actions.githubusercontent.com"
+        }),
+    );
+    write_json(
+        &evidence_dir.join("release/sbom.cyclonedx.json"),
+        json!({"bomFormat": "CycloneDX", "components": [{"name": "refine"}]}),
+    );
+    write_json(
+        &evidence_dir.join("release/provenance.intoto.json"),
+        json!({"_type": "https://in-toto.io/Statement/v1", "subject": [{"name": "refine"}]}),
+    );
+    write_text(&evidence_dir.join("release/flake.lock"), "{\"nodes\":{}}\n");
+    write_text(
+        &evidence_dir.join("release/nix-check.log"),
+        "nix flake check passed\n",
+    );
+    write_json(
+        &evidence_dir.join("release/architecture-matrix.json"),
+        json!({
+            "status": "passed",
+            "runners": [{"os": "ubuntu-latest", "arch": "X64"}]
+        }),
+    );
+    write_text(
+        &evidence_dir.join("release/verifier-container-digest.txt"),
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+    );
+    write_json(
+        &evidence_dir.join("approvals/release.review-request.json"),
+        json!({
+            "schema_version": "refineforge-human-review-request-v1",
+            "role": "release",
+            "decision": "pending",
+            "requested_at": "2026-05-25T00:00:00Z",
+            "candidate": {
+                "release_version": "0.2.2",
+                "evidence_dir": evidence_dir.display().to_string()
+            },
+            "review_required": [
+                "Confirm hosted CI, OIDC signing, Nix, SBOM, provenance, architecture, verifier container, and release evidence."
             ],
             "non_approval_note": "This request is not an approval."
         }),
@@ -308,6 +390,78 @@ fn write_lean_evidence(evidence_dir: &Path, workspace: &Path) {
             "non_approval_note": "This request is not an approval."
         }),
     );
+}
+
+#[test]
+fn approval_release_draft_verifies_hosted_release_evidence() {
+    let td = tempfile::tempdir().unwrap();
+    let evidence_dir = td.path().join("release-evidence");
+    let policy = td.path().join("approval-policy.yaml");
+    write_release_evidence(&evidence_dir);
+    write_role_policy(&policy);
+    let request = evidence_dir.join("approvals/release.review-request.json");
+
+    let output = run_refine(&[
+        "--root",
+        ".",
+        "approval",
+        "draft",
+        "--review-request",
+        request.to_str().unwrap(),
+        "--policy",
+        policy.to_str().unwrap(),
+        "--operator",
+        "Galo Release Operator",
+        "--json",
+    ]);
+
+    assert_success(&output);
+    assert!(evidence_dir.join("approvals/release.draft.json").exists());
+    assert!(!evidence_dir.join("approvals/release.json").exists());
+    let draft = read_json(&evidence_dir.join("approvals/release.draft.json"));
+    assert_eq!(draft["role"], "release");
+    assert_eq!(draft["release_version"], "0.2.2");
+    assert_eq!(draft["decision"], "draft-ready");
+    let request = read_json(&request);
+    assert_eq!(request["status"], "draft-ready");
+    assert_eq!(request["decision"], "pending");
+}
+
+#[test]
+fn approval_release_approve_writes_final_approval_and_resolves_request() {
+    let td = tempfile::tempdir().unwrap();
+    let evidence_dir = td.path().join("release-evidence");
+    let policy = td.path().join("approval-policy.yaml");
+    write_release_evidence(&evidence_dir);
+    write_role_policy(&policy);
+    let request = evidence_dir.join("approvals/release.review-request.json");
+
+    let output = run_refine(&[
+        "--root",
+        ".",
+        "approval",
+        "approve",
+        "--review-request",
+        request.to_str().unwrap(),
+        "--policy",
+        policy.to_str().unwrap(),
+        "--operator",
+        "Galo Release Operator",
+        "--i-reviewed-this-evidence",
+        "--json",
+    ]);
+
+    assert_success(&output);
+    let approval = read_json(&evidence_dir.join("approvals/release.json"));
+    assert_eq!(approval["schema_version"], "refineforge-human-approval-v1");
+    assert_eq!(approval["role"], "release");
+    assert_eq!(approval["decision"], "approved");
+    assert_eq!(approval["human_operator"], "Galo Release Operator");
+    assert_eq!(approval["release_version"], "0.2.2");
+    let request = read_json(&request);
+    assert_eq!(request["status"], "approved");
+    assert_eq!(request["decision"], "approved");
+    assert_eq!(request["resolved_by"], "Galo Release Operator");
 }
 
 #[test]
