@@ -352,6 +352,67 @@ fn write_complete_training_evidence(dir: &Path) {
     );
 }
 
+fn write_complete_kernel_evidence_without_approval(dir: &Path) {
+    std::fs::create_dir_all(dir.join("kernels/src")).unwrap();
+    std::fs::write(
+        dir.join("kernels/src/hvector_add.cu"),
+        b"__global__ void hvector_add() {}\n",
+    )
+    .unwrap();
+    write_json(
+        &dir.join("kernels/reference-output.json"),
+        serde_json::json!({
+            "schema_version": "refineforge-kernel-reference-v1",
+            "status": "passed",
+            "kind": "golden-output",
+            "kernel_id": "helyx.hvector_add.cuda_v1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }),
+    );
+    write_json(
+        &dir.join("kernels/hardware-matrix.json"),
+        serde_json::json!({
+            "schema_version": "refineforge-kernel-hardware-matrix-v1",
+            "runs": [{
+                "status": "passed",
+                "gpu_name": "NVIDIA GeForce RTX 3060 Laptop GPU",
+                "gpu_arch": "8.6",
+                "driver_version": "595.97",
+                "cuda_toolkit": "13.2",
+                "os": "windows"
+            }]
+        }),
+    );
+    write_json(
+        &dir.join("kernels/compiler-metadata.json"),
+        serde_json::json!({
+            "schema_version": "refineforge-kernel-compiler-metadata-v1",
+            "status": "passed",
+            "nvcc": "Cuda compilation tools, release 13.2, V13.2.78",
+            "flags": ["-O2", "--std=c++17"]
+        }),
+    );
+    write_json(
+        &dir.join("kernels/performance-baseline.json"),
+        serde_json::json!({
+            "schema_version": "refineforge-kernel-performance-baseline-v1",
+            "status": "passed",
+            "latency_ms": 0.1,
+            "regression_threshold_pct": 5.0
+        }),
+    );
+    write_json(
+        &dir.join("kernels/helyx-handoff.json"),
+        serde_json::json!({
+            "schema_version": "refineforge-kernel-helyx-handoff-v1",
+            "status": "accepted",
+            "kernel_id": "helyx.hvector_add.cuda_v1",
+            "source_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "config_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }),
+    );
+}
+
 fn hex_sha256(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
@@ -1310,4 +1371,97 @@ fn agent_kernel_rejects_fake_env_presence_as_production_evidence() {
         requirement_status(&report, "kernel.human_kernel_approval"),
         "passed"
     );
+}
+
+#[test]
+fn agent_kernel_complete_evidence_without_approval_only_blocks_human_review() {
+    let td = tempfile::tempdir().unwrap();
+    let stub = write_kernel_enterprise_stub(td.path());
+    let evidence_dir = td.path().join("kernel-evidence");
+    write_complete_kernel_evidence_without_approval(&evidence_dir);
+    let out = td.path().join("kernel-complete-evidence");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .env("REFINEFORGE_REFINE_BITEXACT_BIN", &stub)
+        .env("REFINEFORGE_KERNEL_EVIDENCE_DIR", &evidence_dir)
+        .args([
+            "--root", ".", "agent", "kernel", "--mode", "execute", "--target", "helyx", "--out",
+        ])
+        .arg(&out)
+        .arg("--json")
+        .output()
+        .expect("run kernel complete-evidence execute");
+
+    assert_success(&output);
+    let report = read_json(&out.join("kernel.json"));
+    assert_eq!(report["trust_level"], "measured-only");
+    assert_eq!(report["production_proof"]["status"], "blocked");
+    for id in [
+        "kernel.real_source",
+        "kernel.cpu_reference",
+        "kernel.bitexact_fixture",
+        "kernel.hardware_matrix",
+        "kernel.compiler_runtime_metadata",
+        "kernel.performance_baseline",
+        "kernel.helyx_handoff",
+    ] {
+        assert_eq!(
+            requirement_status(&report, id),
+            "passed",
+            "{id} should pass with complete non-approval evidence"
+        );
+    }
+    assert_eq!(
+        requirement_status(&report, "kernel.human_kernel_approval"),
+        "blocked"
+    );
+    let blockers: Vec<_> = report["production_proof"]["blockers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|blocker| blocker.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        blockers,
+        ["human kernel approval is missing"],
+        "complete kernel evidence should leave only the explicit human approval blocker"
+    );
+}
+
+#[test]
+fn agent_kernel_complete_evidence_with_human_approval_reaches_human_reviewed() {
+    let td = tempfile::tempdir().unwrap();
+    let stub = write_kernel_enterprise_stub(td.path());
+    let evidence_dir = td.path().join("kernel-evidence");
+    write_complete_kernel_evidence_without_approval(&evidence_dir);
+    write_role_approval(
+        &evidence_dir.join("approvals/kernel.json"),
+        "kernel",
+        "Galo Kernel Operator",
+    );
+    let out = td.path().join("kernel-human-reviewed");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .env("REFINEFORGE_REFINE_BITEXACT_BIN", &stub)
+        .env("REFINEFORGE_KERNEL_EVIDENCE_DIR", &evidence_dir)
+        .args([
+            "--root", ".", "agent", "kernel", "--mode", "execute", "--target", "helyx", "--out",
+        ])
+        .arg(&out)
+        .arg("--json")
+        .output()
+        .expect("run kernel human-reviewed execute");
+
+    assert_success(&output);
+    let report = read_json(&out.join("kernel.json"));
+    assert_eq!(report["status"], "passed");
+    assert_eq!(report["trust_level"], "human-reviewed");
+    assert_eq!(report["runtime"]["trust_ceiling"], "human-reviewed");
+    assert_eq!(report["production_proof"]["status"], "human-reviewed");
+    assert!(report["production_proof"]["blockers"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }

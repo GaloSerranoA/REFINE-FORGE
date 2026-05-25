@@ -1,0 +1,16 @@
+{
+  "schema_version": "refineforge-kernel-hardware-matrix-v1",
+  "captured_at": "2026-05-25T13:32:12Z",
+  "runs": [
+    {
+      "status": "passed",
+      "kernel_id": "helyx.hvector_add.cuda_v1",
+      "gpu_name": "NVIDIA GeForce RTX 3060 Laptop GPU",
+      "gpu_arch": "8.6",
+      "driver_version": "595.97",
+      "cuda_toolkit": "13.2",
+      "os": "Windows",
+      "evidence_command": "nvidia-smi --query-gpu=name,driver_version,compute_cap --format=csv,noheader"
+    }
+  ]
+}

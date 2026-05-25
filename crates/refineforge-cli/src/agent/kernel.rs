@@ -1,8 +1,8 @@
 use super::common::{
     action_intent, capability, existing_artifact, repo_tool_check, seal_runtime,
-    set_production_proof, string_field_nonempty, validate_human_approval, validate_json_file,
-    ActionIntent, AgentMode, AgentReport, AgentStatus, CommandRecord, EvidenceValidation,
-    ProductionProofStatus, ProductionRequirement, TrustLevel,
+    set_production_proof, string_field_nonempty, valid_sha256, validate_human_approval,
+    validate_json_file, ActionIntent, AgentMode, AgentReport, AgentStatus, CommandRecord,
+    EvidenceValidation, ProductionProofStatus, ProductionRequirement, TrustLevel,
 };
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -29,7 +29,7 @@ pub fn build(root: &Path, mode: AgentMode, target: &str, out_dir: &Path) -> Agen
         capability(
             "helyx-kernels-boundary",
             "tool_gated",
-            "real CUDA kernels remain external; Refine-Forge owns the evidence gate",
+            "HELYX production kernels remain external; Refine-Forge owns local CUDA smoke and evidence gates",
         ),
     ]);
     report.tool_checks.extend([
@@ -134,14 +134,51 @@ pub fn build(root: &Path, mode: AgentMode, target: &str, out_dir: &Path) -> Agen
         .iter()
         .any(|command| command.name == "bitexact-run" && command.status == AgentStatus::Passed);
     apply_kernel_production_proof(&mut report, root, target, lint_passed, run_passed);
+    let production_status = report.production_proof.status;
+    if report.status == AgentStatus::Passed
+        && production_status == ProductionProofStatus::HumanReviewed
+    {
+        report.finish(
+            AgentStatus::Passed,
+            TrustLevel::HumanReviewed,
+            "Kernel CUDA source, CPU reference/golden output, bit-exact run, hardware matrix, compiler/runtime metadata, performance baseline, HELYX handoff, and named human approval evidence all passed.",
+        );
+    } else if report.status == AgentStatus::Passed
+        && kernel_production_only_missing_human_approval(&report)
+    {
+        report.finish(
+            AgentStatus::Passed,
+            TrustLevel::MeasuredOnly,
+            "Kernel CUDA source, CPU reference/golden output, bit-exact run, hardware matrix, compiler/runtime metadata, performance baseline, and HELYX handoff evidence passed. Production proof remains blocked until a named human kernel approval file is provided.",
+        );
+    }
+    let trust_ceiling = if production_status == ProductionProofStatus::HumanReviewed {
+        TrustLevel::HumanReviewed
+    } else {
+        TrustLevel::MeasuredOnly
+    };
     seal_runtime(
         root,
         Some(out_dir),
         &mut report,
-        TrustLevel::MeasuredOnly,
+        trust_ceiling,
         kernel_action_intents(mode),
     );
     report
+}
+
+fn kernel_production_only_missing_human_approval(report: &AgentReport) -> bool {
+    let requirements = &report.production_proof.requirements;
+    !requirements.is_empty()
+        && requirements
+            .iter()
+            .filter(|requirement| requirement.status != AgentStatus::Passed)
+            .all(|requirement| requirement.id == "kernel.human_kernel_approval")
+        && report
+            .production_proof
+            .blockers
+            .iter()
+            .all(|blocker| blocker.contains("human kernel approval"))
 }
 
 fn apply_kernel_production_proof(
@@ -190,29 +227,16 @@ fn apply_kernel_production_proof(
         blockers.push(source_contract.blocker);
     }
 
-    requirements.push(ProductionRequirement::new(
+    let cpu_reference = validate_kernel_cpu_reference(role_evidence_dir.as_deref(), root);
+    requirements.push(ProductionRequirement::new_owned(
         "kernel.cpu_reference",
         "CPU reference implementation or committed golden output exists",
-        if root
-            .join("kernels/fixtures/helyx-bitexact-input.txt")
-            .exists()
-        {
-            AgentStatus::Partial
-        } else {
-            AgentStatus::Blocked
-        },
-        &[
-            if root
-                .join("kernels/fixtures/helyx-bitexact-input.txt")
-                .exists()
-            {
-                "smoke fixture exists; production CPU reference still required"
-            } else {
-                "CPU reference or golden output fixture is missing"
-            },
-        ],
+        cpu_reference.status,
+        cpu_reference.evidence,
     ));
-    blockers.push("production CPU reference/golden output evidence is missing".to_string());
+    if cpu_reference.status != AgentStatus::Passed {
+        blockers.push("production CPU reference/golden output evidence is missing".to_string());
+    }
 
     requirements.push(ProductionRequirement::new(
         "kernel.bitexact_fixture",
@@ -423,6 +447,67 @@ fn validate_compiler_metadata(evidence_dir: Option<&Path>) -> EvidenceValidation
         );
     }
     validation
+}
+
+#[derive(Debug, Clone)]
+struct KernelReferenceValidation {
+    status: AgentStatus,
+    evidence: Vec<String>,
+}
+
+fn validate_kernel_cpu_reference(
+    evidence_dir: Option<&Path>,
+    root: &Path,
+) -> KernelReferenceValidation {
+    let path = kernel_evidence_path(
+        evidence_dir,
+        "REFINEFORGE_KERNEL_CPU_REFERENCE",
+        "kernels/reference-output.json",
+        "reference-output.json",
+    );
+    let mut validation = validate_json_file(
+        path.as_deref(),
+        "kernel CPU reference/golden output",
+        &["accepted", "passed"],
+    );
+    if validation.passed {
+        if let Some(path) = validation.artifact.as_deref() {
+            if let Some(value) = super::common::read_json_value(path) {
+                let sha = ["sha256", "output_sha256", "reference_sha256"]
+                    .iter()
+                    .filter_map(|field| value.get(*field).and_then(|v| v.as_str()))
+                    .find(|candidate| valid_sha256(candidate));
+                if sha.is_some() {
+                    return KernelReferenceValidation {
+                        status: AgentStatus::Passed,
+                        evidence: validation.evidence,
+                    };
+                }
+            }
+        }
+        validation.passed = false;
+        validation.evidence.push(
+            "kernel CPU reference/golden output must include sha256, output_sha256, or reference_sha256"
+                .to_string(),
+        );
+    }
+
+    let smoke_fixture = root.join("kernels/fixtures/helyx-bitexact-input.txt");
+    if smoke_fixture.exists() {
+        let mut evidence = vec![format!(
+            "smoke fixture exists at {}; production CPU reference still required",
+            smoke_fixture.display()
+        )];
+        evidence.extend(validation.evidence);
+        return KernelReferenceValidation {
+            status: AgentStatus::Partial,
+            evidence,
+        };
+    }
+    KernelReferenceValidation {
+        status: AgentStatus::Blocked,
+        evidence: validation.evidence,
+    }
 }
 
 fn validate_kernel_approval(evidence_dir: Option<&Path>) -> EvidenceValidation {

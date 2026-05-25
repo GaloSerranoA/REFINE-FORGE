@@ -126,14 +126,51 @@ pub fn build(root: &Path, mode: AgentMode, target: &str) -> AgentReport {
         scan.is_ok(),
         lint.is_ok(),
     );
+    let production_status = report.production_proof.status;
+    if report.status == AgentStatus::Passed
+        && production_status == ProductionProofStatus::HumanReviewed
+    {
+        report.finish(
+            AgentStatus::Passed,
+            TrustLevel::HumanReviewed,
+            "Lean, scan, claim lint, implementation-linked claim scope, refinement docs, bundle hashes, and named human review evidence all passed.",
+        );
+    } else if report.status == AgentStatus::Passed
+        && lean_production_only_missing_human_review(&report)
+    {
+        report.finish(
+            AgentStatus::Passed,
+            report.trust_level,
+            "Lean implementation-linked evidence passed. Production proof remains blocked until named human Lean review evidence is provided.",
+        );
+    }
+    let trust_ceiling = if production_status == ProductionProofStatus::HumanReviewed {
+        TrustLevel::HumanReviewed
+    } else {
+        TrustLevel::ModelLinked
+    };
     seal_runtime(
         root,
         None,
         &mut report,
-        TrustLevel::ModelLinked,
+        trust_ceiling,
         lean_action_intents(mode),
     );
     report
+}
+
+fn lean_production_only_missing_human_review(report: &AgentReport) -> bool {
+    let requirements = &report.production_proof.requirements;
+    !requirements.is_empty()
+        && requirements
+            .iter()
+            .filter(|requirement| requirement.status != AgentStatus::Passed)
+            .all(|requirement| requirement.id == "lean.human_review")
+        && report
+            .production_proof
+            .blockers
+            .iter()
+            .all(|blocker| blocker.contains("human review"))
 }
 
 fn apply_lean_production_proof(

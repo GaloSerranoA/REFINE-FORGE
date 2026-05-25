@@ -298,7 +298,8 @@ The CUDA engineer owns:
   in both directions): ✅ shipped
 - HELYX-compatible strict contract fixture (`helyx-bitexact-smoke.yaml`): ✅ shipped
 - Expected output baselines + input-file manifests in reports: ✅ shipped
-- `kernels/src/` actual CUDA kernels: ❌ empty (CUDA engineer fills)
+- `kernels/src/` actual CUDA source: ✅ local `hvector_add.cu` smoke kernel
+- HELYX production kernels: ❌ pending handoff from `helyx-kernels`
 - `docs/bit-exact-reproducibility.md` methodology: ✅ shipped
 - CI matrix with GPU runners: ❌ not yet (requires self-hosted GPU
   CI infrastructure)
@@ -307,20 +308,22 @@ The CUDA engineer owns:
 
 **Open work, in order**
 
-1. Assign the HELYX kernel owner. The Refine-Forge gate contract is ready.
-2. Write the first real `helyx-kernels` implementation under the HELYX
+1. Promote the local `hvector_add.cu` smoke evidence only as a Refine-Forge
+   gate proof, not as HELYX kernel correctness.
+2. Assign the HELYX kernel owner. The Refine-Forge gate contract is ready.
+3. Write the first real `helyx-kernels` implementation under the HELYX
    repository, then expose a wrapper command for Refine-Forge.
-3. If mirroring source in this repo is desired, add the reviewed kernel
+4. If mirroring source in this repo is desired, add the reviewed kernel
    under `kernels/src/`. Compile to
    `kernels/scripts/<name>`.
-4. Author the first real bit-exact gate config using `profile: helyx_cuda`;
+5. Author the first real HELYX bit-exact gate config using `profile: helyx_cuda`;
    verify it passes on
    a single GPU.
-5. Add a self-hosted GPU runner to CI; wire the `bit-exact-gate`
+6. Add a self-hosted GPU runner to CI; wire the `bit-exact-gate`
    job.
-6. Add a second GPU class (different hardware); verify
+7. Add a second GPU class (different hardware); verify
    cross-hardware bit-exactness.
-7. Iterate on every kernel HELYX (or other consumers) want
+8. Iterate on every kernel HELYX (or other consumers) want
    reproducibility-attested.
 
 **Interface to other sections**

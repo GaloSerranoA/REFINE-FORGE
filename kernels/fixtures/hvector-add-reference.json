@@ -1,0 +1,8 @@
+{
+  "schema_version": "refineforge-kernel-reference-v1",
+  "status": "passed",
+  "kind": "golden-output",
+  "kernel_id": "helyx.hvector_add.cuda_v1",
+  "stdout": "hvector_add_cuda_v1: 6 8 10 12\n",
+  "sha256": "586c6765999cadd57d87ba888110daa8c5c9cc9c535432d57766e60e3c89e5ac"
+}

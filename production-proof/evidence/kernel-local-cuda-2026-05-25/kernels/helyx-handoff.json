@@ -1,0 +1,27 @@
+{
+  "schema_version": "refineforge-kernel-helyx-handoff-v1",
+  "status": "accepted",
+  "kernel_id": "helyx.hvector_add.cuda_v1",
+  "target": "HELYX",
+  "source": {
+    "path": "kernels/src/hvector_add.cu",
+    "sha256": "3d7d9aa3b274514fc395d8780ef91cf83da10892930cee0a031af0772d2b8298"
+  },
+  "config": {
+    "path": "kernels/configs/hvector-add-cuda.yaml",
+    "sha256": "d5d3c76e4761c4e5511a498fba42012e6f02377f6f7cf04268cd5806effaa1c0"
+  },
+  "wrapper": {
+    "path": "kernels/scripts/run-hvector-add-cuda.cmd",
+    "sha256": "4b9036cedecfd5bcbe3fd07133895fd439eca54f6ea8420ab0a9d6328b0bb0a2"
+  },
+  "reference": {
+    "path": "kernels/fixtures/hvector-add-reference.json",
+    "sha256": "c0a25e1658fbe0064191ecf787d3f72599cd3a3db5da1e59d4c28e38baf66d02",
+    "output_sha256": "586c6765999cadd57d87ba888110daa8c5c9cc9c535432d57766e60e3c89e5ac"
+  },
+  "bitexact_report": {
+    "path": "kernels/runs/live-hvector-add/hvector-add-cuda/bitexact-report.json",
+    "sha256": "b9a0a58bfdb94b6a244d4d8fc53f3150a81cd464315775fd2c057d957fbdb6fd"
+  }
+}

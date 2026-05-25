@@ -15,9 +15,10 @@ refine agent devops --mode execute --target 0.2.2 --allow-expensive --out agent-
 
 Use the generated `devops.json` report and any nested release evidence it
 records. The runtime envelope caps the local command surface at
-`release-ready-local`. Local reports do not imply hosted CI or OIDC signing.
-Docker and signature gates are skipped unless `--allow-expensive` is passed and
-the local tools actually run successfully.
+`release-ready-local` unless hosted CI/OIDC, Nix, artifact, architecture, and
+named human release approval evidence all pass. Local reports do not imply
+hosted CI or OIDC signing. Docker and signature gates are skipped unless
+`--allow-expensive` is passed and the local tools actually run successfully.
 
 ## Allowed Work
 

@@ -28,12 +28,15 @@ Every agent report contains a `runtime` object:
 
 The runtime caps any over-claim before the report is written:
 
-- Lean: at most `model-linked`; current claim scope may still lower it to
-  `model-only`.
-- DevOps: at most `release-ready-local`; hosted CI/OIDC evidence is separate.
-- Training: at most `measured-only`; model quality requires benchmark evidence.
-- Kernel: at most `measured-only`; CUDA correctness requires real kernel and
-  hardware evidence.
+- Lean: at most `model-linked` unless the production-proof envelope reaches
+  `human-reviewed`; current claim scope may still lower it to `model-only`.
+- DevOps: at most `release-ready-local` unless hosted CI/OIDC evidence and
+  human release approval make the production-proof envelope `human-reviewed`.
+- Training: at most `measured-only` unless checkpoint, eval, regression,
+  compute, conversion, promotion, and human approval evidence all pass.
+- Kernel: at most `measured-only` unless real source/reference, bit-exact run,
+  hardware, compiler, performance, HELYX handoff, and human approval evidence
+  all pass.
 - Run-all: the lowest trust ceiling and lowest emitted role trust drive the
   dashboard.
 

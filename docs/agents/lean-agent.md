@@ -14,7 +14,10 @@ refine agent lean --mode execute --target helyx --out agent-reports/lean
 
 Use the generated `lean.json` report. It records proof inventory, liveness,
 runtime authority, action intents, evidence receipts, capabilities, tool
-checks, command evidence, status, trust level, warnings, and blockers.
+checks, command evidence, status, trust level, warnings, and blockers. The
+runtime ceiling can reach `human-reviewed` only when the selected
+implementation-linked claims, refinement docs, bundle hashes, and named Lean
+approval evidence all pass.
 
 ## Allowed Work
 

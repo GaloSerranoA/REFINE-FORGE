@@ -70,7 +70,7 @@ and gate artifacts around those systems.
 | 1 | Lean 4 / verification engineer | `refine lean`, `refine scan`, bundle export/verify, template provenance, claim linting | Proves and packages claims about HELYX-adjacent Rust behavior |
 | 2 | Release / infrastructure / DevOps engineer | CI gates, release readiness, verifier container, SBOM/provenance evidence, docs truth audit, signed-bundle flow | Makes releases auditable; first real remote/OIDC signing still depends on hosted CI |
 | 3 | ML / training engineer | `refine-train` dataset audit, SFT packing, causal-LM preprocessing, built-in `refineforge_native` and `refineforge_native_causal_lm` smoke training, HELYX/HRM/PyTorch orchestration, checkpoints, reports, evidence generation, local-finetune promotion, and Training Agent evidence validation | Refine-Forge can run local native smoke training and produce evidence packs; production model trust still requires real held-out eval, regression, compute ledger, conversion, promotion lineage, and human approval evidence |
-| 4 | GPU / kernel Rust engineer | `refine-bitexact` lint/run/run-all, HELYX-compatible kernel metadata, input manifests, expected SHA-256 baselines, CI summary JSON | `helyx-kernels` implements kernels; Refine-Forge proves bit-exact gate evidence |
+| 4 | GPU / kernel Rust engineer | `refine-bitexact` lint/run/run-all, HELYX-compatible kernel metadata, input manifests, expected SHA-256 baselines, local CUDA smoke source/evidence, CI summary JSON | `helyx-kernels` implements production kernels; Refine-Forge proves bit-exact gate evidence |
 
 The four specialist roles are exposed as CLI agents:
 `refine agent lean|devops|train|kernel|run-all`. Every agent report now carries
@@ -86,6 +86,13 @@ pointer to real files. It validates checkpoint, eval, regression, compute
 ledger, promotion, and human approval artifacts before it can emit
 `human-reviewed`; missing paths or placeholder approvals keep it
 `measured-only`.
+
+The Kernel lane now includes a real local CUDA smoke gate,
+`kernels/src/hvector_add.cu` with `kernels/configs/hvector-add-cuda.yaml`.
+That proves local source/hardware/bit-exact evidence capture on one RTX 3060
+Laptop GPU. It does not prove full HELYX kernel correctness or cross-hardware
+portability until HELYX production kernels, GPU CI runners, and human kernel
+approval evidence are present.
 
 ## What this is *not*
 

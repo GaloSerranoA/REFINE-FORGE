@@ -1,0 +1,16 @@
+{
+  "schema_version": "refineforge-lean-bundle-hashes-v1",
+  "status": "passed",
+  "captured_at": "2026-05-25T13:37:24Z",
+  "bundles": [
+    {
+      "claim_id": "EXAMPLE-003",
+      "bundle_path": "artifacts/EXAMPLE-003",
+      "manifest_sha256": "2a8530050e20596bc92f364be019214d1b5f5a1e8fe75f3aa82930c5966e269c",
+      "report_sha256": "44d36d38496a05b63d0c87754412ba0b452dbc82966e2528c55e30a23d561662",
+      "sha256": "2a8530050e20596bc92f364be019214d1b5f5a1e8fe75f3aa82930c5966e269c",
+      "claim_sha256": "a5aa43c006e3539a47273dfb14a12ee9660aace57dfa7b097c61e8bb195ed330",
+      "refinement_doc_sha256": "64b276eeb2d4106b70f6e876adfa6a28095a7e024fde456a7a7b9afc6e418325"
+    }
+  ]
+}

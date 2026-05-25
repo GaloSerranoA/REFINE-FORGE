@@ -1,0 +1,49 @@
+{
+  "schema_version": "refineforge-devops-live-blockers-v1",
+  "status": "blocked",
+  "captured_at": "2026-05-25T13:40:00Z",
+  "target_branch": "master",
+  "blockers": [
+    {
+      "id": "devops.flake_lock_absent",
+      "requirement": "commit a real flake.lock",
+      "command": "Test-Path flake.lock",
+      "exit_code": 0,
+      "observed": "False",
+      "impact": "Cannot claim Nix lock/check evidence."
+    },
+    {
+      "id": "devops.nix_unavailable",
+      "requirement": "run nix flake check without updating the lock",
+      "command": "Get-Command nix -ErrorAction SilentlyContinue",
+      "exit_code": 1,
+      "observed": "no nix executable resolved in PowerShell",
+      "impact": "Cannot generate a real flake.lock or nix-check.log in this session."
+    },
+    {
+      "id": "devops.wsl_unavailable",
+      "requirement": "fallback Linux Nix environment",
+      "command": "wsl -l -v",
+      "exit_code": 1,
+      "observed": "Windows Subsystem for Linux is not installed.",
+      "impact": "Cannot use WSL as a Nix fallback."
+    },
+    {
+      "id": "devops.git_remote_absent",
+      "requirement": "push to GitHub and let hosted CI/OIDC signing run",
+      "command": "git remote -v",
+      "exit_code": 0,
+      "observed": "no remotes configured",
+      "impact": "Cannot push this repository to GitHub from the current checkout."
+    },
+    {
+      "id": "devops.gh_auth_absent",
+      "requirement": "download refineforge-devops-production-evidence from GitHub Actions",
+      "command": "gh auth status",
+      "exit_code": 1,
+      "observed": "You are not logged into any GitHub hosts. To log in, run: gh auth login",
+      "impact": "Cannot inspect GitHub Actions runs or download hosted artifacts."
+    }
+  ],
+  "non_claim": "This artifact records why DevOps cannot reach human-reviewed in this local session. It is not release approval evidence."
+}

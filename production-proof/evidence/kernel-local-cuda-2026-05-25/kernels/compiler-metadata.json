@@ -1,0 +1,13 @@
+{
+  "schema_version": "refineforge-kernel-compiler-metadata-v1",
+  "status": "passed",
+  "captured_at": "2026-05-25T13:32:12Z",
+  "nvcc": "Cuda compilation tools, release 13.2, V13.2.78",
+  "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "host": "x86_64-pc-windows-msvc",
+  "build_wrapper": "kernels/scripts/run-hvector-add-cuda.cmd",
+  "flags": [
+    "-O2",
+    "--std=c++17"
+  ]
+}

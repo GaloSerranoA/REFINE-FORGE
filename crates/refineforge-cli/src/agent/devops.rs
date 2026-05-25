@@ -154,14 +154,51 @@ pub fn build(
         target,
         Some(&evidence_dir),
     );
+    let production_status = report.production_proof.status;
+    if report.status == AgentStatus::Passed
+        && production_status == ProductionProofStatus::HumanReviewed
+    {
+        report.finish(
+            AgentStatus::Passed,
+            TrustLevel::HumanReviewed,
+            "DevOps local release readiness, hosted CI artifacts, OIDC signing, verifier container digest, SBOM/provenance, Nix check, architecture matrix, and named human release approval evidence all passed.",
+        );
+    } else if report.status == AgentStatus::Passed
+        && devops_production_only_missing_human_approval(&report)
+    {
+        report.finish(
+            AgentStatus::Passed,
+            TrustLevel::ReleaseReadyLocal,
+            "DevOps local readiness and hosted release evidence passed. Production proof remains blocked until a named human release approval file is provided.",
+        );
+    }
+    let trust_ceiling = if production_status == ProductionProofStatus::HumanReviewed {
+        TrustLevel::HumanReviewed
+    } else {
+        TrustLevel::ReleaseReadyLocal
+    };
     seal_runtime(
         root,
         Some(out_dir),
         &mut report,
-        TrustLevel::ReleaseReadyLocal,
+        trust_ceiling,
         devops_action_intents(mode, allow_expensive),
     );
     report
+}
+
+fn devops_production_only_missing_human_approval(report: &AgentReport) -> bool {
+    let requirements = &report.production_proof.requirements;
+    !requirements.is_empty()
+        && requirements
+            .iter()
+            .filter(|requirement| requirement.status != AgentStatus::Passed)
+            .all(|requirement| requirement.id == "devops.human_release_approval")
+        && report
+            .production_proof
+            .blockers
+            .iter()
+            .all(|blocker| blocker.contains("human release approval"))
 }
 
 fn apply_devops_production_proof(

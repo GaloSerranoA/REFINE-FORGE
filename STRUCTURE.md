@@ -14,7 +14,7 @@ discipline split (Lean Specialist / ML Engineer / DevOps / CUDA Engineer) read
 | 1 | Lean 4 / verification | `lean/`, `claims/`, `crates/refineforge-cli`, `refine agent lean`, templates, bundle artifacts | Lean proves the model; refinement docs and claim linting carry the human-reviewed Rust link |
 | 2 | Release / infrastructure / DevOps | `.github/workflows/ci.yml`, `release/`, `containers/Dockerfile.verifier`, `refine agent devops`, SBOM/provenance evidence | Local release-readiness works; Docker/signature gates require `--allow-expensive` or hosted CI; real hosted OIDC signing still requires a remote CI run |
 | 3 | ML / training engine | `crates/refineforge-trainer`, `training/`, `refine agent train`, local-finetune bridge in `refineforge-strategies` | Refine-Forge now runs native proof-repair smoke training and validates production evidence; HELYX/Axolotl/custom remain production-scale trainer backends |
-| 4 | GPU / kernel Rust | `crates/refineforge-bitexact`, `kernels/`, `refine agent kernel`, `docs/bit-exact-reproducibility.md` | `helyx-kernels` owns actual kernels; Refine-Forge owns deterministic gate evidence, input manifests, and expected-output baselines |
+| 4 | GPU / kernel Rust | `crates/refineforge-bitexact`, `kernels/`, `refine agent kernel`, `docs/bit-exact-reproducibility.md` | Refine-Forge owns local CUDA smoke evidence and deterministic gates; `helyx-kernels` owns production kernels |
 
 ## Top-level layout
 
@@ -52,8 +52,8 @@ refineforge/
 ├── kernels/                    # Section 4: GPU kernels + bit-exact gates
 │   ├── configs/                # per-kernel gate YAMLs + HELYX-compatible smoke
 │   ├── fixtures/               # deterministic input bytes hashed into reports
-│   ├── scripts/                # stub-deterministic + stub-nondeterministic
-│   ├── src/                    # actual .cu source (empty; CUDA engineer fills)
+│   ├── scripts/                # stub-deterministic + live CUDA wrappers
+│   ├── src/                    # actual .cu source, including the local hvector_add smoke kernel
 │   └── runs/                   # refine-bitexact per-gate reports (gitignored)
 ├── eval/
 │   ├── corpus/                 # broken-proof entries + ground truth

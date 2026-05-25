@@ -1,0 +1,49 @@
+# HELYX-compatible live CUDA bit-exact smoke contract.
+#
+# This fixture compiles and runs kernels/src/hvector_add.cu with the local
+# CUDA toolkit. It is intentionally small: the production value is not model
+# speed, it is real source, real hardware execution, and deterministic evidence.
+
+id: hvector-add-cuda
+template_version: refineforge-bitexact-v1
+producer: helyx-kernels
+kernel_id: helyx.hvector_add.cuda_v1
+profile: helyx_cuda
+description: |
+  Live CUDA smoke gate for the Refine-Forge Kernel agent. Refine-Forge owns
+  evidence capture and truth-bounded trust; HELYX owns downstream kernel use.
+
+command: "cmd /c kernels\\scripts\\run-hvector-add-cuda.cmd"
+runs: 5
+output: stdout
+source:
+  kind: cuda
+  path: kernels/src/hvector_add.cu
+reference:
+  kind: golden_output
+  path: kernels/fixtures/hvector-add-reference.json
+production:
+  requires_real_cuda: true
+expected_sha256: "586c6765999cadd57d87ba888110daa8c5c9cc9c535432d57766e60e3c89e5ac"
+
+input_files:
+  - kernels/src/hvector_add.cu
+  - kernels/scripts/run-hvector-add-cuda.cmd
+  - kernels/fixtures/hvector-add-reference.json
+
+tags:
+  - helyx
+  - cuda
+  - bitexact
+  - live-hardware
+
+env:
+  CUBLAS_WORKSPACE_CONFIG: ":4096:8"
+  CUDA_LAUNCH_BLOCKING: "1"
+  PYTHONHASHSEED: "0"
+
+hardware:
+  gpu: "NVIDIA GeForce RTX 3060 Laptop GPU"
+  cuda: "13.2"
+  driver: "595.97"
+  notes: "local Windows CUDA smoke evidence"

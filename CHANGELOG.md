@@ -10,6 +10,35 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — live Kernel and Lean production evidence packs
+
+- Added `kernels/src/hvector_add.cu`, `kernels/scripts/run-hvector-add-cuda.cmd`,
+  `kernels/configs/hvector-add-cuda.yaml`, and a pinned golden-output fixture
+  for a real local CUDA bit-exact smoke run.
+- Added `production-proof/evidence/kernel-local-cuda-2026-05-25/` with CPU
+  reference, hardware matrix, compiler metadata, performance baseline, HELYX
+  handoff, and pending human-review request evidence. The Kernel agent now
+  validates that non-approval evidence and remains blocked only on
+  `approvals/kernel.json`.
+- Added `production-proof/evidence/lean-example-003-2026-05-25/` with
+  exported EXAMPLE-003 bundle hashes and a pending Lean human-review request.
+- Added `production-proof/evidence/devops-live-blockers-2026-05-25/` to record
+  the real external blockers for DevOps human-reviewed closure: no
+  `flake.lock`, no Nix/WSL, no GitHub remote, and no GitHub CLI auth.
+
+### Changed — agent human-reviewed ceilings
+
+- Lean, DevOps, and Kernel agents now raise their runtime trust ceiling to
+  `human-reviewed` only when their production-proof envelope is already
+  `human-reviewed`; otherwise they keep the previous local/model/measured
+  ceilings.
+- Kernel production proof now accepts a real CPU reference/golden-output JSON
+  from `REFINEFORGE_KERNEL_EVIDENCE_DIR` instead of hard-coding that
+  requirement to partial when production evidence exists.
+- Added Kernel regressions proving complete non-approval evidence leaves only
+  the human approval blocker, and complete evidence plus a valid human approval
+  reaches `human-reviewed`.
+
 ### Added — hosted DevOps production evidence path
 
 - Added `scripts/ci/write-release-production-evidence.sh` for GitHub Actions

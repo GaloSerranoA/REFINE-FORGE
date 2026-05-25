@@ -94,7 +94,11 @@ kernel.helyx_handoff
 kernel.human_kernel_approval
 ```
 
-The current `kernels/src/` empty state must block `kernel.real_source`.
+Pre-implementation, `kernels/src/` was empty and had to block
+`kernel.real_source`. The current local smoke state now contains
+`kernels/src/hvector_add.cu`; production proof should pass the real-source
+requirement for that smoke gate while still blocking on missing human kernel
+approval.
 
 - [ ] **Step 3: Run focused test**
 

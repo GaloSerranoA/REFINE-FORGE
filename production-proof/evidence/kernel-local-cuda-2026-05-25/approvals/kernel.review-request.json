@@ -1,0 +1,16 @@
+{
+  "schema_version": "refineforge-human-review-request-v1",
+  "role": "kernel",
+  "decision": "pending",
+  "requested_at": "2026-05-25T13:32:12Z",
+  "requested_by": "refineforge-kernel-agent",
+  "candidate": {
+    "kernel_id": "helyx.hvector_add.cuda_v1",
+    "evidence_dir": "production-proof/evidence/kernel-local-cuda-2026-05-25"
+  },
+  "review_required": [
+    "Confirm the CUDA source, reference output, bit-exact report, hardware matrix, compiler metadata, performance baseline, and HELYX handoff are acceptable.",
+    "If acceptable, create approvals/kernel.json with schema_version refineforge-human-approval-v1, role kernel, decision approved, approved_at, human_operator, and evidence_summary."
+  ],
+  "non_approval_note": "This request is not an approval and does not upgrade Kernel trust to human-reviewed."
+}
