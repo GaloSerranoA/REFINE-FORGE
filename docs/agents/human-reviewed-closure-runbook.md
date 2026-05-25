@@ -56,11 +56,33 @@ Prerequisites:
 
 Create a Lean evidence directory with:
 
-- `lean/claims-report.json`
-- `lean/proof-inventory.md`
-- `lean/refinement-links.json`
-- `lean/bundle-hashes.json`
-- `approvals/lean.json`
+- `lean/refinement-doc.md`
+- `lean/rust-symbol-scan.json`
+- `lean/lean-proof-report.json`
+- `lean/exported-bundle-hashes.json`
+- `approvals/lean.review-request.json`
+
+Draft the approval without creating final human approval:
+
+```bash
+refine approval draft \
+  --review-request production-proof/evidence/lean/approvals/lean.review-request.json \
+  --policy approval-policy.yaml \
+  --operator "Galo Lean Operator" \
+  --json
+```
+
+After a real human reviews the evidence, finalize explicitly:
+
+```bash
+refine approval approve \
+  --role lean \
+  --evidence-dir production-proof/evidence/lean \
+  --policy approval-policy.yaml \
+  --operator "Galo Lean Operator" \
+  --i-reviewed-this-evidence \
+  --json
+```
 
 Then run:
 
@@ -74,21 +96,23 @@ cannot override claim YAML.
 
 ## 3. Training
 
-Run the live training/eval path, then draft and approve through the existing
+Run the live training/eval path, then draft and approve through the shared
 approval helper:
 
 ```bash
-refine training-approval draft \
+refine approval draft \
+  --role training \
   --evidence-dir production-proof/evidence/<training-run> \
   --agent-report production-proof/evidence/<training-run>/train-agent-report.stdout.json \
-  --policy training/approval-policy.yaml \
+  --policy approval-policy.yaml \
   --operator "Galo Training Operator" \
   --json
 
-refine training-approval approve \
+refine approval approve \
+  --role training \
   --evidence-dir production-proof/evidence/<training-run> \
   --agent-report production-proof/evidence/<training-run>/train-agent-report.stdout.json \
-  --policy training/approval-policy.yaml \
+  --policy approval-policy.yaml \
   --operator "Galo Training Operator" \
   --i-reviewed-this-evidence \
   --json
@@ -114,11 +138,35 @@ Prerequisites:
 Create a kernel evidence directory with:
 
 - `kernels/src/<kernel>.cu`
+- `kernels/reference-output.json`
+- `kernels/bitexact-report.json`
 - `kernels/hardware-matrix.json`
 - `kernels/compiler-metadata.json`
 - `kernels/performance-baseline.json`
 - `kernels/helyx-handoff.json`
-- `approvals/kernel.json`
+- `approvals/kernel.review-request.json`
+
+Draft the approval without creating final human approval:
+
+```bash
+refine approval draft \
+  --review-request production-proof/evidence/kernel/approvals/kernel.review-request.json \
+  --policy approval-policy.yaml \
+  --operator "Galo Kernel Operator" \
+  --json
+```
+
+After a real human reviews the evidence, finalize explicitly:
+
+```bash
+refine approval approve \
+  --role kernel \
+  --evidence-dir production-proof/evidence/kernel \
+  --policy approval-policy.yaml \
+  --operator "Galo Kernel Operator" \
+  --i-reviewed-this-evidence \
+  --json
+```
 
 Then run:
 

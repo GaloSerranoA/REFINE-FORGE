@@ -61,17 +61,19 @@ production proof blocked.
 
 ## Approval Automation
 
-`refine training-approval` automates the mechanical parts of training approval
-without crossing the human trust boundary.
+`refine approval` automates the mechanical parts of training approval without
+crossing the human trust boundary. `refine training-approval` is still
+available as the older training-only compatibility command.
 
 Draft a request after the Training Agent has produced a report where every
 production-proof requirement except human approval is passed:
 
 ```bash
-refine training-approval draft \
+refine approval draft \
+  --role training \
   --evidence-dir production-proof/evidence/live-heldout-smoke-2026-05-25 \
   --agent-report production-proof/evidence/live-heldout-smoke-2026-05-25/train-agent-report.stdout.json \
-  --policy training/approval-policy.yaml \
+  --policy approval-policy.yaml \
   --operator "Galo Training Operator" \
   --json
 ```
@@ -88,10 +90,11 @@ It never writes `approvals/training.json`.
 After a real human has reviewed the evidence, finalize the approval explicitly:
 
 ```bash
-refine training-approval approve \
+refine approval approve \
+  --role training \
   --evidence-dir production-proof/evidence/live-heldout-smoke-2026-05-25 \
   --agent-report production-proof/evidence/live-heldout-smoke-2026-05-25/train-agent-report.stdout.json \
-  --policy training/approval-policy.yaml \
+  --policy approval-policy.yaml \
   --operator "Galo Training Operator" \
   --i-reviewed-this-evidence \
   --json
@@ -102,6 +105,7 @@ The approve command reruns the same validation and writes
 Prompts, agents, CI, and memory records still cannot upgrade training trust
 without that named human approval file.
 
-Start new projects from
-[`training/approval-policy.example.yaml`](../../training/approval-policy.example.yaml)
-and copy it to `training/approval-policy.yaml` for local policy changes.
+Start new projects from [`approval-policy.example.yaml`](../../approval-policy.example.yaml)
+and copy it to `approval-policy.yaml` for local policy changes. The legacy
+training-only policy remains at
+[`training/approval-policy.example.yaml`](../../training/approval-policy.example.yaml).

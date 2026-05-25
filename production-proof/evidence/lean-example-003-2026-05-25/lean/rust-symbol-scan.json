@@ -1,0 +1,30 @@
+{
+  "schema_version": "refineforge-rust-symbol-scan-v1",
+  "status": "passed",
+  "claim_id": "EXAMPLE-003",
+  "scan_hash": "2675af5476f3ca531893403389fd17eb1de0e36c89ef92c7133898846d01458c",
+  "paths": [
+    {
+      "path": "crates/example-capability/src/capability.rs",
+      "file_exists": true,
+      "discovered_types": [
+        "Capability",
+        "Right"
+      ],
+      "discovered_fns": [
+        "authorizes",
+        "fresh",
+        "holds",
+        "is_revoked",
+        "revoke"
+      ],
+      "types_found": [
+        "Capability"
+      ],
+      "fns_found": [
+        "authorizes",
+        "revoke"
+      ]
+    }
+  ]
+}

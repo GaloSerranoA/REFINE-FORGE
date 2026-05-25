@@ -1,0 +1,46 @@
+schema_version: refineforge-approval-policy-v1
+
+allowed_operator_names:
+  - Galo Training Operator
+  - Galo Kernel Operator
+  - Galo Lean Operator
+  - Galo Release Operator
+
+roles:
+  training:
+    allow_smoke_runs: true
+    required_evidence:
+      - training/checkpoint.safetensors
+      - training/eval-report.json
+      - training/regression-report.json
+      - training/compute-ledger.json
+      - training/conversion-manifest.json
+      - training/promotion-manifest.json
+    required_metrics:
+      dev_loss_inverse:
+        min_delta: 0.0
+      heldout_exact_patch_acceptance:
+        min_delta: 0.0
+      target_token_accuracy:
+        min_delta: 0.0
+
+  kernel:
+    required_evidence:
+      - kernels/src/hvector_add.cu
+      - kernels/reference-output.json
+      - kernels/bitexact-report.json
+      - kernels/hardware-matrix.json
+      - kernels/compiler-metadata.json
+      - kernels/performance-baseline.json
+      - kernels/helyx-handoff.json
+
+  lean:
+    required_evidence:
+      - lean/refinement-doc.md
+      - lean/rust-symbol-scan.json
+      - lean/lean-proof-report.json
+      - lean/exported-bundle-hashes.json
+    candidate_files_required:
+      - claim_file
+      - refinement_doc
+      - bundle_path

@@ -6,6 +6,7 @@
 //! The CLI itself lives in `src/main.rs`.
 
 pub mod agent;
+pub mod approval;
 pub mod autonomous;
 pub mod bundle;
 pub mod claim;

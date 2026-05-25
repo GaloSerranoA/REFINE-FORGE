@@ -1,0 +1,131 @@
+{
+  "experiment": {
+    "id": "hvector-add-cuda",
+    "template_version": "refineforge-bitexact-v1",
+    "description": "Live CUDA smoke gate for the Refine-Forge Kernel agent. Refine-Forge owns\nevidence capture and truth-bounded trust; HELYX owns downstream kernel use.\n",
+    "producer": "helyx-kernels",
+    "kernel_id": "helyx.hvector_add.cuda_v1",
+    "profile": "helyx_cuda",
+    "command": "cmd /c kernels\\scripts\\run-hvector-add-cuda.cmd",
+    "runs": 5,
+    "output": "stdout",
+    "source": {
+      "kind": "cuda",
+      "path": "kernels/src/hvector_add.cu"
+    },
+    "reference": {
+      "kind": "golden_output",
+      "path": "kernels/fixtures/hvector-add-reference.json"
+    },
+    "production": {
+      "requires_real_cuda": true
+    },
+    "expected_sha256": "586c6765999cadd57d87ba888110daa8c5c9cc9c535432d57766e60e3c89e5ac",
+    "input_files": [
+      "kernels/fixtures/hvector-add-reference.json",
+      "kernels/scripts/run-hvector-add-cuda.cmd",
+      "kernels/src/hvector_add.cu"
+    ],
+    "tags": [
+      "bitexact",
+      "cuda",
+      "helyx",
+      "live-hardware"
+    ],
+    "env": {
+      "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+      "CUDA_LAUNCH_BLOCKING": "1",
+      "PYTHONHASHSEED": "0"
+    },
+    "hardware": {
+      "cuda": "13.2",
+      "driver": "595.97",
+      "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU",
+      "notes": "local Windows CUDA smoke evidence"
+    }
+  },
+  "finished_at": "2026-05-25T13:41:33.623395800Z",
+  "outcome": "Pass",
+  "summary": "PASS: all 5 runs produced identical SHA-256 = 586c6765999cadd5",
+  "runs": [
+    {
+      "run_index": 0,
+      "started_at": "2026-05-25T13:41:08.096838200Z",
+      "duration_ms": 5030,
+      "exit_code": 0,
+      "output_hash": "586c6765999cadd57d87ba888110daa8c5c9cc9c535432d57766e60e3c89e5ac",
+      "error": null
+    },
+    {
+      "run_index": 1,
+      "started_at": "2026-05-25T13:41:13.127697400Z",
+      "duration_ms": 5111,
+      "exit_code": 0,
+      "output_hash": "586c6765999cadd57d87ba888110daa8c5c9cc9c535432d57766e60e3c89e5ac",
+      "error": null
+    },
+    {
+      "run_index": 2,
+      "started_at": "2026-05-25T13:41:18.239387500Z",
+      "duration_ms": 5117,
+      "exit_code": 0,
+      "output_hash": "586c6765999cadd57d87ba888110daa8c5c9cc9c535432d57766e60e3c89e5ac",
+      "error": null
+    },
+    {
+      "run_index": 3,
+      "started_at": "2026-05-25T13:41:23.356663Z",
+      "duration_ms": 5238,
+      "exit_code": 0,
+      "output_hash": "586c6765999cadd57d87ba888110daa8c5c9cc9c535432d57766e60e3c89e5ac",
+      "error": null
+    },
+    {
+      "run_index": 4,
+      "started_at": "2026-05-25T13:41:28.595315900Z",
+      "duration_ms": 5026,
+      "exit_code": 0,
+      "output_hash": "586c6765999cadd57d87ba888110daa8c5c9cc9c535432d57766e60e3c89e5ac",
+      "error": null
+    }
+  ],
+  "unique_hashes": [
+    "586c6765999cadd57d87ba888110daa8c5c9cc9c535432d57766e60e3c89e5ac"
+  ],
+  "expected_sha256": "586c6765999cadd57d87ba888110daa8c5c9cc9c535432d57766e60e3c89e5ac",
+  "observed_sha256": "586c6765999cadd57d87ba888110daa8c5c9cc9c535432d57766e60e3c89e5ac",
+  "input_manifest": [
+    {
+      "path": "kernels/fixtures/hvector-add-reference.json",
+      "sha256": "c0a25e1658fbe0064191ecf787d3f72599cd3a3db5da1e59d4c28e38baf66d02",
+      "size_bytes": 279
+    },
+    {
+      "path": "kernels/scripts/run-hvector-add-cuda.cmd",
+      "sha256": "4b9036cedecfd5bcbe3fd07133895fd439eca54f6ea8420ab0a9d6328b0bb0a2",
+      "size_bytes": 1037
+    },
+    {
+      "path": "kernels/src/hvector_add.cu",
+      "sha256": "3d7d9aa3b274514fc395d8780ef91cf83da10892930cee0a031af0772d2b8298",
+      "size_bytes": 1977
+    }
+  ],
+  "production_contract": {
+    "source_kind": "cuda",
+    "source_path": "kernels/src/hvector_add.cu",
+    "reference_kind": "golden_output",
+    "reference_path": "kernels/fixtures/hvector-add-reference.json",
+    "requires_real_cuda": true,
+    "hardware": {
+      "cuda": "13.2",
+      "driver": "595.97",
+      "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU",
+      "notes": "local Windows CUDA smoke evidence"
+    },
+    "compiler_runtime_metadata": {
+      "rustc": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: x86_64-pc-windows-msvc\nrelease: 1.95.0\nLLVM version: 22.1.2"
+    },
+    "performance_baseline": null
+  }
+}

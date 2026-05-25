@@ -12,8 +12,8 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use refineforge_cli::{
-    agent, autonomous, bundle, claim, lint, memory, production_proof, release, repair, runner,
-    scaffold, scan, training_approval,
+    agent, approval, autonomous, bundle, claim, lint, memory, production_proof, release, repair,
+    runner, scaffold, scan, training_approval,
 };
 
 #[derive(Parser)]
@@ -88,6 +88,11 @@ enum Cmd {
     TrainingApproval {
         #[command(subcommand)]
         cmd: TrainingApprovalCmd,
+    },
+    /// Prepare or finalize explicit human approvals for role evidence packs.
+    Approval {
+        #[command(subcommand)]
+        cmd: ApprovalCmd,
     },
     /// SKELETON: bounded LLM repair loop. Spawns `lake env lean
     /// --server`, collects diagnostics, asks the strategy for
@@ -413,6 +418,70 @@ enum TrainingApprovalCmd {
     Approve(TrainingApprovalApproveCliOptions),
 }
 
+#[derive(Subcommand)]
+enum ApprovalCmd {
+    /// Validate role evidence and write draft approval artifacts only.
+    Draft(ApprovalDraftCliOptions),
+    /// Write approvals/<role>.json after explicit human review.
+    Approve(ApprovalApproveCliOptions),
+}
+
+#[derive(Clone, clap::Args)]
+struct ApprovalDraftCliOptions {
+    /// Role being approved. If omitted, inferred from --review-request.
+    #[arg(long, value_enum)]
+    role: Option<approval::ApprovalRole>,
+    /// Evidence directory containing role evidence and approvals/.
+    #[arg(long)]
+    evidence_dir: Option<PathBuf>,
+    /// Existing review request JSON. Can provide role and evidence_dir.
+    #[arg(long)]
+    review_request: Option<PathBuf>,
+    /// Agent JSON report for roles that require one.
+    #[arg(long)]
+    agent_report: Option<PathBuf>,
+    /// Role-aware approval policy YAML. Defaults to approval-policy.yaml.
+    #[arg(long)]
+    policy: Option<PathBuf>,
+    /// Named human operator allowed by the approval policy.
+    #[arg(long)]
+    operator: String,
+    /// Emit a JSON command summary to stdout.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Clone, clap::Args)]
+struct ApprovalApproveCliOptions {
+    /// Role being approved. If omitted, inferred from --review-request.
+    #[arg(long, value_enum)]
+    role: Option<approval::ApprovalRole>,
+    /// Evidence directory containing role evidence and approvals/.
+    #[arg(long)]
+    evidence_dir: Option<PathBuf>,
+    /// Existing review request JSON. Can provide role and evidence_dir.
+    #[arg(long)]
+    review_request: Option<PathBuf>,
+    /// Existing draft approval JSON to require before final approval.
+    #[arg(long)]
+    draft: Option<PathBuf>,
+    /// Agent JSON report for roles that require one.
+    #[arg(long)]
+    agent_report: Option<PathBuf>,
+    /// Role-aware approval policy YAML. Defaults to approval-policy.yaml.
+    #[arg(long)]
+    policy: Option<PathBuf>,
+    /// Named human operator allowed by the approval policy.
+    #[arg(long)]
+    operator: String,
+    /// Required confirmation that the named human reviewed the evidence.
+    #[arg(long)]
+    i_reviewed_this_evidence: bool,
+    /// Emit a JSON command summary to stdout.
+    #[arg(long)]
+    json: bool,
+}
+
 #[derive(Clone, clap::Args)]
 struct TrainingApprovalCliOptions {
     /// Evidence directory containing training/ and approvals/ artifacts.
@@ -629,6 +698,34 @@ fn main() -> Result<()> {
                     },
                 )
             }
+        },
+        Cmd::Approval { cmd } => match cmd {
+            ApprovalCmd::Draft(opts) => approval::draft(
+                &cli.root,
+                approval::DraftOptions {
+                    role: opts.role,
+                    evidence_dir: opts.evidence_dir,
+                    review_request: opts.review_request,
+                    agent_report: opts.agent_report,
+                    policy: opts.policy,
+                    operator: opts.operator,
+                    emit_json: opts.json,
+                },
+            ),
+            ApprovalCmd::Approve(opts) => approval::approve(
+                &cli.root,
+                approval::ApproveOptions {
+                    role: opts.role,
+                    evidence_dir: opts.evidence_dir,
+                    review_request: opts.review_request,
+                    draft: opts.draft,
+                    agent_report: opts.agent_report,
+                    policy: opts.policy,
+                    operator: opts.operator,
+                    i_reviewed_this_evidence: opts.i_reviewed_this_evidence,
+                    emit_json: opts.json,
+                },
+            ),
         },
         Cmd::Repair {
             claim_id,

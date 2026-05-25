@@ -1,20 +1,25 @@
 {
-  "schema_version": "refineforge-human-review-request-v1",
-  "role": "lean",
+  "approval_draft_path": ".\\production-proof/evidence/lean-example-003-2026-05-25\\approvals\\lean.draft.json",
+  "candidate": {
+    "bundle_path": "artifacts/EXAMPLE-003",
+    "claim_file": "claims/example-capability-revocation.yaml",
+    "claim_id": "EXAMPLE-003",
+    "evidence_dir": "production-proof/evidence/lean-example-003-2026-05-25",
+    "refinement_doc": "docs/refinement/EXAMPLE-003.md"
+  },
   "decision": "pending",
+  "evidence_dir": ".\\production-proof/evidence/lean-example-003-2026-05-25",
+  "final_approval_path": ".\\production-proof/evidence/lean-example-003-2026-05-25\\approvals\\lean.json",
+  "non_approval_note": "This request is not an approval and does not upgrade Lean trust to human-reviewed.",
+  "operator": "Galo Lean Operator",
   "requested_at": "2026-05-25T13:37:24Z",
   "requested_by": "refineforge-lean-agent",
-  "candidate": {
-    "claim_id": "EXAMPLE-003",
-    "claim_file": "claims/example-capability-revocation.yaml",
-    "refinement_doc": "docs/refinement/EXAMPLE-003.md",
-    "bundle_path": "artifacts/EXAMPLE-003",
-    "evidence_dir": "production-proof/evidence/lean-example-003-2026-05-25"
-  },
   "review_required": [
     "Confirm EXAMPLE-003 is acceptable as an implementation-linked, production-shaped dogfood claim.",
     "Confirm the refinement document, Rust symbol scan, Lean proof report, and exported bundle hashes are acceptable.",
     "If acceptable, create approvals/lean.json with schema_version refineforge-human-approval-v1, role lean, decision approved, approved_at, human_operator, and evidence_summary."
   ],
-  "non_approval_note": "This request is not an approval and does not upgrade Lean trust to human-reviewed."
+  "role": "lean",
+  "schema_version": "refineforge-human-review-request-v1",
+  "status": "draft-ready"
 }

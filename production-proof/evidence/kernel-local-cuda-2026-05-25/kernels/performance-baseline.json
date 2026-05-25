@@ -28,5 +28,5 @@
   ],
   "max_duration_ms": 5098,
   "regression_threshold_pct": 5.0,
-  "bitexact_report_sha256": "b9a0a58bfdb94b6a244d4d8fc53f3150a81cd464315775fd2c057d957fbdb6fd"
+  "bitexact_report_sha256": "3dbd30675a14f95ec755c4716b04e7f9f9724ad0e3c4ce3d7b63bb015e7cf0a1"
 }

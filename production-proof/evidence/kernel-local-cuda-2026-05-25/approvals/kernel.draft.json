@@ -1,0 +1,22 @@
+{
+  "approved_at": "2026-05-25T14:34:11.392183200+00:00",
+  "candidate_id": "helyx.hvector_add.cuda_v1",
+  "decision": "approved",
+  "evidence_dir": ".\\production-proof/evidence/kernel-local-cuda-2026-05-25",
+  "evidence_summary": "kernel production-proof evidence reviewed for helyx.hvector_add.cuda_v1",
+  "human_operator": "Galo Kernel Operator",
+  "kernel_id": "helyx.hvector_add.cuda_v1",
+  "policy_path": ".\\approval-policy.example.yaml",
+  "required_evidence": [
+    "kernels/src/hvector_add.cu",
+    "kernels/reference-output.json",
+    "kernels/bitexact-report.json",
+    "kernels/hardware-matrix.json",
+    "kernels/compiler-metadata.json",
+    "kernels/performance-baseline.json",
+    "kernels/helyx-handoff.json"
+  ],
+  "review_request_path": ".\\production-proof/evidence/kernel-local-cuda-2026-05-25/approvals/kernel.review-request.json",
+  "role": "kernel",
+  "schema_version": "refineforge-human-approval-v1"
+}

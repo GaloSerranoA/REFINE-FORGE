@@ -15,13 +15,21 @@ CLI surface is declared stable.
 - Added `kernels/src/hvector_add.cu`, `kernels/scripts/run-hvector-add-cuda.cmd`,
   `kernels/configs/hvector-add-cuda.yaml`, and a pinned golden-output fixture
   for a real local CUDA bit-exact smoke run.
+- Added `refine approval draft|approve`, a role-agnostic human approval
+  workflow for Training, Kernel, and Lean evidence packs. It infers roles from
+  review-request JSON, verifies role-aware policy evidence, writes only
+  `approvals/<role>.draft.json` during draft, and requires
+  `--i-reviewed-this-evidence` before final approval.
+- Added `approval-policy.example.yaml` for shared role-aware approval policy.
 - Added `production-proof/evidence/kernel-local-cuda-2026-05-25/` with CPU
   reference, hardware matrix, compiler metadata, performance baseline, HELYX
-  handoff, and pending human-review request evidence. The Kernel agent now
-  validates that non-approval evidence and remains blocked only on
+  handoff, self-contained source/bit-exact report evidence, pending
+  human-review request evidence, and generated draft approval. The Kernel
+  agent now validates that non-approval evidence and remains blocked only on
   `approvals/kernel.json`.
 - Added `production-proof/evidence/lean-example-003-2026-05-25/` with
-  exported EXAMPLE-003 bundle hashes and a pending Lean human-review request.
+  exported EXAMPLE-003 bundle hashes, proof/scan/refinement evidence, a
+  pending Lean human-review request, and generated draft approval.
 - Added `production-proof/evidence/devops-live-blockers-2026-05-25/` to record
   the real external blockers for DevOps human-reviewed closure: no
   `flake.lock`, no Nix/WSL, no GitHub remote, and no GitHub CLI auth.
