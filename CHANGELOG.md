@@ -10,6 +10,20 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — Training approval automation
+
+- Added `refine training-approval draft` to validate Training Agent reports,
+  approval policy, required evidence files, regression metric floors,
+  checkpoint hashes, conversion manifest hashes, and operator allow-lists
+  before writing `approvals/training.draft.json` plus
+  `approvals/training.review-request.json`.
+- Added `refine training-approval approve --i-reviewed-this-evidence`, which
+  reruns the same validation and writes `approvals/training.json` only for a
+  named policy-allowed human operator.
+- Added `training/approval-policy.example.yaml` and CLI regressions proving
+  drafts cannot silently create final approval, approval requires explicit
+  review confirmation, and policy regression failures block the flow.
+
 ### Changed — Training Agent production-proof evidence gate
 
 - `refine agent train --mode execute --allow-expensive` no longer treats

@@ -19,3 +19,4 @@ pub mod runner;
 pub mod scaffold;
 pub mod scan;
 pub mod sorry_gate;
+pub mod training_approval;

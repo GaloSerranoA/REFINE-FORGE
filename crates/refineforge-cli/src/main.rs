@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 use refineforge_cli::{
     agent, autonomous, bundle, claim, lint, memory, production_proof, release, repair, runner,
-    scaffold, scan,
+    scaffold, scan, training_approval,
 };
 
 #[derive(Parser)]
@@ -83,6 +83,11 @@ enum Cmd {
     ProductionProof {
         #[command(subcommand)]
         cmd: ProductionProofCmd,
+    },
+    /// Prepare or finalize explicit human approvals for training promotion evidence.
+    TrainingApproval {
+        #[command(subcommand)]
+        cmd: TrainingApprovalCmd,
     },
     /// SKELETON: bounded LLM repair loop. Spawns `lake env lean
     /// --server`, collects diagnostics, asks the strategy for
@@ -401,6 +406,42 @@ enum ProductionProofCmd {
 }
 
 #[derive(Subcommand)]
+enum TrainingApprovalCmd {
+    /// Validate evidence and write draft approval artifacts only.
+    Draft(TrainingApprovalCliOptions),
+    /// Write approvals/training.json after explicit human review.
+    Approve(TrainingApprovalApproveCliOptions),
+}
+
+#[derive(Clone, clap::Args)]
+struct TrainingApprovalCliOptions {
+    /// Evidence directory containing training/ and approvals/ artifacts.
+    #[arg(long)]
+    evidence_dir: PathBuf,
+    /// Training Agent JSON report. Defaults to <evidence-dir>/train-agent-report.stdout.json.
+    #[arg(long)]
+    agent_report: Option<PathBuf>,
+    /// Approval policy YAML. Defaults to training/approval-policy.yaml.
+    #[arg(long)]
+    policy: Option<PathBuf>,
+    /// Named human operator allowed by the approval policy.
+    #[arg(long)]
+    operator: String,
+    /// Emit a JSON command summary to stdout.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Clone, clap::Args)]
+struct TrainingApprovalApproveCliOptions {
+    #[command(flatten)]
+    common: TrainingApprovalCliOptions,
+    /// Required confirmation that the named human reviewed the evidence.
+    #[arg(long)]
+    i_reviewed_this_evidence: bool,
+}
+
+#[derive(Subcommand)]
 enum EscalationsCmd {
     /// List every escalation packet across the project,
     /// sorted by age, with PENDING / DECIDED status.
@@ -562,6 +603,32 @@ fn main() -> Result<()> {
                     emit_json: json,
                 },
             ),
+        },
+        Cmd::TrainingApproval { cmd } => match cmd {
+            TrainingApprovalCmd::Draft(opts) => training_approval::draft(
+                &cli.root,
+                training_approval::DraftOptions {
+                    evidence_dir: opts.evidence_dir,
+                    agent_report: opts.agent_report,
+                    policy: opts.policy,
+                    operator: opts.operator,
+                    emit_json: opts.json,
+                },
+            ),
+            TrainingApprovalCmd::Approve(opts) => {
+                let common = opts.common;
+                training_approval::approve(
+                    &cli.root,
+                    training_approval::ApproveOptions {
+                        evidence_dir: common.evidence_dir,
+                        agent_report: common.agent_report,
+                        policy: common.policy,
+                        operator: common.operator,
+                        i_reviewed_this_evidence: opts.i_reviewed_this_evidence,
+                        emit_json: common.json,
+                    },
+                )
+            }
         },
         Cmd::Repair {
             claim_id,

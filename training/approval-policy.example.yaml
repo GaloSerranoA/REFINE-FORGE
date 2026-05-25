@@ -1,0 +1,26 @@
+schema_version: refineforge-training-approval-policy-v1
+
+# Only these exact non-AI operator names may finalize
+# approvals/training.json through `refine training-approval approve`.
+allowed_operators:
+  - Galo Training Operator
+
+# Local smoke runs may be approved only when the operator wants a local
+# production-proof smoke milestone. Set false for real model promotion lanes.
+allow_smoke_runs: true
+
+required_evidence:
+  - training/checkpoint.safetensors
+  - training/eval-report.json
+  - training/regression-report.json
+  - training/compute-ledger.json
+  - training/conversion-manifest.json
+  - training/promotion-manifest.json
+
+required_metrics:
+  dev_loss_inverse:
+    min_delta: 0.0
+  heldout_exact_patch_acceptance:
+    min_delta: 0.0
+  target_token_accuracy:
+    min_delta: 0.0

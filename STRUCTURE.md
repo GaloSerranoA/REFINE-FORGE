@@ -306,6 +306,11 @@ individual training evidence paths before any `human-reviewed` trust upgrade:
 checkpoint, eval report, regression report, compute ledger, conversion
 manifest, promotion lineage, and non-AI human approval must all exist and pass
 content checks.
+`refine training-approval draft` and `refine training-approval approve`
+automate the review request and approval JSON flow. The draft command writes
+only staged artifacts; the approve command reruns policy/evidence validation
+and requires `--i-reviewed-this-evidence` before writing
+`approvals/training.json`.
 
 Subcommands: `data audit <jsonl>`, `data pack-sft <jsonl>`,
 `data causal-lm-preprocess <jsonl>`, `run <exp.yaml>` (+ `--dry-run`),

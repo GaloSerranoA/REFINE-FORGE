@@ -58,3 +58,50 @@ The agent hashes every accepted evidence file into the runtime receipts.
 Setting an environment variable to a missing path, malformed JSON, failed
 report, loss-only eval, hash mismatch, or AI/operator placeholder keeps
 production proof blocked.
+
+## Approval Automation
+
+`refine training-approval` automates the mechanical parts of training approval
+without crossing the human trust boundary.
+
+Draft a request after the Training Agent has produced a report where every
+production-proof requirement except human approval is passed:
+
+```bash
+refine training-approval draft \
+  --evidence-dir production-proof/evidence/live-heldout-smoke-2026-05-25 \
+  --agent-report production-proof/evidence/live-heldout-smoke-2026-05-25/train-agent-report.stdout.json \
+  --policy training/approval-policy.yaml \
+  --operator "Galo Training Operator" \
+  --json
+```
+
+The draft command validates the agent report, required evidence files,
+checkpoint hashes, conversion hash, promotion manifest, operator allow-list,
+and regression metric floors. It writes:
+
+- `approvals/training.draft.json`
+- `approvals/training.review-request.json`
+
+It never writes `approvals/training.json`.
+
+After a real human has reviewed the evidence, finalize the approval explicitly:
+
+```bash
+refine training-approval approve \
+  --evidence-dir production-proof/evidence/live-heldout-smoke-2026-05-25 \
+  --agent-report production-proof/evidence/live-heldout-smoke-2026-05-25/train-agent-report.stdout.json \
+  --policy training/approval-policy.yaml \
+  --operator "Galo Training Operator" \
+  --i-reviewed-this-evidence \
+  --json
+```
+
+The approve command reruns the same validation and writes
+`approvals/training.json` only when the explicit review flag is present.
+Prompts, agents, CI, and memory records still cannot upgrade training trust
+without that named human approval file.
+
+Start new projects from
+[`training/approval-policy.example.yaml`](../../training/approval-policy.example.yaml)
+and copy it to `training/approval-policy.yaml` for local policy changes.
