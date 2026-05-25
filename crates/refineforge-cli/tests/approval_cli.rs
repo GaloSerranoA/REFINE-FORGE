@@ -69,6 +69,7 @@ fn write_role_policy(path: &Path) {
 allowed_operator_names:
   - Galo Kernel Operator
   - Galo Training Operator
+  - Galo Lean Operator
 roles:
   kernel:
     required_evidence:
@@ -347,6 +348,55 @@ fn approval_kernel_draft_infers_role_from_review_request_without_final_approval(
     assert!(draft.get("human_operator").is_none());
     let request = read_json(&request);
     assert_eq!(request["status"], "draft-ready");
+    assert_eq!(request["decision"], "pending");
+    assert!(request.get("resolved_at").is_none());
+    assert!(request.get("resolved_by").is_none());
+    assert!(request.get("approval_path").is_none());
+    assert!(request.get("resolution_summary").is_none());
+}
+
+#[test]
+fn approval_draft_resets_stale_approved_review_request_to_pending() {
+    let td = tempfile::tempdir().unwrap();
+    let evidence_dir = td.path().join("kernel-evidence");
+    let policy = td.path().join("approval-policy.yaml");
+    write_kernel_evidence(&evidence_dir);
+    write_role_policy(&policy);
+    let request_path = evidence_dir.join("approvals/kernel.review-request.json");
+    let mut request = read_json(&request_path);
+    request["status"] = json!("approved");
+    request["decision"] = json!("approved");
+    request["resolved_at"] = json!("2026-05-25T00:00:00Z");
+    request["resolved_by"] = json!("Galo Kernel Operator");
+    request["approval_path"] = json!(evidence_dir
+        .join("approvals/kernel.json")
+        .display()
+        .to_string());
+    request["resolution_summary"] = json!("stale approval state");
+    write_json(&request_path, request);
+
+    let output = run_refine(&[
+        "--root",
+        ".",
+        "approval",
+        "draft",
+        "--review-request",
+        request_path.to_str().unwrap(),
+        "--policy",
+        policy.to_str().unwrap(),
+        "--operator",
+        "Galo Kernel Operator",
+        "--json",
+    ]);
+
+    assert_success(&output);
+    let request = read_json(&request_path);
+    assert_eq!(request["status"], "draft-ready");
+    assert_eq!(request["decision"], "pending");
+    assert!(request.get("resolved_at").is_none());
+    assert!(request.get("resolved_by").is_none());
+    assert!(request.get("approval_path").is_none());
+    assert!(request.get("resolution_summary").is_none());
 }
 
 #[test]
@@ -412,6 +462,43 @@ fn approval_kernel_approve_writes_final_approval_and_resolves_request() {
     assert_eq!(request["status"], "approved");
     assert_eq!(request["decision"], "approved");
     assert_eq!(request["resolved_by"], "Galo Kernel Operator");
+}
+
+#[test]
+fn approval_lean_approve_writes_final_approval_and_resolves_request() {
+    let td = tempfile::tempdir().unwrap();
+    let workspace = td.path().join("workspace");
+    let evidence_dir = td.path().join("lean-evidence");
+    let policy = td.path().join("approval-policy.yaml");
+    write_lean_evidence(&evidence_dir, &workspace);
+    write_role_policy(&policy);
+    let request = evidence_dir.join("approvals/lean.review-request.json");
+
+    let output = run_refine(&[
+        "--root",
+        ".",
+        "approval",
+        "approve",
+        "--review-request",
+        request.to_str().unwrap(),
+        "--policy",
+        policy.to_str().unwrap(),
+        "--operator",
+        "Galo Lean Operator",
+        "--i-reviewed-this-evidence",
+        "--json",
+    ]);
+
+    assert_success(&output);
+    let approval = read_json(&evidence_dir.join("approvals/lean.json"));
+    assert_eq!(approval["schema_version"], "refineforge-human-approval-v1");
+    assert_eq!(approval["role"], "lean");
+    assert_eq!(approval["decision"], "approved");
+    assert_eq!(approval["human_operator"], "Galo Lean Operator");
+    let request = read_json(&request);
+    assert_eq!(request["status"], "approved");
+    assert_eq!(request["decision"], "approved");
+    assert_eq!(request["resolved_by"], "Galo Lean Operator");
 }
 
 #[test]
@@ -491,6 +578,44 @@ fn approval_training_draft_uses_unified_role_policy() {
     assert!(!evidence_dir.join("approvals/training.json").exists());
     let request = read_json(&evidence_dir.join("approvals/training.review-request.json"));
     assert_eq!(request["status"], "draft-ready");
+    assert_eq!(request["decision"], "pending");
+}
+
+#[test]
+fn approval_training_approve_writes_final_approval_and_resolves_request() {
+    let td = tempfile::tempdir().unwrap();
+    let evidence_dir = td.path().join("training-evidence");
+    let policy = td.path().join("approval-policy.yaml");
+    write_training_evidence(&evidence_dir);
+    write_role_policy(&policy);
+
+    let output = run_refine(&[
+        "--root",
+        ".",
+        "approval",
+        "approve",
+        "--role",
+        "training",
+        "--evidence-dir",
+        evidence_dir.to_str().unwrap(),
+        "--policy",
+        policy.to_str().unwrap(),
+        "--operator",
+        "Galo Training Operator",
+        "--i-reviewed-this-evidence",
+        "--json",
+    ]);
+
+    assert_success(&output);
+    let approval = read_json(&evidence_dir.join("approvals/training.json"));
+    assert_eq!(approval["schema_version"], "refineforge-human-approval-v1");
+    assert_eq!(approval["role"], "training");
+    assert_eq!(approval["decision"], "approved");
+    assert_eq!(approval["human_operator"], "Galo Training Operator");
+    let request = read_json(&evidence_dir.join("approvals/training.review-request.json"));
+    assert_eq!(request["status"], "approved");
+    assert_eq!(request["decision"], "approved");
+    assert_eq!(request["resolved_by"], "Galo Training Operator");
 }
 
 #[test]
@@ -513,7 +638,7 @@ fn approval_lean_draft_verifies_candidate_files_from_review_request() {
         "--policy",
         policy.to_str().unwrap(),
         "--operator",
-        "Galo Training Operator",
+        "Galo Lean Operator",
         "--json",
     ]);
 
@@ -525,4 +650,5 @@ fn approval_lean_draft_verifies_candidate_files_from_review_request() {
     assert_eq!(draft["candidate_id"], "EXAMPLE-003");
     let request = read_json(&request);
     assert_eq!(request["status"], "draft-ready");
+    assert_eq!(request["decision"], "pending");
 }

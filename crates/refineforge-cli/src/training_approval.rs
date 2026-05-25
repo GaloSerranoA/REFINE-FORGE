@@ -12,6 +12,8 @@ const HUMAN_APPROVAL_DRAFT_SCHEMA: &str = "refineforge-human-approval-draft-v1";
 const HUMAN_APPROVAL_SCHEMA: &str = "refineforge-human-approval-v1";
 const DEFAULT_POLICY: &str = "training/approval-policy.yaml";
 const DEFAULT_AGENT_REPORT: &str = "train-agent-report.stdout.json";
+const REVIEW_DECISION_PENDING: &str = "pending";
+const REVIEW_DECISION_APPROVED: &str = "approved";
 
 const EXPECTED_REQUIREMENTS: &[&str] = &[
     "train.dataset_hashes",
@@ -510,6 +512,7 @@ fn review_request_json(
     json!({
         "schema_version": REVIEW_REQUEST_SCHEMA,
         "status": "pending-human-review",
+        "decision": REVIEW_DECISION_PENDING,
         "role": "training",
         "candidate_model_id": ctx.candidate_model_id,
         "requested_at": requested_at,
@@ -553,7 +556,7 @@ fn resolved_review_request_json(
         .context("training review request must be a JSON object")?;
     object.insert("schema_version".to_string(), json!(REVIEW_REQUEST_SCHEMA));
     object.insert("status".to_string(), json!("approved"));
-    object.insert("decision".to_string(), json!("approved"));
+    object.insert("decision".to_string(), json!(REVIEW_DECISION_APPROVED));
     object.insert("resolved_at".to_string(), json!(resolved_at));
     object.insert("resolved_by".to_string(), json!(ctx.operator));
     object.insert(

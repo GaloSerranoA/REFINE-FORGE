@@ -270,6 +270,7 @@ fn training_approval_draft_writes_draft_but_not_final_approval() {
     assert!(draft.get("human_operator").is_none());
     let request = read_json(&approvals.join("training.review-request.json"));
     assert_eq!(request["status"], "pending-human-review");
+    assert_eq!(request["decision"], "pending");
     assert_eq!(
         request["candidate_model_id"],
         "live-heldout-smoke-candidate-2026-05-25"

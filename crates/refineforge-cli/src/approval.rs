@@ -12,6 +12,10 @@ const REVIEW_REQUEST_SCHEMA: &str = "refineforge-human-review-request-v1";
 const HUMAN_APPROVAL_DRAFT_SCHEMA: &str = "refineforge-human-approval-draft-v1";
 const HUMAN_APPROVAL_SCHEMA: &str = "refineforge-human-approval-v1";
 const DEFAULT_POLICY: &str = "approval-policy.yaml";
+const REVIEW_DECISION_PENDING: &str = "pending";
+const REVIEW_DECISION_APPROVED: &str = "approved";
+const REVIEW_STATUS_APPROVED: &str = "approved";
+const REVIEW_STATUS_DRAFT_READY: &str = "draft-ready";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
@@ -295,14 +299,14 @@ fn write_approval_artifacts(
         write_json(&ctx.final_path, &approval)?;
         write_json(
             &ctx.review_request_path,
-            &review_request_json(ctx, &now, "approved", Some(&ctx.final_path))?,
+            &review_request_json(ctx, &now, REVIEW_STATUS_APPROVED, Some(&ctx.final_path))?,
         )?;
     } else {
         let draft = approval_draft_json(ctx, &now);
         write_json(&ctx.draft_path, &draft)?;
         write_json(
             &ctx.review_request_path,
-            &review_request_json(ctx, &now, "draft-ready", None)?,
+            &review_request_json(ctx, &now, REVIEW_STATUS_DRAFT_READY, None)?,
         )?;
     }
 
@@ -422,7 +426,7 @@ fn review_request_json(
         json!({
             "schema_version": REVIEW_REQUEST_SCHEMA,
             "role": ctx.role.as_str(),
-            "decision": "pending",
+            "decision": REVIEW_DECISION_PENDING,
             "requested_at": timestamp,
             "candidate": {
                 "evidence_dir": display_path(&ctx.evidence_dir)
@@ -449,7 +453,7 @@ fn review_request_json(
         json!(display_path(&ctx.evidence_dir)),
     );
     if let Some(approval_path) = approval_path {
-        object.insert("decision".to_string(), json!("approved"));
+        object.insert("decision".to_string(), json!(REVIEW_DECISION_APPROVED));
         object.insert("resolved_at".to_string(), json!(timestamp));
         object.insert("resolved_by".to_string(), json!(ctx.operator));
         object.insert(
@@ -465,6 +469,12 @@ fn review_request_json(
                 ctx.candidate_id
             )),
         );
+    } else {
+        object.insert("decision".to_string(), json!(REVIEW_DECISION_PENDING));
+        object.remove("resolved_at");
+        object.remove("resolved_by");
+        object.remove("approval_path");
+        object.remove("resolution_summary");
     }
     Ok(request)
 }

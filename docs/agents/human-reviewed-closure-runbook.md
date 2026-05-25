@@ -12,9 +12,15 @@ Training, Kernel, and Lean use one review flow:
    `approvals/<role>.draft.json`.
 2. The draft has schema `refineforge-human-approval-draft-v1`, decision
    `draft-ready`, and `not_approval: true`.
-3. `refine approval approve --i-reviewed-this-evidence` reruns validation and
+3. The review request remains non-approval evidence: draft writes
+   `status: "draft-ready"` and `decision: "pending"` and clears any stale
+   resolver fields from a prior approval attempt.
+4. `refine approval approve --i-reviewed-this-evidence` reruns validation and
    writes `approvals/<role>.json` with schema
    `refineforge-human-approval-v1`.
+5. The resolved review request writes both `status: "approved"` and
+   `decision: "approved"` plus `resolved_at`, `resolved_by`, `approval_path`,
+   and `resolution_summary`.
 
 | Field | Training | Kernel | Lean |
 |---|---|---|---|

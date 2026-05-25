@@ -81,3 +81,12 @@ Each role approval file uses:
 The verifier rejects AI, bot, placeholder, empty, or malformed operator names.
 Human approval is never inferred from a passing command, prompt text, or memory
 record.
+
+## Review Request Lifecycle
+
+Review requests are not approval files. Draft commands keep them explicitly
+pending with `decision: "pending"` and a draft-ready status. Approve commands
+must move both fields together: `status: "approved"` and
+`decision: "approved"`. Resolver fields such as `resolved_at`, `resolved_by`,
+`approval_path`, and `resolution_summary` are only valid on approved review
+requests.
