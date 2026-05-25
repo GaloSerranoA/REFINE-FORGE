@@ -348,6 +348,7 @@ fn training_approval_approve_writes_final_approval_and_resolves_request() {
 
     let request = read_json(&evidence_dir.join("approvals/training.review-request.json"));
     assert_eq!(request["status"], "approved");
+    assert_eq!(request["decision"], "approved");
     assert_eq!(request["resolved_by"], "Galo Training Operator");
 }
 

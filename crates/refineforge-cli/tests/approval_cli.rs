@@ -410,6 +410,7 @@ fn approval_kernel_approve_writes_final_approval_and_resolves_request() {
     assert_eq!(approval["human_operator"], "Galo Kernel Operator");
     let request = read_json(&evidence_dir.join("approvals/kernel.review-request.json"));
     assert_eq!(request["status"], "approved");
+    assert_eq!(request["decision"], "approved");
     assert_eq!(request["resolved_by"], "Galo Kernel Operator");
 }
 

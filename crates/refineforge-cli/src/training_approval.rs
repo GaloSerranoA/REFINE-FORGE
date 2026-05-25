@@ -553,6 +553,7 @@ fn resolved_review_request_json(
         .context("training review request must be a JSON object")?;
     object.insert("schema_version".to_string(), json!(REVIEW_REQUEST_SCHEMA));
     object.insert("status".to_string(), json!("approved"));
+    object.insert("decision".to_string(), json!("approved"));
     object.insert("resolved_at".to_string(), json!(resolved_at));
     object.insert("resolved_by".to_string(), json!(ctx.operator));
     object.insert(

@@ -1,5 +1,6 @@
 {
   "approval_draft_path": ".\\production-proof/evidence/lean-example-003-2026-05-25\\approvals\\lean.draft.json",
+  "approval_path": ".\\production-proof/evidence/lean-example-003-2026-05-25\\approvals\\lean.json",
   "candidate": {
     "bundle_path": "artifacts/EXAMPLE-003",
     "claim_file": "claims/example-capability-revocation.yaml",
@@ -7,13 +8,16 @@
     "evidence_dir": "production-proof/evidence/lean-example-003-2026-05-25",
     "refinement_doc": "docs/refinement/EXAMPLE-003.md"
   },
-  "decision": "pending",
+  "decision": "approved",
   "evidence_dir": ".\\production-proof/evidence/lean-example-003-2026-05-25",
   "final_approval_path": ".\\production-proof/evidence/lean-example-003-2026-05-25\\approvals\\lean.json",
   "non_approval_note": "This request is not an approval and does not upgrade Lean trust to human-reviewed.",
   "operator": "Galo Lean Operator",
   "requested_at": "2026-05-25T13:37:24Z",
   "requested_by": "refineforge-lean-agent",
+  "resolution_summary": "Human operator Galo Lean Operator approved lean evidence for EXAMPLE-003",
+  "resolved_at": "2026-05-25T15:12:37.418039700+00:00",
+  "resolved_by": "Galo Lean Operator",
   "review_required": [
     "Confirm EXAMPLE-003 is acceptable as an implementation-linked, production-shaped dogfood claim.",
     "Confirm the refinement document, Rust symbol scan, Lean proof report, and exported bundle hashes are acceptable.",
@@ -21,5 +25,5 @@
   ],
   "role": "lean",
   "schema_version": "refineforge-human-review-request-v1",
-  "status": "draft-ready"
+  "status": "approved"
 }

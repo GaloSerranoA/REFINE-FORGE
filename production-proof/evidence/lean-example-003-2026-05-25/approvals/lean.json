@@ -1,0 +1,19 @@
+{
+  "approved_at": "2026-05-25T15:12:37.418039700+00:00",
+  "candidate_id": "EXAMPLE-003",
+  "claim_id": "EXAMPLE-003",
+  "decision": "approved",
+  "evidence_dir": ".\\production-proof/evidence/lean-example-003-2026-05-25",
+  "evidence_summary": "lean production-proof evidence reviewed for EXAMPLE-003",
+  "human_operator": "Galo Lean Operator",
+  "policy_path": ".\\approval-policy.example.yaml",
+  "required_evidence": [
+    "lean/refinement-doc.md",
+    "lean/rust-symbol-scan.json",
+    "lean/lean-proof-report.json",
+    "lean/exported-bundle-hashes.json"
+  ],
+  "review_request_path": ".\\production-proof/evidence/lean-example-003-2026-05-25/approvals/lean.review-request.json",
+  "role": "lean",
+  "schema_version": "refineforge-human-approval-v1"
+}

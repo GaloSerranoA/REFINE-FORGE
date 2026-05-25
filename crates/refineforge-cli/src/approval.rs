@@ -449,6 +449,7 @@ fn review_request_json(
         json!(display_path(&ctx.evidence_dir)),
     );
     if let Some(approval_path) = approval_path {
+        object.insert("decision".to_string(), json!("approved"));
         object.insert("resolved_at".to_string(), json!(timestamp));
         object.insert("resolved_by".to_string(), json!(ctx.operator));
         object.insert(
