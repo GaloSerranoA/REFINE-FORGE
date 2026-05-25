@@ -972,6 +972,51 @@ fn agent_train_complete_production_evidence_reaches_human_reviewed() {
 }
 
 #[test]
+fn agent_train_complete_evidence_without_approval_names_human_review_blocker() {
+    let td = tempfile::tempdir().unwrap();
+    let stub = write_stub(td.path(), "refine-train-pending-approval", true);
+    let evidence_dir = td.path().join("evidence");
+    write_complete_training_evidence(&evidence_dir);
+    std::fs::remove_file(evidence_dir.join("approvals/training.json")).unwrap();
+    let out = td.path().join("train-pending-approval");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .env("REFINEFORGE_REFINE_TRAIN_BIN", &stub)
+        .env("REFINEFORGE_TRAINING_EVIDENCE_DIR", &evidence_dir)
+        .args([
+            "--root",
+            ".",
+            "agent",
+            "train",
+            "--mode",
+            "execute",
+            "--target",
+            "helyx",
+            "--allow-expensive",
+            "--out",
+        ])
+        .arg(&out)
+        .arg("--json")
+        .output()
+        .expect("run train pending approval execute");
+
+    assert_success(&output);
+    let report = read_json(&out.join("train.json"));
+    assert_eq!(report["status"], "passed");
+    assert_eq!(report["trust_level"], "measured-only");
+    assert_eq!(report["production_proof"]["status"], "blocked");
+    assert_summary_contains(&report, "human approval");
+    assert!(
+        !report["summary"]
+            .as_str()
+            .unwrap()
+            .contains("requires evaluation evidence"),
+        "summary should not say eval is missing when eval evidence passed"
+    );
+}
+
+#[test]
 fn agent_train_rejects_promotion_manifest_with_checkpoint_hash_mismatch() {
     let td = tempfile::tempdir().unwrap();
     let stub = write_stub(td.path(), "refine-train-hash-mismatch", true);

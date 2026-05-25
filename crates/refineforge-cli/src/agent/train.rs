@@ -214,7 +214,16 @@ pub fn build(
         report.finish(
             AgentStatus::Passed,
             TrustLevel::HumanReviewed,
-            "Training dataset audit, live run, checkpoint, evaluation, regression, compute ledger, promotion manifest, and named human approval evidence all passed.",
+            "Training dataset audit, live run, checkpoint, evaluation, regression, compute ledger, conversion manifest, promotion manifest, and named human approval evidence all passed.",
+        );
+    } else if report.status == AgentStatus::Passed
+        && production_status == ProductionProofStatus::Blocked
+        && train_production_only_missing_human_approval(&report)
+    {
+        report.finish(
+            AgentStatus::Passed,
+            TrustLevel::MeasuredOnly,
+            "Training live run and checkpoint, evaluation, regression, compute ledger, conversion, and promotion evidence passed. Production proof remains blocked until a named human approval file is provided.",
         );
     }
     let trust_ceiling = if production_status == ProductionProofStatus::HumanReviewed {
@@ -230,6 +239,21 @@ pub fn build(
         train_action_intents(mode, allow_expensive),
     );
     report
+}
+
+fn train_production_only_missing_human_approval(report: &AgentReport) -> bool {
+    let requirements = &report.production_proof.requirements;
+    !requirements.is_empty()
+        && requirements.iter().all(|requirement| {
+            requirement.status == AgentStatus::Passed
+                || (requirement.id == "train.human_promotion_approval"
+                    && requirement.status == AgentStatus::Blocked)
+        })
+        && report
+            .production_proof
+            .blockers
+            .iter()
+            .all(|blocker| blocker.contains("human promotion approval"))
 }
 
 fn apply_train_production_proof(
