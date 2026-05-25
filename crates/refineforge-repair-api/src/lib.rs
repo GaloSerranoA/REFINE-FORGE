@@ -106,8 +106,18 @@ impl Patch {
     /// does not touch disk.
     pub fn apply(&self, source: &str) -> String {
         let offsets = line_offsets(source);
-        let start = char_offset(&offsets, source, self.range.start.line, self.range.start.character);
-        let end = char_offset(&offsets, source, self.range.end.line, self.range.end.character);
+        let start = char_offset(
+            &offsets,
+            source,
+            self.range.start.line,
+            self.range.start.character,
+        );
+        let end = char_offset(
+            &offsets,
+            source,
+            self.range.end.line,
+            self.range.end.character,
+        );
         let start = start.min(source.len());
         let end = end.min(source.len()).max(start);
         let mut out = String::with_capacity(source.len() - (end - start) + self.new_text.len());
@@ -120,8 +130,10 @@ impl Patch {
     pub fn range_summary(&self) -> String {
         format!(
             "{}:{}-{}:{}",
-            self.range.start.line, self.range.start.character,
-            self.range.end.line, self.range.end.character
+            self.range.start.line,
+            self.range.start.character,
+            self.range.end.line,
+            self.range.end.character
         )
     }
 
@@ -187,11 +199,7 @@ fn char_offset(line_offsets: &[usize], source: &str, line: u32, character: u32) 
 pub trait RepairStrategy {
     /// Propose a patch for the given diagnostic. Return `None` to
     /// decline (caller treats as `RepairOutcome::NoProposal`).
-    fn propose_patch(
-        &self,
-        diagnostic: &Diagnostic,
-        file_content: &str,
-    ) -> Result<Option<Patch>>;
+    fn propose_patch(&self, diagnostic: &Diagnostic, file_content: &str) -> Result<Option<Patch>>;
 
     fn name(&self) -> &'static str;
 }
@@ -208,7 +216,9 @@ impl RepairStrategy for MockStrategy {
     ) -> Result<Option<Patch>> {
         Ok(None)
     }
-    fn name(&self) -> &'static str { "mock" }
+    fn name(&self) -> &'static str {
+        "mock"
+    }
 }
 
 #[cfg(test)]
@@ -218,8 +228,14 @@ mod tests {
     fn d() -> Diagnostic {
         Diagnostic {
             range: Range {
-                start: Position { line: 0, character: 0 },
-                end: Position { line: 0, character: 1 },
+                start: Position {
+                    line: 0,
+                    character: 0,
+                },
+                end: Position {
+                    line: 0,
+                    character: 1,
+                },
             },
             severity: Severity::Error,
             message: "test".into(),
@@ -234,10 +250,22 @@ mod tests {
 
     #[test]
     fn lsp_severity_conversion() {
-        assert_eq!(Severity::from(lsp_types::DiagnosticSeverity::ERROR), Severity::Error);
-        assert_eq!(Severity::from(lsp_types::DiagnosticSeverity::WARNING), Severity::Warning);
-        assert_eq!(Severity::from(lsp_types::DiagnosticSeverity::INFORMATION), Severity::Information);
-        assert_eq!(Severity::from(lsp_types::DiagnosticSeverity::HINT), Severity::Hint);
+        assert_eq!(
+            Severity::from(lsp_types::DiagnosticSeverity::ERROR),
+            Severity::Error
+        );
+        assert_eq!(
+            Severity::from(lsp_types::DiagnosticSeverity::WARNING),
+            Severity::Warning
+        );
+        assert_eq!(
+            Severity::from(lsp_types::DiagnosticSeverity::INFORMATION),
+            Severity::Information
+        );
+        assert_eq!(
+            Severity::from(lsp_types::DiagnosticSeverity::HINT),
+            Severity::Hint
+        );
     }
 
     #[test]
@@ -252,8 +280,14 @@ mod tests {
         let source = "theorem t : False := by sorry\n";
         let patch = Patch {
             range: Range {
-                start: Position { line: 0, character: 24 },
-                end: Position { line: 0, character: 29 },
+                start: Position {
+                    line: 0,
+                    character: 24,
+                },
+                end: Position {
+                    line: 0,
+                    character: 29,
+                },
             },
             new_text: "trivial".into(),
             rationale: "test".into(),
@@ -266,8 +300,14 @@ mod tests {
         let source = "line 0\nline 1\nline 2\n";
         let patch = Patch {
             range: Range {
-                start: Position { line: 0, character: 5 },
-                end: Position { line: 2, character: 0 },
+                start: Position {
+                    line: 0,
+                    character: 5,
+                },
+                end: Position {
+                    line: 2,
+                    character: 0,
+                },
             },
             new_text: "XYZ\n".into(),
             rationale: "test".into(),
@@ -280,8 +320,14 @@ mod tests {
         let source = "abc\n";
         let patch = Patch {
             range: Range {
-                start: Position { line: 0, character: 1 },
-                end: Position { line: 0, character: 1 },
+                start: Position {
+                    line: 0,
+                    character: 1,
+                },
+                end: Position {
+                    line: 0,
+                    character: 1,
+                },
             },
             new_text: "X".into(),
             rationale: "insert".into(),
@@ -294,8 +340,14 @@ mod tests {
         let source = "abc";
         let patch = Patch {
             range: Range {
-                start: Position { line: 99, character: 0 },
-                end: Position { line: 99, character: 5 },
+                start: Position {
+                    line: 99,
+                    character: 0,
+                },
+                end: Position {
+                    line: 99,
+                    character: 5,
+                },
             },
             new_text: "ignored".into(),
             rationale: "test".into(),
@@ -314,8 +366,14 @@ mod tests {
         // Range goes past the end-of-line character (line is 21 chars).
         let patch = Patch {
             range: Range {
-                start: Position { line: 0, character: 2 },
-                end: Position { line: 0, character: 99 },
+                start: Position {
+                    line: 0,
+                    character: 2,
+                },
+                end: Position {
+                    line: 0,
+                    character: 99,
+                },
             },
             new_text: "simp [incr]".into(),
             rationale: "test".into(),
@@ -330,8 +388,14 @@ mod tests {
         let source = "  simp [Nat.mul_comm]\r\nnext line\r\n";
         let patch = Patch {
             range: Range {
-                start: Position { line: 0, character: 2 },
-                end: Position { line: 0, character: 99 },
+                start: Position {
+                    line: 0,
+                    character: 2,
+                },
+                end: Position {
+                    line: 0,
+                    character: 99,
+                },
             },
             new_text: "simp [incr]".into(),
             rationale: "test".into(),
@@ -345,8 +409,14 @@ mod tests {
         // Replace lines 0..2 with new text; line c and beyond must remain.
         let patch = Patch {
             range: Range {
-                start: Position { line: 0, character: 0 },
-                end: Position { line: 1, character: 99 },
+                start: Position {
+                    line: 0,
+                    character: 0,
+                },
+                end: Position {
+                    line: 1,
+                    character: 99,
+                },
             },
             new_text: "NEW".into(),
             rationale: "test".into(),
@@ -360,8 +430,14 @@ mod tests {
     fn new_text_summary_truncates_long_strings() {
         let p = Patch {
             range: Range {
-                start: Position { line: 0, character: 0 },
-                end: Position { line: 0, character: 0 },
+                start: Position {
+                    line: 0,
+                    character: 0,
+                },
+                end: Position {
+                    line: 0,
+                    character: 0,
+                },
             },
             new_text: "x".repeat(100),
             rationale: "".into(),

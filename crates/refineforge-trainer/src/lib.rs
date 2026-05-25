@@ -8,6 +8,7 @@ pub mod checkpoint;
 pub mod dataset;
 pub mod experiment;
 pub mod failure;
+pub mod native;
 pub mod progress;
 pub mod promotion;
 pub mod report;

@@ -2,7 +2,7 @@
 //! escalates; edit-without-weakening proceeds; rename/restructure
 //! proceeds.
 
-use refineforge_escalation::{Action, Category, Decision, Engine, ProjectContext, WeakeningKind};
+use refineforge_escalation::{Action, Category, Engine, ProjectContext, WeakeningKind};
 
 fn eng() -> Engine {
     Engine::new()

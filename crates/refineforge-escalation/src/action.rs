@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 pub enum Action {
     // ===== Lean structural changes =====
     /// Create a new Lean module (.lean file).
-    AddLeanModule { path: String, imports: Vec<String> },
+    AddLeanModule {
+        path: String,
+        imports: Vec<String>,
+    },
 
     /// Add a brand-new theorem to an existing module.
     AddTheorem {
@@ -26,7 +29,10 @@ pub enum Action {
     },
 
     /// Same statement, different proof body.
-    RestructureProof { module: String, theorem: String },
+    RestructureProof {
+        module: String,
+        theorem: String,
+    },
 
     /// Add a test case for an already-listed theorem.
     AddTestCase {
@@ -100,7 +106,10 @@ pub enum Action {
     },
 
     // ===== Trust-base extensions (Category 8) =====
-    BumpLeanToolchain { from: String, to: String },
+    BumpLeanToolchain {
+        from: String,
+        to: String,
+    },
 
     AddLakePackage {
         name: String,
@@ -121,7 +130,10 @@ pub enum Action {
         in_bundle: bool,
     },
 
-    BumpCosignVersion { from: String, to: String },
+    BumpCosignVersion {
+        from: String,
+        to: String,
+    },
 
     BumpGitHubActionSha {
         action: String,
@@ -129,19 +141,33 @@ pub enum Action {
         to: String,
     },
 
-    AddVerifierDockerTool { tool: String },
+    AddVerifierDockerTool {
+        tool: String,
+    },
 
-    SwitchAnthropicModel { from: String, to: String },
+    SwitchAnthropicModel {
+        from: String,
+        to: String,
+    },
 
     // ===== Scope-expanding additions (Category 1) =====
-    AddWorkspaceCrate { name: String },
+    AddWorkspaceCrate {
+        name: String,
+    },
 
-    AddTemplate { name: String },
+    AddTemplate {
+        name: String,
+    },
 
-    AddTopLevelDirectory { name: String },
+    AddTopLevelDirectory {
+        name: String,
+    },
 
     // ===== Bit-exact / kernel (Category 9) =====
-    EditKernelSource { kernel_id: String, summary: String },
+    EditKernelSource {
+        kernel_id: String,
+        summary: String,
+    },
 
     ChangeKernelBuildFlags {
         kernel_id: String,
@@ -164,11 +190,15 @@ pub enum Action {
         to: u32,
     },
 
-    AddKernelDirectory { kernel_id: String },
+    AddKernelDirectory {
+        kernel_id: String,
+    },
 
     // ===== Trivially-OK actions =====
     /// No semantic change.
-    Reformat { paths: Vec<String> },
+    Reformat {
+        paths: Vec<String>,
+    },
 
     /// Rename a local variable inside a proof body.
     RenameLocalVar {
@@ -188,7 +218,9 @@ pub enum Action {
     /// Any action shape the engine doesn't recognise.
     /// Per `plans/autonomous-driver-plan.md` §6 risk mitigation, this
     /// defaults to Category 1 (Scope) — never silently proceeds.
-    Unknown { description: String },
+    Unknown {
+        description: String,
+    },
 }
 
 /// The information a Rust→Lean type mapping loses. Empty list

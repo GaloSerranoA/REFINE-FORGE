@@ -1,9 +1,9 @@
-//! `refine-train` — training-experiment orchestration CLI.
+//! `refine-train` — training control-plane CLI.
 //!
-//! Wraps any training backend (axolotl, HuggingFace Trainer, custom)
-//! with run tracking, checkpoint resume, failure recovery, and JSON
-//! reports. Does NOT perform model training itself — that's the
-//! backend's job.
+//! Runs the built-in `refineforge_native` proof-repair smoke trainer
+//! or wraps external backends (axolotl, HuggingFace Trainer, HELYX,
+//! custom) with run tracking, checkpoint resume, failure recovery,
+//! and JSON reports.
 //!
 //! Subcommands:
 //!
@@ -20,6 +20,7 @@ mod checkpoint;
 mod dataset;
 mod experiment;
 mod failure;
+mod native;
 mod progress;
 mod promotion;
 mod report;
@@ -34,11 +35,11 @@ use std::path::{Path, PathBuf};
 #[command(
     name = "refine-train",
     version,
-    about = "Training-experiment orchestration for refineforge (Section 2)",
-    long_about = "Runs training backends (axolotl, HuggingFace Trainer, custom) \
+    about = "Training control plane for refineforge (Section 2)",
+    long_about = "Runs the built-in refineforge_native proof-repair smoke trainer \
+                  or external backends (axolotl, HuggingFace Trainer, HELYX, custom) \
                   with run tracking, checkpoint resume, retry-with-backoff failure \
-                  recovery, and JSON training reports. Does NOT perform training \
-                  itself — the backend does."
+                  recovery, checkpoints, and JSON training reports."
 )]
 struct Cli {
     /// Root for run directories. Defaults to `training/runs/`.
@@ -116,9 +117,7 @@ enum Cmd {
         require_success: bool,
     },
     /// List all checkpoints in a run dir.
-    Checkpoints {
-        run_dir: PathBuf,
-    },
+    Checkpoints { run_dir: PathBuf },
 }
 
 #[derive(Subcommand)]
@@ -143,9 +142,16 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Data { cmd } => cmd_data(cmd),
-        Cmd::Run { experiment, dry_run } => cmd_run(&cli.runs_root, &experiment, dry_run),
+        Cmd::Run {
+            experiment,
+            dry_run,
+        } => cmd_run(&cli.runs_root, &experiment, dry_run),
         Cmd::Sweep { sweep, fail_fast } => cmd_sweep(&cli.runs_root, &sweep, fail_fast),
-        Cmd::Monitor { run_dir, tail, no_follow } => cmd_monitor(&run_dir, tail, no_follow),
+        Cmd::Monitor {
+            run_dir,
+            tail,
+            no_follow,
+        } => cmd_monitor(&run_dir, tail, no_follow),
         Cmd::Report { run_dir } => cmd_report(&run_dir),
         Cmd::Promote {
             run_dir,
@@ -235,23 +241,43 @@ fn cmd_run(runs_root: &Path, exp_path: &Path, dry_run: bool) -> Result<()> {
         println!("  ckpts:   {}", paths.checkpoint_dir.display());
         return Ok(());
     }
-    println!("Running experiment '{}' (max {} attempts)", exp.id, exp.retry.max_attempts);
+    println!(
+        "Running experiment '{}' (max {} attempts)",
+        exp.id, exp.retry.max_attempts
+    );
     let outcome = failure::run_with_retries(runs_root, &exp)?;
     let paths = runner::RunPaths::for_experiment(runs_root, &exp);
-    let final_kind = if outcome.final_outcome.as_ref().is_some_and(|o| o.exit_status.success()) {
+    let final_kind = if outcome
+        .final_outcome
+        .as_ref()
+        .is_some_and(|o| o.exit_status.success())
+    {
         "success"
     } else {
         "failure"
     };
     let r = report::build(&exp, &paths, final_kind, outcome.attempts as usize)?;
     report::write(&r, &paths)?;
+    let runner_progress_records = outcome
+        .final_outcome
+        .as_ref()
+        .map(|run| run.progress_records)
+        .unwrap_or_default();
     println!("  attempts:           {}", outcome.attempts);
     println!("  progress records:   {}", r.progress_record_count);
+    println!("  runner records:     {}", runner_progress_records);
+    println!("  failure records:    {}", outcome.failures.len());
     println!("  checkpoints:        {}", r.checkpoints.len());
     println!("  final:              {}", final_kind);
-    println!("  report:             {}", paths.run_dir.join("report.json").display());
+    println!(
+        "  report:             {}",
+        paths.run_dir.join("report.json").display()
+    );
     if final_kind != "success" {
-        anyhow::bail!("training did not succeed after {} attempts", outcome.attempts);
+        anyhow::bail!(
+            "training did not succeed after {} attempts",
+            outcome.attempts
+        );
     }
     Ok(())
 }
@@ -277,7 +303,11 @@ fn cmd_sweep(runs_root: &Path, sweep_path: &Path, fail_fast: bool) -> Result<()>
         println!("[{}/{}] {}", i + 1, experiments.len(), exp.id);
         match failure::run_with_retries(runs_root, exp) {
             Ok(outcome) => {
-                if outcome.final_outcome.as_ref().is_some_and(|o| o.exit_status.success()) {
+                if outcome
+                    .final_outcome
+                    .as_ref()
+                    .is_some_and(|o| o.exit_status.success())
+                {
                     success += 1;
                     println!("  ✓ success after {} attempt(s)", outcome.attempts);
                 } else {
@@ -397,7 +427,10 @@ fn cmd_promote(
     })?;
     println!("promotion {}: model_id={}", report.status, report.model_id);
     if let Some(checkpoint) = &report.checkpoint {
-        println!("  checkpoint: step={} path={}", checkpoint.step, checkpoint.path);
+        println!(
+            "  checkpoint: step={} path={}",
+            checkpoint.step, checkpoint.path
+        );
     }
     if let Some(path) = &report.manifest_path {
         println!("  manifest:   {path}");

@@ -1,0 +1,12 @@
+schema_version: proof-repair-eval-v1
+id: proof-repair-smoke
+dataset: training/data/mathlib-proof-repair-v1/anthropic-sft.jsonl
+metrics:
+  - exact_patch_acceptance
+  - lean_recheck_pass_rate
+minimums:
+  exact_patch_acceptance: 0.0
+  lean_recheck_pass_rate: 0.0
+baseline:
+  kind: current-local
+  report: null

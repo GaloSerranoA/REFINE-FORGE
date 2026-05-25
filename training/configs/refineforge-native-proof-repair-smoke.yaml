@@ -1,0 +1,49 @@
+# Local native proof-repair smoke training. This uses the built-in
+# `refineforge_native` backend, so it does not require HELYX, Axolotl,
+# Python, GPUs, or a subprocess trainer.
+
+id: 2026-05-25-refineforge-native-proof-repair-smoke
+
+description: |
+  Deterministic native proof-repair smoke run. This proves that
+  Refine-Forge can perform a local gradient-based training loop,
+  write progress records, emit native checkpoints, and feed the
+  report/promotion surface. It is not an LLM-quality checkpoint.
+
+base_model:
+  name: refineforge-native-linear-smoke
+  source: native
+
+dataset:
+  path: training/data/lean-proof-repair-smoke.jsonl
+  format: jsonl
+  fields:
+    input: prompt
+    output: response
+
+backend:
+  kind: refineforge_native
+
+hyperparameters:
+  steps: 8
+  learning_rate: 0.2
+  feature_buckets: 64
+  target_buckets: 16
+
+checkpoint:
+  dir: checkpoints
+  save_steps: 4
+  keep_last: 2
+
+monitoring:
+  log_file: train.log
+  progress_format: native
+  metrics_to_track:
+    - loss
+    - accuracy
+    - learning_rate
+
+retry:
+  max_attempts: 1
+  backoff_seconds: 0
+  resume_from_checkpoint: false

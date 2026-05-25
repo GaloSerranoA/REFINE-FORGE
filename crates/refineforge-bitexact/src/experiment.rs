@@ -45,6 +45,20 @@ pub struct KernelExperiment {
     /// Where the kernel's deterministic output lives.
     pub output: OutputSource,
 
+    /// Source contract for production proof. Stub sources remain valid
+    /// measured fixtures but cannot become CUDA production evidence.
+    #[serde(default)]
+    pub source: KernelSource,
+
+    /// CPU reference implementation or golden fixture used for
+    /// bit-exact comparison.
+    #[serde(default)]
+    pub reference: KernelReference,
+
+    /// Production-proof policy attached to this config.
+    #[serde(default)]
+    pub production: KernelProduction,
+
     /// Optional known-good output hash. If present, all runs must match it.
     #[serde(default)]
     pub expected_sha256: Option<String>,
@@ -63,9 +77,9 @@ pub struct KernelExperiment {
     ///   - CUDA_LAUNCH_BLOCKING=1
     ///   - PYTHONHASHSEED=0
     ///   - TF_DETERMINISTIC_OPS=1
-    /// The runner does NOT inject these automatically — the
-    /// engineer's config is the source of truth. We make them
-    /// trivial to enumerate.
+    ///
+    /// The runner does NOT inject these automatically; the engineer's
+    /// config is the source of truth. We make them trivial to enumerate.
     #[serde(default)]
     pub env: BTreeMap<String, String>,
 
@@ -81,18 +95,69 @@ fn default_runs() -> usize {
     5
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum KernelProfile {
+    #[default]
     Generic,
     CudaStrict,
     HelyxCuda,
 }
 
-impl Default for KernelProfile {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KernelSource {
+    pub kind: KernelSourceKind,
+    #[serde(default)]
+    pub path: Option<PathBuf>,
+}
+
+impl Default for KernelSource {
     fn default() -> Self {
-        Self::Generic
+        Self {
+            kind: KernelSourceKind::Stub,
+            path: None,
+        }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum KernelSourceKind {
+    Stub,
+    Cuda,
+    Rust,
+    External,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KernelReference {
+    pub kind: KernelReferenceKind,
+    #[serde(default)]
+    pub path: Option<PathBuf>,
+}
+
+impl Default for KernelReference {
+    fn default() -> Self {
+        Self {
+            kind: KernelReferenceKind::None,
+            path: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum KernelReferenceKind {
+    None,
+    TextFixture,
+    CpuReference,
+    GoldenOutput,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KernelProduction {
+    #[serde(default)]
+    pub requires_real_cuda: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -194,6 +259,14 @@ impl KernelExperiment {
         if self.command.trim().is_empty() {
             anyhow::bail!("kernel_experiment.command may not be empty");
         }
+        if self.source.kind != KernelSourceKind::Stub && self.source.path.is_none() {
+            anyhow::bail!("kernel_experiment.source.path is required unless source.kind is stub");
+        }
+        if self.reference.kind != KernelReferenceKind::None && self.reference.path.is_none() {
+            anyhow::bail!(
+                "kernel_experiment.reference.path is required unless reference.kind is none"
+            );
+        }
         if let Some(expected) = &self.expected_sha256 {
             if !is_lower_sha256(expected) {
                 anyhow::bail!(
@@ -276,6 +349,21 @@ hardware:
   driver: "local"
 "#;
 
+    const SOURCE_REFERENCE_CONTRACT: &str = r#"
+id: source-reference-contract
+command: "echo hello"
+runs: 2
+output: stdout
+source:
+  kind: stub
+  path: null
+reference:
+  kind: text_fixture
+  path: kernels/fixtures/helyx-bitexact-input.txt
+production:
+  requires_real_cuda: true
+"#;
+
     #[test]
     fn loads_minimal_with_defaults() {
         let (_d, p) = write_temp(MINIMAL);
@@ -324,6 +412,20 @@ hardware:
             ]
         );
         assert_eq!(exp.tags, vec!["helyx".to_string(), "smoke".to_string()]);
+    }
+
+    #[test]
+    fn loads_source_reference_and_production_contract_fields() {
+        let (_d, p) = write_temp(SOURCE_REFERENCE_CONTRACT);
+        let exp = KernelExperiment::load(&p).unwrap();
+        assert_eq!(exp.source.kind, KernelSourceKind::Stub);
+        assert!(exp.source.path.is_none());
+        assert_eq!(exp.reference.kind, KernelReferenceKind::TextFixture);
+        assert_eq!(
+            exp.reference.path.as_deref(),
+            Some(Path::new("kernels/fixtures/helyx-bitexact-input.txt"))
+        );
+        assert!(exp.production.requires_real_cuda);
     }
 
     #[test]

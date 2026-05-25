@@ -34,6 +34,8 @@ summaries.
 Every report must include:
 
 - `liveness.state = "alive"` with the command surface that emitted it.
+- `runtime` with authority rules, trust ceiling, action intents, deterministic
+  evidence receipts, policy decisions, and typed blockers.
 - `capabilities[]` for the role's available, tool-gated, and evidence-only
   abilities.
 - `tool_checks[]` for local or external prerequisites such as Docker, cosign,
@@ -51,3 +53,31 @@ of truth is always the CLI report:
 
 No agent may upgrade a claim beyond its report, and no prompt may replace human
 review.
+
+See `docs/agents/runtime.md` for the enterprise runtime contract and the
+Hermes-style integration boundary.
+
+See `docs/agents/central-memory-integration.md` for the HELYX/COGN8TY memory
+compatibility boundary, and `docs/agents/knowledge-source-audit.md` for the
+local PDF and Rust training-source analysis.
+
+For production closure across all four agents, build a self-contained evidence
+pack and run:
+
+```bash
+refine production-proof verify --target helyx --evidence-dir <dir> --out <report-dir>
+```
+
+See `docs/agents/production-proof-evidence.md` and
+`schemas/production-proof-evidence.schema.json` for the required hosted CI,
+OIDC signing, Nix, approval, checkpoint/eval/promotion, and CUDA
+source/hardware/performance evidence.
+
+## Production-Proof Plans
+
+The four role-specific enterprise closure plans are:
+
+- `docs/plans/plan-3-lean-agent-production-proof.md`
+- `docs/plans/plan-4-devops-agent-production-proof.md`
+- `docs/plans/plan-5-training-agent-production-proof.md`
+- `docs/plans/plan-6-kernel-agent-production-proof.md`

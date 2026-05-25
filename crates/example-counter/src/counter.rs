@@ -23,9 +23,15 @@ pub struct Counter {
 }
 
 impl Counter {
-    pub fn new() -> Self { Self { value: 0 } }
-    pub fn from_value(value: u64) -> Self { Self { value } }
-    pub fn value(&self) -> u64 { self.value }
+    pub fn new() -> Self {
+        Self { value: 0 }
+    }
+    pub fn from_value(value: u64) -> Self {
+        Self { value }
+    }
+    pub fn value(&self) -> u64 {
+        self.value
+    }
 }
 
 /// Increment by 1. Refines Lean `def incr (c : Counter) : Counter :=
@@ -39,7 +45,9 @@ impl Counter {
 /// stated claim. If your application needs strict monotonicity
 /// even at the boundary, use `checked_incr` (returns `Option`).
 pub fn incr(c: &Counter) -> Counter {
-    Counter { value: c.value.saturating_add(1) }
+    Counter {
+        value: c.value.saturating_add(1),
+    }
 }
 
 /// Optional checked variant: returns `None` at `u64::MAX`.

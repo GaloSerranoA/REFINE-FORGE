@@ -27,8 +27,8 @@
 
 mod corpus;
 mod metrics;
-mod runner;
 mod report;
+mod runner;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -81,13 +81,23 @@ fn main() -> Result<()> {
         None => entries,
     };
 
-    eprintln!("refine-eval: {} entries, strategy={}, max_iterations={}",
-        entries.len(), cli.strategy, cli.max_iterations);
+    eprintln!(
+        "refine-eval: {} entries, strategy={}, max_iterations={}",
+        entries.len(),
+        cli.strategy,
+        cli.max_iterations
+    );
 
     let run_started = chrono::Utc::now();
     let mut results = Vec::with_capacity(entries.len());
     for (i, entry) in entries.iter().enumerate() {
-        eprintln!("[{}/{}] {} ({})", i + 1, entries.len(), entry.id, entry.mutation);
+        eprintln!(
+            "[{}/{}] {} ({})",
+            i + 1,
+            entries.len(),
+            entry.id,
+            entry.mutation
+        );
         let result = runner::run_one(
             &cli.project_root,
             entry,
@@ -96,8 +106,10 @@ fn main() -> Result<()> {
             cli.max_iterations,
         );
         match &result {
-            Ok(r) => eprintln!("    outcome: {} ({} iters, {} ms)",
-                r.outcome, r.iterations, r.duration_ms),
+            Ok(r) => eprintln!(
+                "    outcome: {} ({} iters, {} ms)",
+                r.outcome, r.iterations, r.duration_ms
+            ),
             Err(e) => eprintln!("    ERROR: {e}"),
         }
         results.push((entry.clone(), result));
@@ -130,8 +142,10 @@ fn main() -> Result<()> {
         report.summary.no_proposal_count, report.summary.total,
         report.summary.error_count, report.summary.total,
     );
-    eprintln!("    median latency: {} ms; p95 latency: {} ms",
-        report.summary.median_duration_ms, report.summary.p95_duration_ms);
+    eprintln!(
+        "    median latency: {} ms; p95 latency: {} ms",
+        report.summary.median_duration_ms, report.summary.p95_duration_ms
+    );
 
     Ok(())
 }

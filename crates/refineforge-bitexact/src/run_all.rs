@@ -62,7 +62,7 @@ pub fn discover_configs(config_dir: &Path, include_examples: bool) -> Result<Vec
         }
         paths.push(path);
     }
-    paths.sort_by(|a, b| a.display().to_string().cmp(&b.display().to_string()));
+    paths.sort_by_key(|path| path.display().to_string());
     Ok(paths)
 }
 

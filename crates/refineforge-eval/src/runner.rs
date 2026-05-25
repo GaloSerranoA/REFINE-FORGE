@@ -112,15 +112,18 @@ pub fn run_one(
             let (patch_range, new_text, rationale) = it
                 .patch_proposed
                 .as_ref()
-                .map(|p| (Some(p.range_summary()), Some(p.new_text.clone()), Some(p.rationale.clone())))
+                .map(|p| {
+                    (
+                        Some(p.range_summary()),
+                        Some(p.new_text.clone()),
+                        Some(p.rationale.clone()),
+                    )
+                })
                 .unwrap_or((None, None, None));
             IterationSummary {
                 index: it.index,
                 diagnostic_count: it.diagnostics_before.len(),
-                first_diagnostic_message: it
-                    .diagnostics_before
-                    .first()
-                    .map(|d| d.message.clone()),
+                first_diagnostic_message: it.diagnostics_before.first().map(|d| d.message.clone()),
                 patch_range,
                 patch_new_text: new_text,
                 patch_rationale: rationale,

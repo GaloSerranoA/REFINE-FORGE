@@ -123,7 +123,10 @@ fn require_map_value(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::experiment::{KernelExperiment, KernelProfile, OutputSource};
+    use crate::experiment::{
+        KernelExperiment, KernelProduction, KernelProfile, KernelReference, KernelSource,
+        OutputSource,
+    };
     use std::collections::BTreeMap;
 
     fn exp(profile: KernelProfile) -> KernelExperiment {
@@ -137,6 +140,9 @@ mod tests {
             command: "kernel".into(),
             runs: 2,
             output: OutputSource::Stdout,
+            source: KernelSource::default(),
+            reference: KernelReference::default(),
+            production: KernelProduction::default(),
             expected_sha256: None,
             input_files: vec![],
             tags: vec![],

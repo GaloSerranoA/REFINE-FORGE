@@ -7,6 +7,7 @@
 
 use anyhow::Result;
 use regex::Regex;
+use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,7 +39,7 @@ pub fn list_checkpoints(dir: &Path) -> Result<Vec<Checkpoint>> {
             }
         }
     }
-    out.sort_by(|a, b| b.step.cmp(&a.step));
+    out.sort_by_key(|checkpoint| Reverse(checkpoint.step));
     Ok(out)
 }
 

@@ -13,7 +13,7 @@ discipline split (Lean Specialist / ML Engineer / DevOps / CUDA Engineer) read
 |---:|---|---|---|
 | 1 | Lean 4 / verification | `lean/`, `claims/`, `crates/refineforge-cli`, `refine agent lean`, templates, bundle artifacts | Lean proves the model; refinement docs and claim linting carry the human-reviewed Rust link |
 | 2 | Release / infrastructure / DevOps | `.github/workflows/ci.yml`, `release/`, `containers/Dockerfile.verifier`, `refine agent devops`, SBOM/provenance evidence | Local release-readiness works; Docker/signature gates require `--allow-expensive` or hosted CI; real hosted OIDC signing still requires a remote CI run |
-| 3 | ML / training engine | `crates/refineforge-trainer`, `training/`, `refine agent train`, local-finetune bridge in `refineforge-strategies` | HELYX/Axolotl/custom backends train; Refine-Forge audits data, dry-runs by default, orchestrates runs, tracks checkpoints, and promotes accepted artifacts |
+| 3 | ML / training engine | `crates/refineforge-trainer`, `training/`, `refine agent train`, local-finetune bridge in `refineforge-strategies` | Refine-Forge now runs native proof-repair smoke training and evidence gates; HELYX/Axolotl/custom remain production-scale trainer backends |
 | 4 | GPU / kernel Rust | `crates/refineforge-bitexact`, `kernels/`, `refine agent kernel`, `docs/bit-exact-reproducibility.md` | `helyx-kernels` owns actual kernels; Refine-Forge owns deterministic gate evidence, input manifests, and expected-output baselines |
 
 ## Top-level layout
@@ -39,7 +39,7 @@ refineforge/
 │   ├── refineforge-cli/        # Section 1: the `refine` binary + driver
 │   ├── refineforge-strategies/ # Section 2: pluggable strategies (+ real HTTP transport)
 │   ├── refineforge-eval/       # Section 2: `refine-eval` benchmark harness
-│   ├── refineforge-trainer/    # Section 2: `refine-train` orchestration CLI
+│   ├── refineforge-trainer/    # Section 2: `refine-train` native smoke trainer + orchestration CLI
 │   ├── refineforge-bitexact/   # Section 4: `refine-bitexact` gate primitive
 │   ├── refineforge-escalation/ # Cross-section: AI-to-human escalation engine (criteria v0.3)
 │   ├── refineforge-derive/     # Section 1: #[derive(LeanModel)] proc-macro
@@ -289,13 +289,15 @@ failure capture. POSIX-only e2e tests use the shipped stub scripts
 The Windows-compatible HELYX smoke fixture lives at
 [`kernels/configs/helyx-bitexact-smoke.yaml`](kernels/configs/helyx-bitexact-smoke.yaml).
 
-### `crates/refineforge-trainer/` — training orchestration (Section 2)
+### `crates/refineforge-trainer/` — training control plane (Section 2)
 
-Binary `refine-train`. Wraps any training backend (HELYX `helyx-train`,
-axolotl, HuggingFace Trainer, custom script) with dataset audit, run
-tracking, checkpoint resume, retry-with-backoff failure recovery, JSON
-training reports, and local-finetune promotion. **Does NOT perform
-training itself**; the backend does.
+Binary `refine-train`. Runs the built-in `refineforge_native`
+proof-repair smoke trainer or wraps external training backends
+(HELYX `helyx-train`, axolotl, HuggingFace Trainer, custom script)
+with dataset audit, run tracking, checkpoint resume, retry-with-backoff
+failure recovery, JSON training reports, and local-finetune promotion.
+The native backend performs a small deterministic gradient-based smoke
+training loop; it is not production LLM training evidence by itself.
 
 Subcommands: `data audit <jsonl>`, `run <exp.yaml>` (+ `--dry-run`),
 `sweep <sweep.yaml>` (cartesian or random:N), `monitor <run_dir>` (tail
@@ -304,8 +306,9 @@ Subcommands: `data audit <jsonl>`, `run <exp.yaml>` (+ `--dry-run`),
 `promotion-report.json`), `checkpoints <run_dir>` (list).
 
 Modules: `dataset` (proof-repair SFT JSONL audit + SHA-256),
-`experiment` (YAML schema), `runner` (subprocess + log capture +
-per-line progress parsing), `progress` (HF / axolotl / generic parsers),
+`native` (in-process deterministic proof-repair smoke trainer),
+`experiment` (YAML schema), `runner` (native dispatch or subprocess +
+log capture + per-line progress parsing), `progress` (HF / axolotl / generic parsers),
 `checkpoint` (find latest / prune old), `sweep` (cartesian +
 deterministic random sample), `failure` (OOM / Interrupt / Network /
 BackendError / Unknown classifier + recovery action chooser), `report`

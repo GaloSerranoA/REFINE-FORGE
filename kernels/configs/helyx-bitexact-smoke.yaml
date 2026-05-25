@@ -16,6 +16,14 @@ description: |
 command: "powershell -NoProfile -ExecutionPolicy Bypass -File kernels/scripts/stub-deterministic.ps1"
 runs: 5
 output: stdout
+source:
+  kind: stub
+  path: null
+reference:
+  kind: text_fixture
+  path: kernels/fixtures/helyx-bitexact-input.txt
+production:
+  requires_real_cuda: true
 expected_sha256: "d5ca9a70b50179b497870748df66099e49197509f40ae6785513648a87eb2e03"
 
 input_files:

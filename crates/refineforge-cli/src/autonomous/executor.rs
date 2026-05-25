@@ -42,6 +42,11 @@ use thiserror::Error;
 /// `--strategy anthropic`.
 pub const ANTHROPIC_REPAIR_USD_PER_ATTEMPT: f64 = 0.07;
 
+type StrategyWithUsage = (
+    Box<dyn RepairStrategy>,
+    std::sync::Arc<std::sync::Mutex<refineforge_strategies::UsageStats>>,
+);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "outcome")]
 pub enum StepOutcome {
@@ -116,8 +121,8 @@ pub struct Executor<G: GitOps> {
 impl<G: GitOps> Executor<G> {
     /// Convenience: a no-op executor that uses [`MockGitOps`]
     /// + an empty `ProjectContext` + zero cost-gate budget. Used
-    /// by tests that want to drive only the planner / outcome
-    /// surface without touching disk.
+    ///   by tests that want to drive only the planner / outcome
+    ///   surface without touching disk.
     pub fn for_tests(git: G, repo_root: impl Into<PathBuf>) -> Self {
         Self {
             engine: Engine::new(),
@@ -151,16 +156,14 @@ impl<G: GitOps> Executor<G> {
                 strategy,
                 max_iterations,
             } => self.run_repair_step(step, strategy, *max_iterations, started),
-            StepKind::RunTrainingExperiment { config_path } => {
-                self.run_subprocess_step(
-                    step,
-                    "RunTrainingExperiment",
-                    "REFINEFORGE_REFINE_TRAIN_BIN",
-                    "refine-train",
-                    &["run", config_path, "--dry-run"],
-                    started,
-                )
-            }
+            StepKind::RunTrainingExperiment { config_path } => self.run_subprocess_step(
+                step,
+                "RunTrainingExperiment",
+                "REFINEFORGE_REFINE_TRAIN_BIN",
+                "refine-train",
+                &["run", config_path, "--dry-run"],
+                started,
+            ),
             StepKind::RunBitExactGate { config_path } => self.run_subprocess_step(
                 step,
                 "RunBitExactGate",
@@ -212,10 +215,7 @@ impl<G: GitOps> Executor<G> {
                             // overwritten (harmless — content's identical
                             // modulo timestamp) so a re-run with updated
                             // evidence isn't masked by a stale packet.
-                            let preserve = match self
-                                .git
-                                .read_file(&self.repo_root, &packet_rel)
-                            {
+                            let preserve = match self.git.read_file(&self.repo_root, &packet_rel) {
                                 Ok(existing) => {
                                     use refineforge_escalation::decision_outcome::{
                                         parse_decision, DecisionParseError,
@@ -293,19 +293,13 @@ impl<G: GitOps> Executor<G> {
                     ProofStatus::Verified => StepOutcome::Proceeded {
                         seq: step.seq,
                         kind: kind_label.into(),
-                        detail: format!(
-                            "lake build verified {} (status: Verified)",
-                            self.claim_id
-                        ),
+                        detail: format!("lake build verified {} (status: Verified)", self.claim_id),
                         elapsed_ms: started.elapsed().as_millis() as u64,
                     },
                     other => StepOutcome::Failed {
                         seq: step.seq,
                         kind: kind_label.into(),
-                        error: format!(
-                            "lake build did not produce Verified status: {:?}",
-                            other
-                        ),
+                        error: format!("lake build did not produce Verified status: {:?}", other),
                         elapsed_ms: started.elapsed().as_millis() as u64,
                     },
                 },
@@ -318,25 +312,20 @@ impl<G: GitOps> Executor<G> {
             },
             "Scan" => match scan::scan_claim(&self.repo_root, claim) {
                 Ok(report) => match report.status {
-                    ScanStatus::Verified | ScanStatus::NoRustSource => {
-                        StepOutcome::Proceeded {
-                            seq: step.seq,
-                            kind: kind_label.into(),
-                            detail: format!(
-                                "scan status: {} ({} rust_source items)",
-                                report.status,
-                                report.items.len()
-                            ),
-                            elapsed_ms: started.elapsed().as_millis() as u64,
-                        }
-                    }
+                    ScanStatus::Verified | ScanStatus::NoRustSource => StepOutcome::Proceeded {
+                        seq: step.seq,
+                        kind: kind_label.into(),
+                        detail: format!(
+                            "scan status: {} ({} rust_source items)",
+                            report.status,
+                            report.items.len()
+                        ),
+                        elapsed_ms: started.elapsed().as_millis() as u64,
+                    },
                     other => StepOutcome::Failed {
                         seq: step.seq,
                         kind: kind_label.into(),
-                        error: format!(
-                            "scan reported {} — missing entities in rust_source",
-                            other
-                        ),
+                        error: format!("scan reported {} — missing entities in rust_source", other),
                         elapsed_ms: started.elapsed().as_millis() as u64,
                     },
                 },
@@ -386,11 +375,7 @@ impl<G: GitOps> Executor<G> {
             return StepOutcome::Proceeded {
                 seq: step.seq,
                 kind: kind_label.into(),
-                detail: format!(
-                    "dry-run: would shell `{} {}`",
-                    default_bin,
-                    args.join(" ")
-                ),
+                detail: format!("dry-run: would shell `{} {}`", default_bin, args.join(" ")),
                 elapsed_ms: started.elapsed().as_millis() as u64,
             };
         }
@@ -467,17 +452,18 @@ impl<G: GitOps> Executor<G> {
                 elapsed_ms: started.elapsed().as_millis() as u64,
             };
         }
-        let (strategy, usage_handle) = match resolve_strategy(strategy_name, self.weights_path.as_deref()) {
-            Ok(s) => s,
-            Err(e) => {
-                return StepOutcome::Failed {
-                    seq: step.seq,
-                    kind: "Repair".into(),
-                    error: format!("strategy resolution failed: {}", e),
-                    elapsed_ms: started.elapsed().as_millis() as u64,
+        let (strategy, usage_handle) =
+            match resolve_strategy(strategy_name, self.weights_path.as_deref()) {
+                Ok(s) => s,
+                Err(e) => {
+                    return StepOutcome::Failed {
+                        seq: step.seq,
+                        kind: "Repair".into(),
+                        error: format!("strategy resolution failed: {}", e),
+                        elapsed_ms: started.elapsed().as_millis() as u64,
+                    }
                 }
-            }
-        };
+            };
         let config = RepairConfig {
             max_iterations,
             strategy,
@@ -485,10 +471,7 @@ impl<G: GitOps> Executor<G> {
         };
         match repair::repair(&self.repo_root, &self.claim_id, config) {
             Ok(report) => {
-                let usage = usage_handle
-                    .lock()
-                    .map(|s| s.clone())
-                    .unwrap_or_default();
+                let usage = usage_handle.lock().map(|s| s.clone()).unwrap_or_default();
                 let usage_str = if usage.calls > 0 {
                     let stops: Vec<String> = usage
                         .stop_reasons
@@ -570,13 +553,7 @@ impl<G: GitOps> Executor<G> {
 pub fn resolve_strategy(
     name: &str,
     weights_path: Option<&Path>,
-) -> Result<
-    (
-        Box<dyn RepairStrategy>,
-        std::sync::Arc<std::sync::Mutex<refineforge_strategies::UsageStats>>,
-    ),
-    String,
-> {
+) -> Result<StrategyWithUsage, String> {
     match name {
         "mock" => Ok((
             Box::new(MockStrategy),
@@ -588,8 +565,8 @@ pub fn resolve_strategy(
         "anthropic" => refineforge_strategies::anthropic_strategy_from_env_with_usage()
             .map_err(|e| e.to_string()),
         "local-finetune" => {
-            let env_weights = std::env::var_os("REFINEFORGE_LOCAL_FINETUNE_WEIGHTS")
-                .map(PathBuf::from);
+            let env_weights =
+                std::env::var_os("REFINEFORGE_LOCAL_FINETUNE_WEIGHTS").map(PathBuf::from);
             let path = weights_path.or(env_weights.as_deref()).ok_or_else(|| {
                 "local-finetune requires --weights-path <dir> or REFINEFORGE_LOCAL_FINETUNE_WEIGHTS".to_string()
             })?;
@@ -672,9 +649,7 @@ mod tests {
             lean_type: "Nat".into(),
             lossy_kinds: vec![LossKind::UnsignedOverflow],
         };
-        let plan = Planner::new()
-            .with_engine_action(action)
-            .plan(&ex.claim_id);
+        let plan = Planner::new().with_engine_action(action).plan(&ex.claim_id);
         let mid = ex.run_step(&plan[1]);
         match mid {
             StepOutcome::Escalated {
@@ -732,7 +707,10 @@ mod tests {
         // Run 1: writes the pending packet.
         let _ = ex.run_step(&plan[1]);
         let commits_after_run1 = ex.git.commits().len();
-        assert_eq!(commits_after_run1, 1, "run 1 should commit the fresh packet");
+        assert_eq!(
+            commits_after_run1, 1,
+            "run 1 should commit the fresh packet"
+        );
 
         // Operator approves: overwrite the packet content directly
         // in MockGitOps (simulating their git commit).
@@ -741,9 +719,7 @@ mod tests {
             refineforge_escalation::Category::Idealisation,
             plan[1].seq,
         );
-        let approved_content = format!(
-            "---\ncriteria_version: '0.3'\nclaim_id: EXAMPLE-002\n---\n## Human decision\n\nAPPROVED: looks fine to me\n"
-        );
+        let approved_content = "---\ncriteria_version: '0.3'\nclaim_id: EXAMPLE-002\n---\n## Human decision\n\nAPPROVED: looks fine to me\n".to_string();
         ex.git.set_file_content(&pkt_path, approved_content.clone());
 
         // Run 2: executor must see the APPROVED packet and NOT re-commit.
@@ -780,9 +756,7 @@ mod tests {
             lean_type: "Nat".into(),
             lossy_kinds: vec![LossKind::UnsignedOverflow],
         };
-        let plan = Planner::new()
-            .with_engine_action(action)
-            .plan(&ex.claim_id);
+        let plan = Planner::new().with_engine_action(action).plan(&ex.claim_id);
         let _ = ex.run_step(&plan[1]);
         let after_first = ex.git.commits().len();
         let _ = ex.run_step(&plan[1]);
@@ -804,19 +778,25 @@ mod tests {
             lean_type: "Nat".into(),
             lossy_kinds: vec![LossKind::UnsignedOverflow],
         };
-        let plan = Planner::new()
-            .with_engine_action(action)
-            .plan(&ex.claim_id);
+        let plan = Planner::new().with_engine_action(action).plan(&ex.claim_id);
         let _ = ex.run_step(&plan[1]);
         let commits = ex.git.commits();
         assert_eq!(commits.len(), 1, "expected one packet commit");
         assert!(commits[0].message.contains("idealisation"));
-        assert!(commits[0].file.display().to_string().contains("EXAMPLE-002"));
+        assert!(commits[0]
+            .file
+            .display()
+            .to_string()
+            .contains("EXAMPLE-002"));
     }
 
     #[test]
     fn packet_path_is_stable_and_zero_padded() {
-        let p = packet_path_for("EXAMPLE-002", refineforge_escalation::Category::Idealisation, 7);
+        let p = packet_path_for(
+            "EXAMPLE-002",
+            refineforge_escalation::Category::Idealisation,
+            7,
+        );
         assert_eq!(
             p.display().to_string(),
             "escalations/EXAMPLE-002/007-idealisation.md"
@@ -1028,8 +1008,7 @@ mod tests {
     #[test]
     fn engine_refusal_on_criteria_mismatch_records_failed() {
         let mut ex = mock_executor();
-        ex.project_ctx =
-            ProjectContext::test_with_wrong_criteria_version("0.99");
+        ex.project_ctx = ProjectContext::test_with_wrong_criteria_version("0.99");
         let action = Action::Reformat {
             paths: vec!["x".into()],
         };

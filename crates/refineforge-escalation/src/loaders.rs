@@ -89,10 +89,7 @@ struct LoaderReview {
 
 /// Find and load `<root>/claims/**/<*.yaml>` whose
 /// `claim_id` matches `claim_id`.
-pub fn load_claim_summary(
-    root: &Path,
-    claim_id: &str,
-) -> Result<ClaimSummary, LoaderError> {
+pub fn load_claim_summary(root: &Path, claim_id: &str) -> Result<ClaimSummary, LoaderError> {
     let dir = root.join("claims");
     if !dir.exists() {
         return Err(LoaderError::ClaimNotFound {
@@ -375,10 +372,7 @@ mod tests {
         assert_eq!(parse_status("drafted"), ClaimStatus::Drafted);
         assert_eq!(parse_status("broken"), ClaimStatus::Broken);
         assert_eq!(parse_status("unformalized"), ClaimStatus::Unformalized);
-        assert_eq!(
-            parse_status("refined"),
-            ClaimStatus::ProvenModelAndRefined
-        );
+        assert_eq!(parse_status("refined"), ClaimStatus::ProvenModelAndRefined);
         assert_eq!(parse_status("UNKNOWN_THING"), ClaimStatus::Drafted);
     }
 
@@ -484,7 +478,10 @@ name = "ignored"
         let summary = match load_claim_summary(repo_root, "EXAMPLE-001") {
             Ok(s) => s,
             Err(LoaderError::ClaimNotFound { .. }) => {
-                eprintln!("skipping integration test: EXAMPLE-001 not found at {}", repo_root.display());
+                eprintln!(
+                    "skipping integration test: EXAMPLE-001 not found at {}",
+                    repo_root.display()
+                );
                 return;
             }
             Err(e) => panic!("unexpected error: {:?}", e),

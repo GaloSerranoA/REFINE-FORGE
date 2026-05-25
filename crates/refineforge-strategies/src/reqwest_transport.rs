@@ -188,15 +188,14 @@ mod tests {
         let port = listener.local_addr().expect("local_addr").port();
         drop(listener); // release; tiny_http will rebind
 
-        let server = tiny_http::Server::http(format!("127.0.0.1:{port}"))
-            .expect("tiny_http bind");
+        let server = tiny_http::Server::http(format!("127.0.0.1:{port}")).expect("tiny_http bind");
         let url = format!("http://127.0.0.1:{port}");
 
         let handle = thread::spawn(move || {
             for (i, request) in server.incoming_requests().take(num_requests).enumerate() {
                 let stub = handler(i);
-                let resp = tiny_http::Response::from_string(stub.body)
-                    .with_status_code(stub.status);
+                let resp =
+                    tiny_http::Response::from_string(stub.body).with_status_code(stub.status);
                 let _ = request.respond(resp);
             }
         });
@@ -205,16 +204,18 @@ mod tests {
     }
 
     fn make_request() -> MessagesRequest {
-        let s = AnthropicStrategy::new(
-            "k".into(),
-            "claude-opus-4-7",
-            MockTransport::declines(),
-        );
+        let s = AnthropicStrategy::new("k".into(), "claude-opus-4-7", MockTransport::declines());
         s.build_request(
             &Diagnostic {
                 range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 1 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 1,
+                    },
                 },
                 severity: Severity::Error,
                 message: "test".into(),
@@ -224,8 +225,7 @@ mod tests {
         )
     }
 
-    const SUCCESS_BODY: &str =
-        r#"{"content":[{"type":"text","text":"{\"start_line\":0,\"start_char\":0,\"end_line\":0,\"end_char\":1,\"new_text\":\"x\",\"rationale\":\"y\"}"}],"stop_reason":"end_turn"}"#;
+    const SUCCESS_BODY: &str = r#"{"content":[{"type":"text","text":"{\"start_line\":0,\"start_char\":0,\"end_line\":0,\"end_char\":1,\"new_text\":\"x\",\"rationale\":\"y\"}"}],"stop_reason":"end_turn"}"#;
 
     #[test]
     fn returns_parsed_response_on_200() {
@@ -260,7 +260,10 @@ mod tests {
         let err = t.send(&make_request()).expect_err("must error");
         let msg = err.to_string();
         assert!(msg.contains("HTTP 401"), "msg: {msg}");
-        assert!(msg.contains("ANTHROPIC_API_KEY"), "msg should hint at env var: {msg}");
+        assert!(
+            msg.contains("ANTHROPIC_API_KEY"),
+            "msg should hint at env var: {msg}"
+        );
         // Must NOT have retried.
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
         handle.join().unwrap();
@@ -270,9 +273,15 @@ mod tests {
     fn rate_limit_retries_then_succeeds() {
         let (url, handle) = start_stub_server(2, |i| {
             if i == 0 {
-                StubResponse { status: 429, body: "{\"error\":\"rate_limited\"}".into() }
+                StubResponse {
+                    status: 429,
+                    body: "{\"error\":\"rate_limited\"}".into(),
+                }
             } else {
-                StubResponse { status: 200, body: SUCCESS_BODY.into() }
+                StubResponse {
+                    status: 200,
+                    body: SUCCESS_BODY.into(),
+                }
             }
         });
         let t = ReqwestTransport::new("k".into())
@@ -288,9 +297,15 @@ mod tests {
     fn server_error_retries_then_succeeds() {
         let (url, handle) = start_stub_server(3, |i| {
             if i < 2 {
-                StubResponse { status: 503, body: "service unavailable".into() }
+                StubResponse {
+                    status: 503,
+                    body: "service unavailable".into(),
+                }
             } else {
-                StubResponse { status: 200, body: SUCCESS_BODY.into() }
+                StubResponse {
+                    status: 200,
+                    body: SUCCESS_BODY.into(),
+                }
             }
         });
         let t = ReqwestTransport::new("k".into())
@@ -314,7 +329,10 @@ mod tests {
             .with_backoff_base_ms(1);
         let err = t.send(&make_request()).expect_err("must exhaust");
         let msg = err.to_string();
-        assert!(msg.contains("transient error after 3 retries"), "msg: {msg}");
+        assert!(
+            msg.contains("transient error after 3 retries"),
+            "msg: {msg}"
+        );
         handle.join().unwrap();
     }
 
@@ -335,7 +353,11 @@ mod tests {
             .with_backoff_base_ms(1);
         let err = t.send(&make_request()).expect_err("must error");
         assert!(err.to_string().contains("HTTP 400"));
-        assert_eq!(attempts.load(Ordering::SeqCst), 1, "bad request must not retry");
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            1,
+            "bad request must not retry"
+        );
         handle.join().unwrap();
     }
 
@@ -351,7 +373,10 @@ mod tests {
         let err = t.send(&make_request()).expect_err("must error");
         let msg = err.to_string();
         assert!(msg.contains("404"), "msg: {msg}");
-        assert!(msg.contains("claude-opus-4-7"), "msg should mention model: {msg}");
+        assert!(
+            msg.contains("claude-opus-4-7"),
+            "msg should mention model: {msg}"
+        );
         handle.join().unwrap();
     }
 
@@ -389,9 +414,17 @@ mod tests {
         handle.join().unwrap();
 
         let seen = captured.lock().unwrap().join("\n").to_lowercase();
-        assert!(seen.contains("x-api-key: my-test-key"), "missing api key: {seen}");
-        assert!(seen.contains("anthropic-version: 2023-06-01"), "missing version: {seen}");
-        assert!(seen.contains("anthropic-beta: prompt-caching-2024-07-31"),
-                "missing beta header: {seen}");
+        assert!(
+            seen.contains("x-api-key: my-test-key"),
+            "missing api key: {seen}"
+        );
+        assert!(
+            seen.contains("anthropic-version: 2023-06-01"),
+            "missing version: {seen}"
+        );
+        assert!(
+            seen.contains("anthropic-beta: prompt-caching-2024-07-31"),
+            "missing beta header: {seen}"
+        );
     }
 }

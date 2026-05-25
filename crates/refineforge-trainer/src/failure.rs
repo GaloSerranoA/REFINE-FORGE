@@ -85,7 +85,7 @@ pub fn run_with_retries(runs_root: &Path, exp: &Experiment) -> Result<RetryOutco
 
         // Non-zero exit. Classify + decide next action.
         let category = classify_failure(&log_tail, exit_code);
-        let action = decide_action(&exp, attempt, max_attempts, category, &outcome);
+        let action = decide_action(exp, attempt, max_attempts, category, &outcome);
         let record = FailureRecord {
             timestamp: Utc::now(),
             attempt,
@@ -118,7 +118,10 @@ pub fn run_with_retries(runs_root: &Path, exp: &Experiment) -> Result<RetryOutco
 
 fn classify_failure(log_tail: &str, exit_code: Option<i32>) -> FailureCategory {
     let lower = log_tail.to_lowercase();
-    if lower.contains("out of memory") || lower.contains("cuda out of memory") || lower.contains("oom") {
+    if lower.contains("out of memory")
+        || lower.contains("cuda out of memory")
+        || lower.contains("oom")
+    {
         return FailureCategory::OutOfMemory;
     }
     if exit_code == Some(130) || lower.contains("keyboardinterrupt") || lower.contains("sigint") {
@@ -160,14 +163,13 @@ fn decide_action(
             return RecoveryAction::Abort;
         }
     }
-    if exp.retry.resume_from_checkpoint {
-        if crate::checkpoint::latest(&outcome.paths.checkpoint_dir)
+    if exp.retry.resume_from_checkpoint
+        && crate::checkpoint::latest(&outcome.paths.checkpoint_dir)
             .ok()
             .flatten()
             .is_some()
-        {
-            return RecoveryAction::ResumeFromCheckpoint;
-        }
+    {
+        return RecoveryAction::ResumeFromCheckpoint;
     }
     RecoveryAction::RetryFromScratch
 }
@@ -188,7 +190,11 @@ fn read_log_tail(path: &Path, lines: usize) -> String {
 
 fn summarise(text: &str, max: usize) -> String {
     let cleaned = text.replace('\n', " | ");
-    if cleaned.len() <= max { cleaned } else { format!("{}…", &cleaned[..max.saturating_sub(1)]) }
+    if cleaned.len() <= max {
+        cleaned
+    } else {
+        format!("{}…", &cleaned[..max.saturating_sub(1)])
+    }
 }
 
 fn append_jsonl<T: Serialize>(path: &Path, val: &T) -> Result<()> {
@@ -225,7 +231,10 @@ mod tests {
             classify_failure("KeyboardInterrupt", Some(130)),
             FailureCategory::Interrupted
         );
-        assert_eq!(classify_failure("", Some(130)), FailureCategory::Interrupted);
+        assert_eq!(
+            classify_failure("", Some(130)),
+            FailureCategory::Interrupted
+        );
     }
 
     #[test]
@@ -246,6 +255,9 @@ mod tests {
 
     #[test]
     fn classify_unknown_when_no_signals() {
-        assert_eq!(classify_failure("training completed", None), FailureCategory::Unknown);
+        assert_eq!(
+            classify_failure("training completed", None),
+            FailureCategory::Unknown
+        );
     }
 }

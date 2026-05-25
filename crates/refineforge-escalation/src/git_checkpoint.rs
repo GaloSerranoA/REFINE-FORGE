@@ -58,11 +58,7 @@ pub trait GitOps {
 
     /// Read the current content of `file_rel` (relative to
     /// `repo_root`) from the working tree.
-    fn read_file(
-        &self,
-        repo_root: &Path,
-        file_rel: &Path,
-    ) -> Result<String, GitCheckpointError>;
+    fn read_file(&self, repo_root: &Path, file_rel: &Path) -> Result<String, GitCheckpointError>;
 
     /// Write `content` to `file_rel` under `repo_root` (caller
     /// uses this when staging the initial packet before the
@@ -141,11 +137,7 @@ impl GitOps for SubprocessGitOps {
         Ok(CommitSha(sha))
     }
 
-    fn read_file(
-        &self,
-        repo_root: &Path,
-        file_rel: &Path,
-    ) -> Result<String, GitCheckpointError> {
+    fn read_file(&self, repo_root: &Path, file_rel: &Path) -> Result<String, GitCheckpointError> {
         let full = repo_root.join(file_rel);
         std::fs::read_to_string(&full)
             .map_err(|e| GitCheckpointError::PacketMissing(format!("{}: {}", full.display(), e)))
@@ -159,8 +151,9 @@ impl GitOps for SubprocessGitOps {
     ) -> Result<(), GitCheckpointError> {
         let full = repo_root.join(file_rel);
         if let Some(parent) = full.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| GitCheckpointError::Io(format!("mkdir {}: {}", parent.display(), e)))?;
+            std::fs::create_dir_all(parent).map_err(|e| {
+                GitCheckpointError::Io(format!("mkdir {}: {}", parent.display(), e))
+            })?;
         }
         std::fs::write(&full, content)
             .map_err(|e| GitCheckpointError::Io(format!("write {}: {}", full.display(), e)))
@@ -234,11 +227,7 @@ impl GitOps for MockGitOps {
         Ok(CommitSha(sha))
     }
 
-    fn read_file(
-        &self,
-        _repo_root: &Path,
-        file_rel: &Path,
-    ) -> Result<String, GitCheckpointError> {
+    fn read_file(&self, _repo_root: &Path, file_rel: &Path) -> Result<String, GitCheckpointError> {
         self.files
             .lock()
             .unwrap()
@@ -253,8 +242,7 @@ impl GitOps for MockGitOps {
         file_rel: &Path,
         content: &str,
     ) -> Result<(), GitCheckpointError> {
-        let effective = if let Some(reason) = self.auto_approve_reason.lock().unwrap().as_ref()
-        {
+        let effective = if let Some(reason) = self.auto_approve_reason.lock().unwrap().as_ref() {
             content.replace("(pending)", &format!("APPROVED: {}", reason))
         } else {
             content.to_string()
@@ -382,8 +370,8 @@ mod tests {
     fn commit_packet_writes_and_commits() {
         let g = MockGitOps::new();
         let p: PathBuf = "escalations/EXAMPLE-002/packet.md".into();
-        let sha = commit_packet(&g, Path::new(""), &p, "# hi\n", "escalation: idealisation")
-            .unwrap();
+        let sha =
+            commit_packet(&g, Path::new(""), &p, "# hi\n", "escalation: idealisation").unwrap();
         assert!(sha.0.starts_with("mock-"));
         let commits = g.commits();
         assert_eq!(commits.len(), 1);
@@ -395,10 +383,7 @@ mod tests {
     fn poll_pending_returns_none() {
         let g = MockGitOps::new();
         let p: PathBuf = "p.md".into();
-        g.set_file_content(
-            &p,
-            "## Human decision\n\n<!-- comment -->\n(pending)\n",
-        );
+        g.set_file_content(&p, "## Human decision\n\n<!-- comment -->\n(pending)\n");
         let r = poll_decision_once(&g, Path::new(""), &p).unwrap();
         assert!(r.is_none());
     }

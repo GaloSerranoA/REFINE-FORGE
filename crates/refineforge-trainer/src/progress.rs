@@ -63,6 +63,12 @@ impl HuggingFaceParser {
     }
 }
 
+impl Default for HuggingFaceParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProgressParser for HuggingFaceParser {
     fn parse_line(&self, line: &str) -> Option<ProgressRecord> {
         let m = self.line_re.find(line)?;
@@ -106,11 +112,21 @@ impl ProgressParser for HuggingFaceParser {
 pub struct AxolotlParser(HuggingFaceParser);
 
 impl AxolotlParser {
-    pub fn new() -> Self { Self(HuggingFaceParser::new()) }
+    pub fn new() -> Self {
+        Self(HuggingFaceParser::new())
+    }
+}
+
+impl Default for AxolotlParser {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ProgressParser for AxolotlParser {
-    fn parse_line(&self, line: &str) -> Option<ProgressRecord> { self.0.parse_line(line) }
+    fn parse_line(&self, line: &str) -> Option<ProgressRecord> {
+        self.0.parse_line(line)
+    }
 }
 
 // ─── Generic parser ─────────────────────────────────────────────────────
@@ -128,9 +144,18 @@ pub struct GenericParser {
 impl GenericParser {
     pub fn new() -> Self {
         Self {
-            kv_re: Regex::new(r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([-+]?\d+(?:\.\d*)?(?:[eE][-+]?\d+)?)").unwrap(),
+            kv_re: Regex::new(
+                r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([-+]?\d+(?:\.\d*)?(?:[eE][-+]?\d+)?)",
+            )
+            .unwrap(),
             step_re: Regex::new(r"(?i)step[\s=:]+(\d+)").unwrap(),
         }
+    }
+}
+
+impl Default for GenericParser {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -139,7 +164,9 @@ impl ProgressParser for GenericParser {
         let mut metrics = BTreeMap::new();
         for cap in self.kv_re.captures_iter(line) {
             let key = cap[1].to_string();
-            if key == "step" { continue; }
+            if key == "step" {
+                continue;
+            }
             if let Ok(v) = cap[2].parse::<f64>() {
                 metrics.insert(key, v);
             }
@@ -161,7 +188,11 @@ impl ProgressParser for GenericParser {
 }
 
 fn truncate(s: &str, n: usize) -> String {
-    if s.len() <= n { s.to_string() } else { format!("{}...", &s[..n.saturating_sub(3)]) }
+    if s.len() <= n {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..n.saturating_sub(3)])
+    }
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@ name = "refineforge-trainer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "refineforge: training-experiment orchestration (Section 2 phase 1+). Wraps any training backend (axolotl, HuggingFace Trainer, custom) with run-tracking, checkpoint resume, failure recovery, and JSON reports. Does NOT perform training itself."
+description = "refineforge: training control plane with a native proof-repair smoke trainer plus external backend orchestration, checkpointing, recovery, promotion, and JSON reports."
 
 [[bin]]
 name = "refine-train"

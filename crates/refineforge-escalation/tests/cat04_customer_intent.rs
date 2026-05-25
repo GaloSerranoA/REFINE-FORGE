@@ -1,7 +1,7 @@
 //! Category 4 — Refinement-doc claim about customer / user /
 //! regulator / operator intent.
 
-use refineforge_escalation::{Action, Category, Decision, Engine, ProjectContext, SentenceKind};
+use refineforge_escalation::{Action, Category, Engine, ProjectContext, SentenceKind};
 
 fn eng() -> Engine {
     Engine::new()

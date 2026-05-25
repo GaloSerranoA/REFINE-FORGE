@@ -31,12 +31,14 @@ pub struct Sweep {
     pub strategy: String,
 }
 
-fn default_strategy() -> String { "cartesian".to_string() }
+fn default_strategy() -> String {
+    "cartesian".to_string()
+}
 
 impl Sweep {
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let s: Sweep = serde_yaml::from_str(&text)
             .with_context(|| format!("parsing sweep YAML {}", path.display()))?;
         s.validate()?;
@@ -57,15 +59,17 @@ impl Sweep {
         match self.strategy.as_str() {
             "cartesian" => {}
             other if other.starts_with("random:") => {
-                let n: usize = other.trim_start_matches("random:").parse()
+                let n: usize = other
+                    .trim_start_matches("random:")
+                    .parse()
                     .with_context(|| format!("invalid random sweep count in {other:?}"))?;
                 if n == 0 {
                     anyhow::bail!("random sweep count must be > 0");
                 }
             }
-            other => anyhow::bail!(
-                "unknown sweep strategy {other:?} — supported: cartesian, random:N"
-            ),
+            other => {
+                anyhow::bail!("unknown sweep strategy {other:?} — supported: cartesian, random:N")
+            }
         }
         Ok(())
     }
@@ -134,18 +138,26 @@ fn random_sample(grid: &BTreeMap<String, Vec<Value>>, n: usize) -> Vec<BTreeMap<
     // Simple Fisher-Yates with our LCG.
     let mut state = seed;
     for i in (1..indices.len()).rev() {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let j = (state >> 33) as usize % (i + 1);
         indices.swap(i, j);
     }
-    indices.into_iter().take(n).map(|i| all[i].clone()).collect()
+    indices
+        .into_iter()
+        .take(n)
+        .map(|i| all[i].clone())
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn v(x: i64) -> Value { Value::Number(serde_yaml::Number::from(x)) }
+    fn v(x: i64) -> Value {
+        Value::Number(serde_yaml::Number::from(x))
+    }
 
     #[test]
     fn cartesian_3x2_gives_6() {
@@ -180,7 +192,10 @@ mod tests {
     #[test]
     fn random_sample_is_deterministic() {
         let mut grid = BTreeMap::new();
-        grid.insert("hyperparameters.lr".into(), vec![v(1), v(2), v(3), v(4), v(5)]);
+        grid.insert(
+            "hyperparameters.lr".into(),
+            vec![v(1), v(2), v(3), v(4), v(5)],
+        );
         grid.insert("hyperparameters.bs".into(), vec![v(8), v(16), v(32)]);
         let a = random_sample(&grid, 3);
         let b = random_sample(&grid, 3);

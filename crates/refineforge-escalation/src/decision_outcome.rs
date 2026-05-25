@@ -86,7 +86,11 @@ pub fn parse_decision(markdown: &str) -> Result<DecisionOutcome, DecisionParseEr
         }
         let reason = clean_reason(rest, &body, 1);
         Ok(DecisionOutcome::Approved {
-            reason: if reason.is_empty() { None } else { Some(reason) },
+            reason: if reason.is_empty() {
+                None
+            } else {
+                Some(reason)
+            },
         })
     } else if verdict_line.eq_ignore_ascii_case("APPROVED") {
         Ok(DecisionOutcome::Approved { reason: None })
@@ -106,7 +110,7 @@ pub fn parse_decision(markdown: &str) -> Result<DecisionOutcome, DecisionParseEr
         }
         Ok(DecisionOutcome::EditAndResubmit { suggestions })
     } else {
-        Err(DecisionParseError::Unrecognised(verdict_line.into()))
+        Err(DecisionParseError::Unrecognised(verdict_line))
     }
 }
 
@@ -197,10 +201,7 @@ fn parse_partial(body: &str) -> Result<DecisionOutcome, DecisionParseError> {
         if line.starts_with("# ") || line.starts_with("## ") {
             break;
         }
-        if !seen_verdict
-            && !line.starts_with("APPROVED:")
-            && !line.starts_with("REJECTED:")
-        {
+        if !seen_verdict && !line.starts_with("APPROVED:") && !line.starts_with("REJECTED:") {
             continue;
         }
         if !full.is_empty() {
@@ -362,20 +363,23 @@ mod tests {
     fn comments_inside_decision_block_are_ignored() {
         let md = "## Human decision\n\n<!-- some hint -->\n<!-- another hint -->\n\nAPPROVED: ok\n";
         let r = parse_decision(md).unwrap();
-        assert_eq!(r, DecisionOutcome::Approved { reason: Some("ok".into()) });
+        assert_eq!(
+            r,
+            DecisionOutcome::Approved {
+                reason: Some("ok".into())
+            }
+        );
     }
 
     #[test]
     fn partial_form_simple() {
-        let r =
-            parse_decision(&wrap("APPROVED: 1,2,3; REJECTED: 4 [the eval did not converge]"))
-                .unwrap();
+        let r = parse_decision(&wrap(
+            "APPROVED: 1,2,3; REJECTED: 4 [the eval did not converge]",
+        ))
+        .unwrap();
         if let DecisionOutcome::Partial(p) = r {
             assert_eq!(p.approved_indices, vec![1, 2, 3]);
-            assert_eq!(
-                p.rejection_reason(4),
-                Some("the eval did not converge")
-            );
+            assert_eq!(p.rejection_reason(4), Some("the eval did not converge"));
         } else {
             panic!("expected Partial, got {:?}", r);
         }
@@ -383,8 +387,7 @@ mod tests {
 
     #[test]
     fn partial_form_range_and_individual() {
-        let r =
-            parse_decision(&wrap("APPROVED: 1-5,7; REJECTED: 6,8 [losses too lossy]")).unwrap();
+        let r = parse_decision(&wrap("APPROVED: 1-5,7; REJECTED: 6,8 [losses too lossy]")).unwrap();
         if let DecisionOutcome::Partial(p) = r {
             assert_eq!(p.approved_indices, vec![1, 2, 3, 4, 5, 7]);
             assert_eq!(p.rejected_indices.len(), 2);

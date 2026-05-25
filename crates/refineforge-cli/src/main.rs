@@ -12,7 +12,8 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use refineforge_cli::{
-    agent, autonomous, bundle, claim, lint, release, repair, runner, scaffold, scan,
+    agent, autonomous, bundle, claim, lint, memory, production_proof, release, repair, runner,
+    scaffold, scan,
 };
 
 #[derive(Parser)]
@@ -68,10 +69,20 @@ enum Cmd {
         #[command(subcommand)]
         cmd: ReleaseCmd,
     },
+    /// Central non-authoritative memory records for Refine-Forge agents.
+    Memory {
+        #[command(subcommand)]
+        cmd: MemoryCmd,
+    },
     /// Four HELYX-facing specialist agents backed by CLI evidence reports.
     Agent {
         #[command(subcommand)]
         cmd: AgentCmd,
+    },
+    /// Verify a full production-proof evidence pack across all four agents.
+    ProductionProof {
+        #[command(subcommand)]
+        cmd: ProductionProofCmd,
     },
     /// SKELETON: bounded LLM repair loop. Spawns `lake env lean
     /// --server`, collects diagnostics, asks the strategy for
@@ -269,6 +280,62 @@ enum ReleaseCmd {
     },
 }
 
+#[derive(Subcommand)]
+enum MemoryCmd {
+    /// Add one memory record to the JSONL store.
+    Add {
+        /// Store path. Defaults to .refineforge/memory/records.jsonl under --root.
+        #[arg(long)]
+        store: Option<PathBuf>,
+        /// Agent role: lean, devops, train, kernel, or run_all.
+        #[arg(long)]
+        agent: String,
+        /// Target project or system, e.g. helyx, cogn8ty, or refine-forge.
+        #[arg(long)]
+        target: String,
+        /// Memory kind: preference, citation, evidence_index, handoff, claim_note, or blocker.
+        #[arg(long)]
+        kind: String,
+        /// Memory content.
+        #[arg(long)]
+        content: String,
+        /// Optional source file to hash and cite.
+        #[arg(long)]
+        source_path: Option<PathBuf>,
+    },
+    /// List memory records as JSON.
+    List {
+        /// Store path. Defaults to .refineforge/memory/records.jsonl under --root.
+        #[arg(long)]
+        store: Option<PathBuf>,
+        /// Optional agent filter.
+        #[arg(long)]
+        agent: Option<String>,
+        /// Optional target filter.
+        #[arg(long)]
+        target: Option<String>,
+        /// Optional kind filter.
+        #[arg(long)]
+        kind: Option<String>,
+    },
+    /// Import newline-delimited memory JSON records, de-duplicating by id.
+    Import {
+        /// Source JSONL file.
+        from: PathBuf,
+        /// Store path. Defaults to .refineforge/memory/records.jsonl under --root.
+        #[arg(long)]
+        store: Option<PathBuf>,
+    },
+    /// Export the memory store as newline-delimited JSON.
+    Export {
+        /// Destination JSONL file.
+        out: PathBuf,
+        /// Store path. Defaults to .refineforge/memory/records.jsonl under --root.
+        #[arg(long)]
+        store: Option<PathBuf>,
+    },
+}
+
 #[derive(Clone, clap::Args)]
 struct AgentCliOptions {
     /// Agent mode: inspect is read-only, check runs gates, repair/execute may run heavier workflows.
@@ -312,6 +379,25 @@ enum AgentCmd {
     Kernel(AgentCliOptions),
     /// Run all four agents and write a combined HELYX readiness dashboard.
     RunAll(AgentCliOptions),
+}
+
+#[derive(Subcommand)]
+enum ProductionProofCmd {
+    /// Validate a self-contained evidence pack and write a production-proof report.
+    Verify {
+        /// Evidence directory containing evidence.json and all declared artifacts.
+        #[arg(long)]
+        evidence_dir: PathBuf,
+        /// Evidence output directory for summary.json and summary.md.
+        #[arg(long, default_value = "production-proof/reports/latest")]
+        out: PathBuf,
+        /// Target project or system, e.g. helyx.
+        #[arg(long, default_value = "helyx")]
+        target: String,
+        /// Emit the JSON report to stdout after writing evidence files.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -392,6 +478,54 @@ fn main() -> Result<()> {
                 )
             }
         },
+        Cmd::Memory { cmd } => match cmd {
+            MemoryCmd::Add {
+                store,
+                agent,
+                target,
+                kind,
+                content,
+                source_path,
+            } => {
+                let record = memory::add_with_store(
+                    &cli.root,
+                    memory::AddOptions {
+                        store,
+                        agent,
+                        target,
+                        kind,
+                        content,
+                        source_path,
+                    },
+                )?;
+                memory::print_json(&record)
+            }
+            MemoryCmd::List {
+                store,
+                agent,
+                target,
+                kind,
+            } => {
+                let records = memory::list(
+                    &cli.root,
+                    memory::ListOptions {
+                        store,
+                        agent,
+                        target,
+                        kind,
+                    },
+                )?;
+                memory::print_json(&records)
+            }
+            MemoryCmd::Import { from, store } => {
+                let summary = memory::import_jsonl(&cli.root, &from, store.as_ref())?;
+                memory::print_json(&summary)
+            }
+            MemoryCmd::Export { out, store } => {
+                let summary = memory::export_jsonl(&cli.root, &out, store.as_ref())?;
+                memory::print_json(&summary)
+            }
+        },
         Cmd::Agent { cmd } => match cmd {
             AgentCmd::Lean(opts) => {
                 agent::run_role(&cli.root, agent::AgentRole::Lean, opts.into_agent_options())
@@ -412,6 +546,22 @@ fn main() -> Result<()> {
                 opts.into_agent_options(),
             ),
             AgentCmd::RunAll(opts) => agent::run_all(&cli.root, opts.into_agent_options()),
+        },
+        Cmd::ProductionProof { cmd } => match cmd {
+            ProductionProofCmd::Verify {
+                evidence_dir,
+                out,
+                target,
+                json,
+            } => production_proof::verify(
+                &cli.root,
+                production_proof::VerifyOptions {
+                    evidence_dir,
+                    out_dir: out,
+                    target,
+                    emit_json: json,
+                },
+            ),
         },
         Cmd::Repair {
             claim_id,
@@ -439,20 +589,20 @@ fn main() -> Result<()> {
             inject_counter_idealisation,
             inject_training,
             inject_bitexact,
-        } => autonomous::run_cli(
-            &cli.root,
-            &claim_id,
-            &strategy,
-            weights_path.as_deref(),
+        } => autonomous::run_cli(autonomous::RunCliOptions {
+            root: &cli.root,
+            claim_id: &claim_id,
+            strategy: &strategy,
+            weights_path: weights_path.as_deref(),
             max_cost_usd,
-            operator.as_deref(),
+            operator: operator.as_deref(),
             dry_run,
             auto_repair,
             await_decisions,
             inject_counter_idealisation,
-            &inject_training,
-            &inject_bitexact,
-        ),
+            inject_training: &inject_training,
+            inject_bitexact: &inject_bitexact,
+        }),
         Cmd::Escalations { cmd } => match cmd {
             EscalationsCmd::List { claim, age_gt } => {
                 autonomous::escalations_list(&cli.root, claim.as_deref(), age_gt)

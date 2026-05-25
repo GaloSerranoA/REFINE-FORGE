@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::checkpoint;
 use crate::experiment::{Backend, Experiment};
+use crate::native;
 use crate::progress::parser_for;
 
 #[derive(Debug, Clone)]
@@ -55,9 +56,9 @@ pub struct RunOutcome {
 }
 
 /// Build the command line for the given backend by substituting
-/// template tokens. Defaults are provided for `axolotl` and
-/// `hf_trainer` and `helyx_train`; `custom` requires the user to provide
-/// `command`.
+/// template tokens. Defaults are provided for `axolotl`, `helyx_train`,
+/// and the in-process `refineforge_native` dry-run label; `custom`
+/// requires the user to provide `command`.
 pub fn build_command(backend: &Backend, paths: &RunPaths, exp: &Experiment) -> Result<Vec<String>> {
     let resume_from = checkpoint::latest(&paths.checkpoint_dir)?
         .map(|c| c.path.display().to_string())
@@ -84,6 +85,9 @@ pub fn build_command(backend: &Backend, paths: &RunPaths, exp: &Experiment) -> R
                 "backend.kind=hf_trainer with no command requires `backend.command` template — point at your training script"
             ));
         }
+        ("refineforge_native", None) => {
+            "refineforge-native run --dataset {dataset_path} --output {run_dir} --checkpoint-dir {checkpoint_dir}".to_string()
+        }
         ("helyx_train", None) => {
             let cfg = backend.config_file.as_ref().ok_or_else(|| {
                 anyhow!("backend.kind=helyx_train with no command requires backend.config_file")
@@ -101,12 +105,18 @@ pub fn build_command(backend: &Backend, paths: &RunPaths, exp: &Experiment) -> R
 
     let substituted = template
         .replace("{run_dir}", &paths.run_dir.display().to_string())
-        .replace("{checkpoint_dir}", &paths.checkpoint_dir.display().to_string())
+        .replace(
+            "{checkpoint_dir}",
+            &paths.checkpoint_dir.display().to_string(),
+        )
         .replace("{config_file}", &config_file)
         .replace("{dataset_path}", &exp.dataset.path.display().to_string())
         .replace("{dataset_format}", &exp.dataset.format)
         .replace("{base_model}", &exp.base_model.name)
-        .replace("{base_revision}", exp.base_model.revision.as_deref().unwrap_or(""))
+        .replace(
+            "{base_revision}",
+            exp.base_model.revision.as_deref().unwrap_or(""),
+        )
         .replace("{resume_from}", &resume_from);
 
     let mut argv: Vec<String> = shell_split(&substituted);
@@ -135,6 +145,18 @@ pub fn run_once(runs_root: &Path, exp: &Experiment) -> Result<RunOutcome> {
     let cfg_path = paths.run_dir.join("config.yaml");
     std::fs::write(&cfg_path, serde_yaml::to_string(exp)?)?;
 
+    if exp.backend.kind == "refineforge_native" {
+        let native_outcome = native::run(&paths, exp)?;
+        if let Some(keep_last) = exp.checkpoint.keep_last {
+            let _ = checkpoint::prune(&paths.checkpoint_dir, keep_last);
+        }
+        return Ok(RunOutcome {
+            exit_status: successful_exit_status(),
+            progress_records: native_outcome.progress_records,
+            paths,
+        });
+    }
+
     let argv = build_command(&exp.backend, &paths, exp)?;
     let (program, args) = argv.split_first().unwrap();
 
@@ -154,8 +176,14 @@ pub fn run_once(runs_root: &Path, exp: &Experiment) -> Result<RunOutcome> {
     let parser = Arc::new(parser);
     let records = Arc::new(Mutex::new(0usize));
 
-    let stdout = child.stdout.take().ok_or_else(|| anyhow!("no child stdout"))?;
-    let stderr = child.stderr.take().ok_or_else(|| anyhow!("no child stderr"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow!("no child stdout"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow!("no child stderr"))?;
 
     let log_for_stdout = Arc::clone(&log);
     let progress_for_stdout = Arc::clone(&progress);
@@ -207,6 +235,18 @@ pub fn run_once(runs_root: &Path, exp: &Experiment) -> Result<RunOutcome> {
     })
 }
 
+#[cfg(unix)]
+fn successful_exit_status() -> std::process::ExitStatus {
+    use std::os::unix::process::ExitStatusExt;
+    std::process::ExitStatus::from_raw(0)
+}
+
+#[cfg(windows)]
+fn successful_exit_status() -> std::process::ExitStatus {
+    use std::os::windows::process::ExitStatusExt;
+    std::process::ExitStatus::from_raw(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,8 +257,16 @@ mod tests {
         Experiment {
             id: "test-exp".into(),
             description: "".into(),
-            base_model: BaseModel { name: "x".into(), source: "huggingface".into(), revision: None },
-            dataset: Dataset { path: "data.jsonl".into(), format: "jsonl".into(), fields: BTreeMap::new() },
+            base_model: BaseModel {
+                name: "x".into(),
+                source: "huggingface".into(),
+                revision: None,
+            },
+            dataset: Dataset {
+                path: "data.jsonl".into(),
+                format: "jsonl".into(),
+                fields: BTreeMap::new(),
+            },
             backend: Backend {
                 kind: "custom".into(),
                 config_file: None,
@@ -292,12 +340,38 @@ mod tests {
         assert_eq!(argv[0], "helyx-train");
         assert_eq!(argv[1], "run");
         let joined = argv.join(" ");
-        assert!(joined.contains("--config training/configs/helyx-proof-repair.yaml"), "{joined}");
+        assert!(
+            joined.contains("--config training/configs/helyx-proof-repair.yaml"),
+            "{joined}"
+        );
         assert!(joined.contains("--dataset data.jsonl"), "{joined}");
         assert!(joined.contains("--output"), "{joined}");
         assert!(joined.contains("test-exp"), "{joined}");
         assert!(joined.contains("--checkpoint-dir"), "{joined}");
         assert!(joined.contains("checkpoints"), "{joined}");
+    }
+
+    #[test]
+    fn build_command_describes_native_backend_dry_run() {
+        let mut exp = minimal_exp_with_command("ignored");
+        exp.backend = Backend {
+            kind: "refineforge_native".into(),
+            config_file: None,
+            command: None,
+            extra_args: vec![],
+        };
+        let td = tempfile::tempdir().unwrap();
+        let paths = RunPaths::for_experiment(td.path(), &exp);
+        paths.ensure_created().unwrap();
+
+        let argv = build_command(&exp.backend, &paths, &exp).unwrap();
+
+        assert_eq!(argv[0], "refineforge-native");
+        let joined = argv.join(" ");
+        assert!(joined.contains("--dataset data.jsonl"), "{joined}");
+        assert!(joined.contains("--output"), "{joined}");
+        assert!(joined.contains("test-exp"), "{joined}");
+        assert!(joined.contains("--checkpoint-dir"), "{joined}");
     }
 
     #[test]

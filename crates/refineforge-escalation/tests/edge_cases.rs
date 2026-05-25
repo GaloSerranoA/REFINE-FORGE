@@ -44,7 +44,10 @@ fn idealisation_evidence_carries_lost_properties() {
     };
     let d = eng.decide(&act, &ctx).unwrap();
     if let Decision::Escalate(r) = d {
-        if let Evidence::Idealisation { lost_properties, .. } = r.evidence {
+        if let Evidence::Idealisation {
+            lost_properties, ..
+        } = r.evidence
+        {
             assert_eq!(lost_properties, vec![LossKind::UnsignedOverflow]);
         } else {
             panic!("expected Idealisation evidence, got {:?}", r.evidence);

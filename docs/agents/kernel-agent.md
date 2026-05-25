@@ -15,8 +15,10 @@ refine agent kernel --mode execute --target kernels/configs/your-kernel.yaml --o
 ## Source Of Truth
 
 Use the generated `kernel.json` report plus any `refine-bitexact` evidence it
-records. Execute mode runs lint first and only then runs the configured
-bit-exact gate into the agent evidence directory.
+records. The runtime envelope caps kernel evidence at `measured-only` until
+real kernel, hardware, portability, and benchmark evidence exists. Execute mode
+runs lint first and only then runs the configured bit-exact gate into the agent
+evidence directory.
 
 ## Allowed Work
 
@@ -26,6 +28,9 @@ bit-exact gate into the agent evidence directory.
   separate in every report.
 - Record deterministic, nondeterministic, and missing-baseline outcomes.
 - Prepare HELYX kernel handoff reports.
+
+CUDA correctness production proof is governed by
+`docs/kernels/kernel-production-proof.md`.
 
 ## Forbidden Claims
 

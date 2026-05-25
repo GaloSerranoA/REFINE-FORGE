@@ -10,6 +10,8 @@ pub mod autonomous;
 pub mod bundle;
 pub mod claim;
 pub mod lint;
+pub mod memory;
+pub mod production_proof;
 pub mod release;
 pub mod repair;
 pub mod report;

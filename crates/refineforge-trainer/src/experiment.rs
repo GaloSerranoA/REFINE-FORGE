@@ -45,7 +45,9 @@ pub struct BaseModel {
     pub revision: Option<String>,
 }
 
-fn default_source() -> String { "huggingface".to_string() }
+fn default_source() -> String {
+    "huggingface".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Dataset {
@@ -58,12 +60,15 @@ pub struct Dataset {
     pub fields: BTreeMap<String, String>,
 }
 
-fn default_format() -> String { "jsonl".to_string() }
+fn default_format() -> String {
+    "jsonl".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Backend {
-    /// One of: `axolotl`, `hf_trainer`, `helyx_train`, `custom`.
-    /// Runner uses this to pick the right subprocess pattern + log parser.
+    /// One of: `refineforge_native`, `axolotl`, `hf_trainer`,
+    /// `helyx_train`, `custom`. Runner uses this to pick the right
+    /// in-process backend or subprocess pattern + log parser.
     pub kind: String,
     /// Path to the backend's own config file (e.g. axolotl YAML).
     #[serde(default)]
@@ -94,7 +99,9 @@ pub struct CheckpointConfig {
     pub keep_last: Option<usize>,
 }
 
-fn default_checkpoint_dir() -> String { "checkpoints".to_string() }
+fn default_checkpoint_dir() -> String {
+    "checkpoints".to_string()
+}
 
 impl Default for CheckpointConfig {
     fn default() -> Self {
@@ -120,9 +127,15 @@ pub struct MonitoringConfig {
     pub metrics_to_track: Vec<String>,
 }
 
-fn default_log_file() -> String { "train.log".to_string() }
-fn default_progress_format() -> String { "generic".to_string() }
-fn default_metrics() -> Vec<String> { vec!["loss".into(), "eval_loss".into(), "learning_rate".into()] }
+fn default_log_file() -> String {
+    "train.log".to_string()
+}
+fn default_progress_format() -> String {
+    "generic".to_string()
+}
+fn default_metrics() -> Vec<String> {
+    vec!["loss".into(), "eval_loss".into(), "learning_rate".into()]
+}
 
 impl Default for MonitoringConfig {
     fn default() -> Self {
@@ -144,9 +157,15 @@ pub struct RetryConfig {
     pub resume_from_checkpoint: bool,
 }
 
-fn default_max_attempts() -> u32 { 3 }
-fn default_backoff_seconds() -> u64 { 60 }
-fn default_true() -> bool { true }
+fn default_max_attempts() -> u32 {
+    3
+}
+fn default_backoff_seconds() -> u64 {
+    60
+}
+fn default_true() -> bool {
+    true
+}
 
 impl Default for RetryConfig {
     fn default() -> Self {
@@ -160,8 +179,8 @@ impl Default for RetryConfig {
 
 impl Experiment {
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let exp: Experiment = serde_yaml::from_str(&text)
             .with_context(|| format!("parsing experiment YAML {}", path.display()))?;
         exp.validate()?;
@@ -183,11 +202,14 @@ impl Experiment {
             );
         }
         match self.backend.kind.as_str() {
-            "axolotl" | "hf_trainer" | "helyx_train" | "custom" => {}
+            "refineforge_native" | "axolotl" | "hf_trainer" | "helyx_train" | "custom" => {}
             other => anyhow::bail!(
-                "unknown backend.kind {:?} — supported: axolotl, hf_trainer, helyx_train, custom",
+                "unknown backend.kind {:?} — supported: refineforge_native, axolotl, hf_trainer, helyx_train, custom",
                 other
             ),
+        }
+        if self.backend.kind == "refineforge_native" && self.backend.command.is_some() {
+            anyhow::bail!("backend.kind=refineforge_native does not accept backend.command");
         }
         if self.backend.kind == "custom" && self.backend.command.is_none() {
             anyhow::bail!("backend.kind=custom requires backend.command template");
@@ -281,6 +303,28 @@ hyperparameters:
         assert_eq!(
             exp.backend.config_file.as_deref(),
             Some(Path::new("training/configs/helyx-proof-repair.yaml"))
+        );
+    }
+
+    #[test]
+    fn loads_refineforge_native_backend() {
+        let yaml = MINIMAL.replace("kind: hf_trainer", "kind: refineforge_native");
+        let (_dir, path) = write_temp(&yaml);
+        let exp = Experiment::load(&path).unwrap();
+        assert_eq!(exp.backend.kind, "refineforge_native");
+    }
+
+    #[test]
+    fn native_backend_rejects_subprocess_command() {
+        let yaml = MINIMAL.replace(
+            "kind: hf_trainer",
+            "kind: refineforge_native\n  command: echo should-not-run",
+        );
+        let (_dir, path) = write_temp(&yaml);
+        let err = Experiment::load(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("does not accept backend.command"),
+            "{err}"
         );
     }
 }

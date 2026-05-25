@@ -44,8 +44,90 @@ fn assert_enterprise_report(report: &Value, expected_agent: &str) {
         "{expected_agent} report should declare enterprise capabilities"
     );
     assert!(
-        report["tool_checks"].as_array().unwrap().len() >= 1,
+        !report["tool_checks"].as_array().unwrap().is_empty(),
         "{expected_agent} report should declare tool-gate checks"
+    );
+    assert_enterprise_runtime(report, expected_agent);
+    assert_production_proof_envelope(report, expected_agent);
+}
+
+fn assert_enterprise_runtime(report: &Value, expected_agent: &str) {
+    let runtime = &report["runtime"];
+    assert_eq!(runtime["runtime_version"], "agent-runtime-v1");
+    assert_eq!(runtime["authority"]["source_of_truth"], "cli_report");
+    assert_eq!(runtime["authority"]["prompt_authority"], "advisory_only");
+    assert_eq!(
+        runtime["authority"]["memory_authority"],
+        "non_authoritative"
+    );
+    assert!(
+        runtime["authority"]["human_review_rule"]
+            .as_str()
+            .unwrap()
+            .contains("human-reviewed"),
+        "runtime authority must explain the human review boundary"
+    );
+    assert_eq!(runtime["agent"], expected_agent);
+    assert_eq!(runtime["target"], report["target"]);
+    assert_eq!(runtime["mode"], report["mode"]);
+    assert!(
+        runtime["action_intents"].as_array().unwrap().len() >= 2,
+        "{expected_agent} runtime should expose role action intents"
+    );
+    assert!(
+        !runtime["evidence_receipts"].as_array().unwrap().is_empty(),
+        "{expected_agent} runtime should expose evidence receipts"
+    );
+    assert!(
+        runtime["policy_decisions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|decision| decision["id"] == "no_prompt_trust_upgrade"),
+        "{expected_agent} runtime should freeze the no-prompt trust-upgrade policy"
+    );
+    let receipts = runtime["evidence_receipts"].as_array().unwrap();
+    let mut ids: Vec<_> = receipts
+        .iter()
+        .map(|receipt| receipt["id"].as_str().unwrap())
+        .collect();
+    let sorted = {
+        let mut sorted = ids.clone();
+        sorted.sort();
+        sorted
+    };
+    assert_eq!(
+        ids, sorted,
+        "{expected_agent} receipts should be deterministic"
+    );
+    for receipt in receipts {
+        let hash = receipt["sha256"].as_str().unwrap();
+        assert_eq!(
+            hash.len(),
+            64,
+            "{expected_agent} receipt hash should be a SHA-256 hex string: {receipt:?}"
+        );
+        assert!(
+            hash.chars().all(|c| c.is_ascii_hexdigit()),
+            "{expected_agent} receipt hash should be hex: {receipt:?}"
+        );
+    }
+    ids.clear();
+}
+
+fn assert_production_proof_envelope(report: &Value, expected_agent: &str) {
+    let proof = &report["production_proof"];
+    assert_eq!(proof["agent"], expected_agent);
+    assert!(proof["profile"]
+        .as_str()
+        .unwrap()
+        .ends_with("-production-proof"));
+    assert!(["blocked", "partial", "ready", "human-reviewed"]
+        .contains(&proof["status"].as_str().unwrap()));
+    assert_eq!(proof["trust_effect"], "bounded-by-evidence");
+    assert!(
+        proof["requirements"].as_array().unwrap().len() >= 4,
+        "{expected_agent} production proof should declare concrete requirements"
     );
 }
 
@@ -67,6 +149,18 @@ fn assert_summary_contains(report: &Value, needle: &str) {
         summary.contains(needle),
         "expected summary containing {needle:?}, got {summary:?}"
     );
+}
+
+fn receipt_hash(report: &Value, subject: &str) -> String {
+    report["runtime"]["evidence_receipts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|receipt| receipt["subject"] == subject)
+        .unwrap_or_else(|| panic!("missing evidence receipt for {subject}"))["sha256"]
+        .as_str()
+        .unwrap()
+        .to_string()
 }
 
 fn write_stub(dir: &Path, name: &str, success: bool) -> std::path::PathBuf {
@@ -188,6 +282,55 @@ fn agent_lean_check_keeps_model_only_scope_as_trust_floor() {
 }
 
 #[test]
+fn agent_lean_model_only_claims_block_production_proof() {
+    let td = tempfile::tempdir().unwrap();
+    let out = td.path().join("lean-production");
+    let output = run_refine(
+        &["agent", "lean", "--mode", "check", "--target", "helyx"],
+        &out,
+    );
+
+    assert_success(&output);
+    let report = read_json(&out.join("lean.json"));
+    assert_eq!(report["trust_level"], "model-only");
+    assert_eq!(report["production_proof"]["status"], "blocked");
+    assert!(
+        report["production_proof"]["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b.as_str().unwrap().contains("model-only")),
+        "model-only claims must block implementation production proof"
+    );
+}
+
+#[test]
+fn agent_runtime_hashes_artifact_receipts_deterministically() {
+    let td = tempfile::tempdir().unwrap();
+    let first_out = td.path().join("lean-first");
+    let first_output = run_refine(
+        &["agent", "lean", "--mode", "inspect", "--target", "helyx"],
+        &first_out,
+    );
+    assert_success(&first_output);
+    let first = read_json(&first_out.join("lean.json"));
+
+    let second_out = td.path().join("lean-second");
+    let second_output = run_refine(
+        &["agent", "lean", "--mode", "inspect", "--target", "helyx"],
+        &second_out,
+    );
+    assert_success(&second_output);
+    let second = read_json(&second_out.join("lean.json"));
+
+    let subject = "artifact:docs/verification/proof-inventory.md";
+    assert_eq!(
+        receipt_hash(&first, subject),
+        receipt_hash(&second, subject)
+    );
+}
+
+#[test]
 fn agent_devops_train_and_kernel_inspect_reports_are_truth_bounded() {
     for (name, trust_level) in [
         ("devops", "release-ready-local"),
@@ -210,7 +353,7 @@ fn agent_devops_train_and_kernel_inspect_reports_are_truth_bounded() {
         assert_eq!(report["trust_level"], trust_level);
         assert_enterprise_report(&report, name);
         assert!(
-            report["artifacts"].as_array().unwrap().len() >= 1,
+            !report["artifacts"].as_array().unwrap().is_empty(),
             "{name} report should record at least one inspected artifact"
         );
         assert!(out.join(format!("{name}.md")).exists());
@@ -247,6 +390,30 @@ fn agent_devops_default_report_cannot_claim_ci_or_live_signing() {
 }
 
 #[test]
+fn agent_devops_local_report_cannot_claim_release_ready_ci() {
+    let td = tempfile::tempdir().unwrap();
+    let out = td.path().join("devops-local");
+    let output = run_refine(
+        &["agent", "devops", "--mode", "inspect", "--target", "0.2.2"],
+        &out,
+    );
+
+    assert_success(&output);
+    let report = read_json(&out.join("devops.json"));
+    assert_eq!(report["trust_level"], "release-ready-local");
+    assert_ne!(report["trust_level"], "release-ready-ci");
+    assert_eq!(report["production_proof"]["status"], "blocked");
+    assert!(
+        report["production_proof"]["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b.as_str().unwrap().contains("hosted CI")),
+        "hosted CI evidence must block DevOps production proof"
+    );
+}
+
+#[test]
 fn agent_run_all_inspect_writes_dashboard_and_role_reports() {
     let td = tempfile::tempdir().unwrap();
     let out = td.path().join("helyx-readiness");
@@ -280,7 +447,19 @@ fn agent_docs_and_schema_exist() {
         "docs/agents/devops-agent.md",
         "docs/agents/training-agent.md",
         "docs/agents/kernel-agent.md",
+        "docs/agents/runtime.md",
+        "docs/agents/production-proof-evidence.md",
+        "docs/agents/central-memory-integration.md",
+        "docs/agents/knowledge-source-audit.md",
+        "docs/verification/lean-production-proof-checklist.md",
+        "docs/release/devops-production-proof.md",
+        "docs/training/training-production-proof.md",
+        "docs/kernels/kernel-production-proof.md",
+        "kernels/hardware-matrix.example.json",
+        "training/evals/proof-repair-smoke.yaml",
         "schemas/agent-report.schema.json",
+        "schemas/production-proof-evidence.schema.json",
+        "schemas/memory-record.schema.json",
     ] {
         assert!(root.join(path).exists(), "{path} should exist");
     }
@@ -352,6 +531,38 @@ fn agent_train_check_records_pass_fail_and_blocked_statuses() {
 }
 
 #[test]
+fn agent_train_live_run_without_eval_cannot_claim_model_quality() {
+    let td = tempfile::tempdir().unwrap();
+    let out = td.path().join("train-prod");
+    let output = run_refine(
+        &["agent", "train", "--mode", "execute", "--target", "helyx"],
+        &out,
+    );
+
+    assert_success(&output);
+    let report = read_json(&out.join("train.json"));
+    assert_eq!(report["trust_level"], "measured-only");
+    assert_eq!(report["production_proof"]["status"], "blocked");
+    let audit = read_json(&out.join("training-data-audit.json"));
+    let dataset_sha256 = audit["dataset_sha256"].as_str().unwrap();
+    assert_eq!(dataset_sha256.len(), 64);
+    assert!(dataset_sha256
+        .chars()
+        .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)));
+    assert_eq!(audit["record_count"], audit["total_rows"]);
+    assert!(audit["record_count"].as_u64().unwrap() >= 1);
+    assert_eq!(audit["schema_version"], "training-data-audit-v1");
+    assert!(
+        report["production_proof"]["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b.as_str().unwrap().contains("evaluation")),
+        "evaluation evidence must block Training production proof"
+    );
+}
+
+#[test]
 fn agent_kernel_check_creates_output_dir_before_lint_command() {
     let td = tempfile::tempdir().unwrap();
     let stub = write_kernel_output_stub(td.path());
@@ -396,7 +607,7 @@ fn agent_train_execute_runs_data_audit_and_dry_run_training() {
     assert_eq!(report["trust_level"], "measured-only");
     assert_summary_contains(
         &report,
-        "This proves orchestration readiness, not model improvement.",
+        "This proves training control-plane readiness, not model improvement.",
     );
     assert_warning_contains(&report, "training execute used --dry-run");
     let command_names: Vec<_> = report["commands"]
@@ -504,5 +715,28 @@ fn agent_kernel_execute_runs_lint_and_bitexact_gate() {
             .iter()
             .any(|artifact| artifact.as_str().unwrap().contains("kernel-runs")),
         "kernel execute should record its runs_root artifact"
+    );
+}
+
+#[test]
+fn agent_kernel_stub_fixture_cannot_claim_cuda_correctness() {
+    let td = tempfile::tempdir().unwrap();
+    let out = td.path().join("kernel-prod");
+    let output = run_refine(
+        &["agent", "kernel", "--mode", "execute", "--target", "helyx"],
+        &out,
+    );
+
+    assert_success(&output);
+    let report = read_json(&out.join("kernel.json"));
+    assert_eq!(report["trust_level"], "measured-only");
+    assert_eq!(report["production_proof"]["status"], "blocked");
+    assert!(
+        report["production_proof"]["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b.as_str().unwrap().contains("source.kind is stub")),
+        "stub source must block Kernel CUDA production proof"
     );
 }

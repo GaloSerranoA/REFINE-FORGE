@@ -14,9 +14,10 @@ refine agent devops --mode execute --target 0.2.2 --allow-expensive --out agent-
 ## Source Of Truth
 
 Use the generated `devops.json` report and any nested release evidence it
-records. Local reports do not imply hosted CI or OIDC signing. Docker and
-signature gates are skipped unless `--allow-expensive` is passed and the local
-tools actually run successfully.
+records. The runtime envelope caps the local command surface at
+`release-ready-local`. Local reports do not imply hosted CI or OIDC signing.
+Docker and signature gates are skipped unless `--allow-expensive` is passed and
+the local tools actually run successfully.
 
 ## Allowed Work
 
@@ -25,6 +26,9 @@ tools actually run successfully.
 - Request Docker verifier and cosign/Sigstore gates with `--allow-expensive`.
 - Generate SBOM, provenance, and release-report evidence.
 - Record missing Docker, Nix, cosign, GitHub auth, and hosted CI blockers.
+
+Release production proof is governed by
+`docs/release/devops-production-proof.md`.
 
 ## Forbidden Claims
 

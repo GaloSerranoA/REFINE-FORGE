@@ -15,7 +15,7 @@ pub struct InputArtifact {
 
 pub fn build_input_manifest(paths: &[PathBuf]) -> Result<Vec<InputArtifact>> {
     let mut sorted = paths.to_vec();
-    sorted.sort_by(|a, b| a.display().to_string().cmp(&b.display().to_string()));
+    sorted.sort_by_key(|path| path.display().to_string());
 
     let mut out = Vec::with_capacity(sorted.len());
     for path in sorted {

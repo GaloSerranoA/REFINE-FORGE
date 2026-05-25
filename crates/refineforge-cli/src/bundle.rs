@@ -46,7 +46,7 @@ fn sha256_file(p: &Path) -> Result<String> {
 /// repo paths). Handles `\` so bundles produced on Windows still
 /// flatten correctly. Verify reverses this.
 fn encode_rel(rel: &str) -> String {
-    rel.replace('\\', "__").replace('/', "__")
+    rel.replace(['\\', '/'], "__")
 }
 
 pub fn export(root: &Path, claim_id: &str, out: Option<PathBuf>) -> Result<()> {
@@ -405,18 +405,38 @@ fn parse_cosign_version(stdout: &[u8]) -> Option<String> {
 /// readable form, so we parse the cert directly. Returns None on
 /// any failure (signature was still validated by the verify call).
 fn extract_signer_identity(cosign: &str, sigbundle: &Path, manifest_path: &Path) -> Option<String> {
-    // `cosign verify-blob --bundle <b> ... -o json` is not currently
-    // supported; the simplest cross-version path is to dump the
-    // certificate via `cosign verify-blob --output-certificate` to
-    // a temp file, then parse the cert's SAN. To keep this skeleton
-    // lean, we use the cosign internal "x.509 SAN" extraction via
-    // openssl-style parsing (manual) — which would add a parser
-    // dep. Instead, return None and let the caller report the
-    // identity from the env-var or regex pattern they accepted.
-    //
-    // This is a documented gap; see docs/security.md §3.
-    let _ = (cosign, sigbundle, manifest_path);
-    None
+    let _ = (cosign, manifest_path);
+    let data = std::fs::read(sigbundle).ok()?;
+    extract_signer_identity_from_cosign_json(&data)
+}
+
+fn extract_signer_identity_from_cosign_json(data: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(data).ok()?;
+    find_github_workflow_identity(&value)
+}
+
+fn find_github_workflow_identity(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(text) => {
+            is_github_workflow_identity(text).then(|| text.to_string())
+        }
+        serde_json::Value::Array(items) => items.iter().find_map(find_github_workflow_identity),
+        serde_json::Value::Object(map) => {
+            for key in ["Subject", "subject", "SAN", "san", "issuer", "Issuer"] {
+                if let Some(found) = map.get(key).and_then(find_github_workflow_identity) {
+                    return Some(found);
+                }
+            }
+            map.values().find_map(find_github_workflow_identity)
+        }
+        _ => None,
+    }
+}
+
+fn is_github_workflow_identity(text: &str) -> bool {
+    text.starts_with("https://github.com/")
+        && text.contains("/.github/workflows/")
+        && text.contains("@refs/")
 }
 
 // ─── Sigstore signature verification — unit tests ──────────────────────
@@ -574,10 +594,35 @@ mod signature_tests {
     fn signer_identity_fallback_is_documented_as_reporting_gap() {
         let security = include_str!("../../../SECURITY.md");
         assert!(
-            security.contains("This is a reporting\r\ngap, not a signature-validation bypass.")
-                || security
-                    .contains("This is a reporting\ngap, not a signature-validation bypass."),
+            security.contains("a reporting gap, not a signature-validation bypass"),
             "SECURITY.md must keep the signer-identity fallback boundary explicit"
+        );
+    }
+
+    #[test]
+    fn extracts_signer_identity_from_cosign_json_fixture() {
+        let fixture = br#"{
+          "critical": {
+            "identity": {
+              "docker-reference": "manifest.json"
+            }
+          },
+          "optional": {
+            "Issuer": "https://token.actions.githubusercontent.com",
+            "Subject": "https://github.com/example/refineforge/.github/workflows/ci.yml@refs/tags/v0.2.2",
+            "Certificate": {
+              "SANs": [
+                "https://github.com/example/refineforge/.github/workflows/ci.yml@refs/tags/v0.2.2"
+              ]
+            }
+          }
+        }"#;
+
+        let identity = extract_signer_identity_from_cosign_json(fixture).unwrap();
+
+        assert_eq!(
+            identity,
+            "https://github.com/example/refineforge/.github/workflows/ci.yml@refs/tags/v0.2.2"
         );
     }
 

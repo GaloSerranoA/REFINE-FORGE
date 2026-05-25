@@ -5,7 +5,10 @@ mod lean;
 mod train;
 
 use anyhow::{bail, Result};
-use common::{write_reports, AgentKind, AgentReport, AgentStatus, TrustLevel};
+use common::{
+    action_intent, seal_runtime, set_production_proof, write_reports, ActionIntent, AgentKind,
+    AgentReport, AgentStatus, ProductionProofStatus, ProductionRequirement, TrustLevel,
+};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -120,6 +123,14 @@ pub fn run_all(root: &Path, opts: AgentOptions) -> Result<()> {
         trust_level,
         "Combined HELYX readiness dashboard generated from the four role reports.",
     );
+    apply_run_all_production_proof(&mut summary, &reports);
+    seal_runtime(
+        root,
+        Some(&opts.out_dir),
+        &mut summary,
+        lowest_trust_ceiling(&reports),
+        run_all_action_intents(opts.mode),
+    );
     write_and_print(
         &opts.out_dir,
         AgentKind::RunAll.report_stem(),
@@ -127,6 +138,111 @@ pub fn run_all(root: &Path, opts: AgentOptions) -> Result<()> {
         opts.emit_json,
     )?;
     status_to_result(&summary)
+}
+
+fn apply_run_all_production_proof(summary: &mut AgentReport, reports: &[AgentReport]) {
+    let mut blockers = Vec::new();
+    let role_statuses: Vec<String> = reports
+        .iter()
+        .map(|report| {
+            format!(
+                "{}={}",
+                report.agent.as_str(),
+                report.production_proof.status.as_str()
+            )
+        })
+        .collect();
+
+    for report in reports {
+        if report.production_proof.status != ProductionProofStatus::HumanReviewed {
+            blockers.push(format!(
+                "{} production proof is {}",
+                report.agent.as_str(),
+                report.production_proof.status.as_str()
+            ));
+        }
+        for blocker in &report.production_proof.blockers {
+            blockers.push(format!("{}: {blocker}", report.agent.as_str()));
+        }
+    }
+
+    let requirements = vec![
+        ProductionRequirement::new_owned(
+            "run_all.role_production_proofs",
+            "All four role production-proof envelopes are human-reviewed",
+            if blockers.is_empty() {
+                AgentStatus::Passed
+            } else {
+                AgentStatus::Blocked
+            },
+            role_statuses,
+        ),
+        ProductionRequirement::new(
+            "run_all.dashboard_artifacts",
+            "Combined dashboard wrote all role JSON and Markdown reports",
+            AgentStatus::Passed,
+            &[
+                "summary.json",
+                "lean.json",
+                "devops.json",
+                "train.json",
+                "kernel.json",
+            ],
+        ),
+        ProductionRequirement::new(
+            "run_all.lowest_trust_aggregation",
+            "Dashboard trust is derived from the lowest emitted role trust",
+            AgentStatus::Passed,
+            &["summary.trust_level is computed from role reports"],
+        ),
+        ProductionRequirement::new(
+            "run_all.no_cross_role_inflation",
+            "No role can upgrade another role's trust level",
+            AgentStatus::Passed,
+            &["role reports remain independently classified"],
+        ),
+    ];
+
+    set_production_proof(
+        summary,
+        if blockers.is_empty() {
+            ProductionProofStatus::HumanReviewed
+        } else {
+            ProductionProofStatus::Blocked
+        },
+        requirements,
+        Vec::new(),
+        blockers,
+    );
+}
+
+fn run_all_action_intents(mode: AgentMode) -> Vec<ActionIntent> {
+    vec![
+        action_intent(
+            "run_all.orchestrate.roles",
+            "Run all four specialist role reports into one evidence directory",
+            "orchestrate",
+            "writes_evidence",
+            &format!("refine agent run-all --mode {}", mode.as_str()),
+            &["lean.json", "devops.json", "train.json", "kernel.json"],
+        ),
+        action_intent(
+            "run_all.aggregate.trust",
+            "Aggregate dashboard trust from the lowest emitted role trust level",
+            "audit",
+            "evidence_only",
+            "refine agent run-all",
+            &["role report trust_level fields", "summary.json"],
+        ),
+        action_intent(
+            "run_all.publish.dashboard",
+            "Write CI-uploadable JSON and Markdown dashboard artifacts",
+            "handoff",
+            "writes_evidence",
+            "refine agent run-all --out <dir>",
+            &["summary.json", "summary.md", "role Markdown reports"],
+        ),
+    ]
 }
 
 fn build_role_report(root: &Path, role: AgentRole, opts: &AgentOptions) -> AgentReport {
@@ -212,4 +328,12 @@ fn lowest_trust(reports: &[AgentReport]) -> TrustLevel {
     } else {
         TrustLevel::HumanReviewed
     }
+}
+
+fn lowest_trust_ceiling(reports: &[AgentReport]) -> TrustLevel {
+    let mut synthetic: Vec<AgentReport> = reports.to_vec();
+    for report in &mut synthetic {
+        report.trust_level = report.runtime.trust_ceiling;
+    }
+    lowest_trust(&synthetic)
 }

@@ -107,7 +107,9 @@ pub enum Evidence {
     /// Catch-all for the [`crate::Action::Unknown`] action: per
     /// plan §6, treat as Scope by default and surface the
     /// description.
-    UnknownActionShape { description: String },
+    UnknownActionShape {
+        description: String,
+    },
 }
 
 #[cfg(test)]

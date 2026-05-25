@@ -1,9 +1,7 @@
 //! Category 7 — External-fact assertion. Anything not grounded
 //! in the repo, claim YAMLs, or prior decision packets escalates.
 
-use refineforge_escalation::{
-    Action, Category, Decision, Engine, ExternalCitation, ProjectContext,
-};
+use refineforge_escalation::{Action, Category, Engine, ExternalCitation, ProjectContext};
 
 fn eng() -> Engine {
     Engine::new()

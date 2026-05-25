@@ -120,8 +120,8 @@ pub fn repair(root: &Path, claim_id: &str, config: RepairConfig) -> Result<Repai
         .with_context(|| format!("reading {}", lean_file.display()))?;
     let mut current_text = original_text.clone();
 
-    let mut client = lsp::LeanLspClient::spawn(&lean_dir)
-        .context("spawning lake env lean --server")?;
+    let mut client =
+        lsp::LeanLspClient::spawn(&lean_dir).context("spawning lake env lean --server")?;
     client.initialize().context("LSP initialize")?;
 
     let uri = lsp::path_to_uri(&lean_file);
@@ -295,10 +295,18 @@ fn print_report(r: &RepairReport) {
     println!("outcome:  {:?}", r.outcome);
     println!("iterations: {}", r.iterations.len());
     for it in &r.iterations {
-        println!("  iter {}: {} diagnostic(s)", it.index, it.diagnostics_before.len());
+        println!(
+            "  iter {}: {} diagnostic(s)",
+            it.index,
+            it.diagnostics_before.len()
+        );
         if let Some(p) = &it.patch_proposed {
-            println!("    proposed patch ({}..{}): {}",
-                p.range_summary(), p.new_text_summary(), p.rationale);
+            println!(
+                "    proposed patch ({}..{}): {}",
+                p.range_summary(),
+                p.new_text_summary(),
+                p.rationale
+            );
         }
         if let Some(ok) = it.patch_accepted {
             println!("    accepted: {ok}");

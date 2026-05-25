@@ -51,10 +51,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{anyhow, Result};
 use refineforge_repair_api::RepairStrategy;
 
-pub type StrategyWithUsage = (
-    Box<dyn RepairStrategy>,
-    Arc<Mutex<UsageStats>>,
-);
+pub type StrategyWithUsage = (Box<dyn RepairStrategy>, Arc<Mutex<UsageStats>>);
 
 /// Build the real Anthropic strategy from the environment.
 /// Used by the `refine repair --strategy anthropic` dispatch.
@@ -71,12 +68,13 @@ pub fn anthropic_strategy_from_env() -> Result<Box<dyn RepairStrategy>> {
 /// repair loop completes.
 pub fn anthropic_strategy_from_env_with_usage() -> Result<StrategyWithUsage> {
     let key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| {
-        anyhow!("ANTHROPIC_API_KEY env var is not set — refine repair --strategy anthropic needs it")
+        anyhow!(
+            "ANTHROPIC_API_KEY env var is not set — refine repair --strategy anthropic needs it"
+        )
     })?;
     let model = std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-opus-4-7".into());
     let transport = ReqwestTransport::new(key.clone());
     let handle = Arc::new(Mutex::new(UsageStats::default()));
-    let strategy =
-        AnthropicStrategy::with_usage_stats(key, model, transport, handle.clone());
+    let strategy = AnthropicStrategy::with_usage_stats(key, model, transport, handle.clone());
     Ok((Box::new(strategy), handle))
 }

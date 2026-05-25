@@ -80,7 +80,7 @@ pub fn derive_lean_model(input: TokenStream) -> TokenStream {
         Data::Struct(s) => s,
         Data::Enum(e) => {
             return syn::Error::new_spanned(
-                &e.enum_token,
+                e.enum_token,
                 "LeanModel: enums are not supported; only structs",
             )
             .to_compile_error()
@@ -88,7 +88,7 @@ pub fn derive_lean_model(input: TokenStream) -> TokenStream {
         }
         Data::Union(u) => {
             return syn::Error::new_spanned(
-                &u.union_token,
+                u.union_token,
                 "LeanModel: unions are not supported; only structs",
             )
             .to_compile_error()

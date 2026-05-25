@@ -2,8 +2,10 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -187,12 +189,206 @@ pub struct ToolCheck {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentRuntime {
+    pub runtime_version: String,
+    pub agent: AgentKind,
+    pub mode: AgentMode,
+    pub target: String,
+    pub authority: RuntimeAuthority,
+    pub trust_ceiling: TrustLevel,
+    pub action_intents: Vec<ActionIntent>,
+    pub evidence_receipts: Vec<EvidenceReceipt>,
+    pub policy_decisions: Vec<PolicyDecision>,
+    pub typed_blockers: Vec<TypedBlocker>,
+}
+
+impl AgentRuntime {
+    fn empty(agent: AgentKind, mode: AgentMode, target: impl Into<String>) -> Self {
+        let target = target.into();
+        Self {
+            runtime_version: "agent-runtime-v1".to_string(),
+            agent,
+            mode,
+            target,
+            authority: RuntimeAuthority::default(),
+            trust_ceiling: TrustLevel::Blocked,
+            action_intents: Vec::new(),
+            evidence_receipts: Vec::new(),
+            policy_decisions: Vec::new(),
+            typed_blockers: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuntimeAuthority {
+    pub source_of_truth: String,
+    pub prompt_authority: String,
+    pub memory_authority: String,
+    pub human_review_rule: String,
+}
+
+impl Default for RuntimeAuthority {
+    fn default() -> Self {
+        Self {
+            source_of_truth: "cli_report".to_string(),
+            prompt_authority: "advisory_only".to_string(),
+            memory_authority: "non_authoritative".to_string(),
+            human_review_rule:
+                "human-reviewed trust requires explicit human_operator evidence; prompts, memory, and role text cannot upgrade it."
+                    .to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionIntent {
+    pub id: String,
+    pub name: String,
+    pub category: String,
+    pub mutation_policy: String,
+    pub command_surface: String,
+    pub evidence_required: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvidenceReceipt {
+    pub id: String,
+    pub kind: String,
+    pub subject: String,
+    pub status: String,
+    pub sha256: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PolicyDecision {
+    pub id: String,
+    pub status: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TypedBlocker {
+    pub id: String,
+    pub kind: String,
+    pub severity: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductionProof {
+    pub agent: AgentKind,
+    pub profile: String,
+    pub status: ProductionProofStatus,
+    pub trust_effect: String,
+    pub requirements: Vec<ProductionRequirement>,
+    pub reviewer_evidence: Vec<String>,
+    pub blockers: Vec<String>,
+}
+
+impl ProductionProof {
+    fn blocked_default(agent: AgentKind) -> Self {
+        let profile = format!("{}-production-proof", agent.as_str());
+        Self {
+            agent,
+            profile,
+            status: ProductionProofStatus::Blocked,
+            trust_effect: "bounded-by-evidence".to_string(),
+            requirements: vec![
+                ProductionRequirement::new(
+                    "production.cli_evidence",
+                    "Current CLI report evidence exists",
+                    AgentStatus::Blocked,
+                    &["agent report not sealed yet"],
+                ),
+                ProductionRequirement::new(
+                    "production.external_evidence",
+                    "External role evidence exists where required",
+                    AgentStatus::Blocked,
+                    &["external evidence not inspected yet"],
+                ),
+                ProductionRequirement::new(
+                    "production.human_review",
+                    "Human review evidence exists",
+                    AgentStatus::Blocked,
+                    &["human review is not inferred"],
+                ),
+                ProductionRequirement::new(
+                    "production.trust_boundary",
+                    "Trust remains bounded by evidence",
+                    AgentStatus::Passed,
+                    &["trust_effect is bounded-by-evidence"],
+                ),
+            ],
+            reviewer_evidence: Vec::new(),
+            blockers: vec!["production proof has not been evaluated for this role".to_string()],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProductionProofStatus {
+    Blocked,
+    Partial,
+    Ready,
+    HumanReviewed,
+}
+
+impl ProductionProofStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProductionProofStatus::Blocked => "blocked",
+            ProductionProofStatus::Partial => "partial",
+            ProductionProofStatus::Ready => "ready",
+            ProductionProofStatus::HumanReviewed => "human-reviewed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductionRequirement {
+    pub id: String,
+    pub description: String,
+    pub status: AgentStatus,
+    pub evidence: Vec<String>,
+}
+
+impl ProductionRequirement {
+    pub fn new(id: &str, description: &str, status: AgentStatus, evidence: &[&str]) -> Self {
+        Self {
+            id: id.to_string(),
+            description: description.to_string(),
+            status,
+            evidence: evidence.iter().map(|item| item.to_string()).collect(),
+        }
+    }
+
+    pub fn new_owned(
+        id: &str,
+        description: &str,
+        status: AgentStatus,
+        evidence: Vec<String>,
+    ) -> Self {
+        Self {
+            id: id.to_string(),
+            description: description.to_string(),
+            status,
+            evidence,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentReport {
     pub schema_version: String,
     pub agent: AgentKind,
     pub mode: AgentMode,
     pub target: String,
     pub liveness: LivenessRecord,
+    pub runtime: AgentRuntime,
+    pub production_proof: ProductionProof,
     pub capabilities: Vec<CapabilityRecord>,
     pub tool_checks: Vec<ToolCheck>,
     pub started_at: DateTime<Utc>,
@@ -221,9 +417,11 @@ impl AgentReport {
                 checked_at: now,
                 agent,
                 mode,
-                target,
+                target: target.clone(),
                 command_surface: format!("refine agent {}", agent.as_str()),
             },
+            runtime: AgentRuntime::empty(agent, mode, target.clone()),
+            production_proof: ProductionProof::blocked_default(agent),
             capabilities: Vec::new(),
             tool_checks: Vec::new(),
             started_at: now,
@@ -268,6 +466,60 @@ impl AgentReport {
         out.push_str("## Summary\n\n");
         out.push_str(&self.summary);
         out.push_str("\n\n");
+        out.push_str("## Runtime\n\n");
+        out.push_str(&format!("- Runtime: `{}`\n", self.runtime.runtime_version));
+        out.push_str(&format!(
+            "- Authority: `{}`\n",
+            self.runtime.authority.source_of_truth
+        ));
+        out.push_str(&format!(
+            "- Prompt authority: `{}`\n",
+            self.runtime.authority.prompt_authority
+        ));
+        out.push_str(&format!(
+            "- Memory authority: `{}`\n",
+            self.runtime.authority.memory_authority
+        ));
+        out.push_str(&format!(
+            "- Trust ceiling: `{}`\n",
+            self.runtime.trust_ceiling.as_str()
+        ));
+        out.push_str(&format!(
+            "- Action intents: `{}`\n",
+            self.runtime.action_intents.len()
+        ));
+        out.push_str(&format!(
+            "- Evidence receipts: `{}`\n\n",
+            self.runtime.evidence_receipts.len()
+        ));
+        out.push_str("## Production Proof\n\n");
+        out.push_str(&format!("- Profile: `{}`\n", self.production_proof.profile));
+        out.push_str(&format!(
+            "- Status: `{}`\n",
+            self.production_proof.status.as_str()
+        ));
+        out.push_str(&format!(
+            "- Trust effect: `{}`\n\n",
+            self.production_proof.trust_effect
+        ));
+        for requirement in &self.production_proof.requirements {
+            out.push_str(&format!(
+                "- `{}`: `{}` — {}\n",
+                requirement.id,
+                requirement.status.as_str(),
+                requirement.description
+            ));
+            for evidence in &requirement.evidence {
+                out.push_str(&format!("  - evidence: `{}`\n", evidence.replace('`', "'")));
+            }
+        }
+        if !self.production_proof.blockers.is_empty() {
+            out.push_str("\nProduction blockers:\n");
+            for blocker in &self.production_proof.blockers {
+                out.push_str(&format!("- {blocker}\n"));
+            }
+        }
+        out.push('\n');
         out.push_str("## Capabilities\n\n");
         if self.capabilities.is_empty() {
             out.push_str("- None recorded.\n\n");
@@ -314,6 +566,24 @@ impl AgentReport {
         }
         out
     }
+}
+
+pub fn set_production_proof(
+    report: &mut AgentReport,
+    status: ProductionProofStatus,
+    requirements: Vec<ProductionRequirement>,
+    reviewer_evidence: Vec<String>,
+    blockers: Vec<String>,
+) {
+    report.production_proof = ProductionProof {
+        agent: report.agent,
+        profile: format!("{}-production-proof", report.agent.as_str()),
+        status,
+        trust_effect: "bounded-by-evidence".to_string(),
+        requirements,
+        reviewer_evidence,
+        blockers,
+    };
 }
 
 fn write_list(out: &mut String, title: &str, values: &[PathBuf]) {
@@ -396,4 +666,341 @@ pub fn existing_artifact(root: &Path, rel: &str, report: &mut AgentReport) {
             .warnings
             .push(format!("expected artifact is missing: {rel}"));
     }
+}
+
+pub fn action_intent(
+    id: &str,
+    name: &str,
+    category: &str,
+    mutation_policy: &str,
+    command_surface: &str,
+    evidence_required: &[&str],
+) -> ActionIntent {
+    ActionIntent {
+        id: id.to_string(),
+        name: name.to_string(),
+        category: category.to_string(),
+        mutation_policy: mutation_policy.to_string(),
+        command_surface: command_surface.to_string(),
+        evidence_required: evidence_required
+            .iter()
+            .map(|item| item.to_string())
+            .collect(),
+    }
+}
+
+pub fn seal_runtime(
+    root: &Path,
+    artifact_base: Option<&Path>,
+    report: &mut AgentReport,
+    trust_ceiling: TrustLevel,
+    action_intents: Vec<ActionIntent>,
+) {
+    let capped = enforce_trust_ceiling(report, trust_ceiling);
+    report.runtime = AgentRuntime {
+        runtime_version: "agent-runtime-v1".to_string(),
+        agent: report.agent,
+        mode: report.mode,
+        target: report.target.clone(),
+        authority: RuntimeAuthority::default(),
+        trust_ceiling,
+        action_intents,
+        evidence_receipts: build_evidence_receipts(root, artifact_base, report),
+        policy_decisions: policy_decisions(report, trust_ceiling, capped),
+        typed_blockers: typed_blockers(report),
+    };
+}
+
+fn enforce_trust_ceiling(report: &mut AgentReport, trust_ceiling: TrustLevel) -> bool {
+    if trust_rank(report.trust_level) <= trust_rank(trust_ceiling) {
+        return false;
+    }
+
+    let old = report.trust_level;
+    report.trust_level = trust_ceiling;
+    report.warnings.push(format!(
+        "runtime trust ceiling capped reported trust from {} to {}",
+        old.as_str(),
+        trust_ceiling.as_str()
+    ));
+    true
+}
+
+fn trust_rank(level: TrustLevel) -> u8 {
+    match level {
+        TrustLevel::Blocked => 0,
+        TrustLevel::MeasuredOnly => 1,
+        TrustLevel::ModelOnly => 2,
+        TrustLevel::ModelLinked => 3,
+        TrustLevel::ReleaseReadyLocal => 4,
+        TrustLevel::ReleaseReadyCi => 5,
+        TrustLevel::HumanReviewed => 6,
+    }
+}
+
+fn policy_decisions(
+    report: &AgentReport,
+    trust_ceiling: TrustLevel,
+    capped: bool,
+) -> Vec<PolicyDecision> {
+    let mut decisions = vec![
+        PolicyDecision {
+            id: "no_prompt_trust_upgrade".to_string(),
+            status: "enforced".to_string(),
+            detail: "role prompts may guide work, but only CLI evidence and claim scope rules can set report trust".to_string(),
+        },
+        PolicyDecision {
+            id: "memory_non_authoritative".to_string(),
+            status: "enforced".to_string(),
+            detail: "memory and prior runs may guide investigation but cannot upgrade trust without current report evidence".to_string(),
+        },
+        PolicyDecision {
+            id: "human_review_required".to_string(),
+            status: "enforced".to_string(),
+            detail: "human-reviewed trust requires explicit human_operator evidence and is never inferred from an agent pass".to_string(),
+        },
+        PolicyDecision {
+            id: "trust_ceiling".to_string(),
+            status: "enforced".to_string(),
+            detail: format!(
+                "{} agent trust is bounded at or below {} for this command surface",
+                report.agent.as_str(),
+                trust_ceiling.as_str()
+            ),
+        },
+    ];
+
+    if capped {
+        decisions.push(PolicyDecision {
+            id: "trust_capped".to_string(),
+            status: "applied".to_string(),
+            detail: format!(
+                "runtime reduced the report trust level to the configured ceiling {}",
+                trust_ceiling.as_str()
+            ),
+        });
+    }
+
+    decisions.sort_by(|a, b| a.id.cmp(&b.id));
+    decisions
+}
+
+fn typed_blockers(report: &AgentReport) -> Vec<TypedBlocker> {
+    report
+        .blockers
+        .iter()
+        .enumerate()
+        .map(|(idx, blocker)| TypedBlocker {
+            id: format!("blocker:{idx:04}"),
+            kind: blocker_kind(report.status, blocker).to_string(),
+            severity: if matches!(report.status, AgentStatus::Blocked | AgentStatus::Failed) {
+                "high".to_string()
+            } else {
+                "medium".to_string()
+            },
+            detail: blocker.clone(),
+        })
+        .collect()
+}
+
+fn blocker_kind(status: AgentStatus, blocker: &str) -> &'static str {
+    let lower = blocker.to_ascii_lowercase();
+    if lower.contains("missing") || lower.contains("unavailable") || lower.contains("could not") {
+        "missing_prerequisite"
+    } else if status == AgentStatus::Failed {
+        "gate_failure"
+    } else {
+        "operator_action_required"
+    }
+}
+
+fn build_evidence_receipts(
+    root: &Path,
+    artifact_base: Option<&Path>,
+    report: &AgentReport,
+) -> Vec<EvidenceReceipt> {
+    let mut receipts = Vec::new();
+    let mut artifact_subjects: Vec<String> = report
+        .artifacts
+        .iter()
+        .map(|path| normalize_path(path))
+        .collect();
+    artifact_subjects.sort();
+    artifact_subjects.dedup();
+
+    for subject_path in artifact_subjects {
+        let path = resolve_artifact_path(root, artifact_base, &subject_path);
+        let (status, sha256, detail) = hash_artifact(&path);
+        let subject = format!("artifact:{subject_path}");
+        receipts.push(EvidenceReceipt {
+            id: subject.clone(),
+            kind: "artifact".to_string(),
+            subject,
+            status,
+            sha256,
+            detail,
+        });
+    }
+
+    let mut command_receipts: Vec<EvidenceReceipt> = report
+        .commands
+        .iter()
+        .map(|command| {
+            let payload = format!(
+                "{}\0{}\0{}\0{}\0{}\0{}",
+                command.name,
+                command.command.join("\0"),
+                command.status.as_str(),
+                command
+                    .exit_code
+                    .map_or_else(String::new, |code| code.to_string()),
+                command.stdout_tail.as_deref().unwrap_or_default(),
+                command.stderr_tail.as_deref().unwrap_or_default()
+            );
+            let subject = format!("command:{}", command.name);
+            EvidenceReceipt {
+                id: subject.clone(),
+                kind: "command".to_string(),
+                subject,
+                status: command.status.as_str().to_string(),
+                sha256: hash_text(&payload),
+                detail: command.command.join(" "),
+            }
+        })
+        .collect();
+    command_receipts.sort_by(|a, b| a.id.cmp(&b.id));
+    receipts.extend(command_receipts);
+
+    let mut tool_receipts: Vec<EvidenceReceipt> = report
+        .tool_checks
+        .iter()
+        .map(|check| {
+            let payload = format!(
+                "{}\0{}\0{}\0{}",
+                check.name, check.required, check.status, check.detail
+            );
+            let subject = format!("tool_check:{}", check.name);
+            EvidenceReceipt {
+                id: subject.clone(),
+                kind: "tool_check".to_string(),
+                subject,
+                status: check.status.clone(),
+                sha256: hash_text(&payload),
+                detail: check.detail.clone(),
+            }
+        })
+        .collect();
+    tool_receipts.sort_by(|a, b| a.id.cmp(&b.id));
+    receipts.extend(tool_receipts);
+
+    receipts.sort_by(|a, b| a.id.cmp(&b.id));
+    receipts
+}
+
+fn resolve_artifact_path(root: &Path, artifact_base: Option<&Path>, subject_path: &str) -> PathBuf {
+    let path = PathBuf::from(subject_path);
+    if path.is_absolute() {
+        return path;
+    }
+
+    let root_path = root.join(&path);
+    if root_path.exists() {
+        return root_path;
+    }
+
+    if let Some(base) = artifact_base {
+        let base_path = base.join(&path);
+        if base_path.exists() {
+            return base_path;
+        }
+    }
+
+    root_path
+}
+
+fn hash_artifact(path: &Path) -> (String, String, String) {
+    if path.is_file() {
+        match hash_file(path) {
+            Ok(hash) => (
+                "present_file".to_string(),
+                hash,
+                format!("file evidence at {}", path.display()),
+            ),
+            Err(err) => (
+                "unreadable".to_string(),
+                hash_text(&format!("unreadable:{}:{err}", path.display())),
+                format!("could not read file evidence at {}: {err}", path.display()),
+            ),
+        }
+    } else if path.is_dir() {
+        match hash_dir(path) {
+            Ok(hash) => (
+                "present_dir".to_string(),
+                hash,
+                format!("directory evidence at {}", path.display()),
+            ),
+            Err(err) => (
+                "unreadable".to_string(),
+                hash_text(&format!("unreadable:{}:{err}", path.display())),
+                format!(
+                    "could not read directory evidence at {}: {err}",
+                    path.display()
+                ),
+            ),
+        }
+    } else {
+        (
+            "missing".to_string(),
+            hash_text(&format!("missing:{}", path.display())),
+            format!("evidence path is missing: {}", path.display()),
+        )
+    }
+}
+
+fn hash_file(path: &Path) -> std::io::Result<String> {
+    let bytes = std::fs::read(path)?;
+    Ok(hash_bytes(&bytes))
+}
+
+fn hash_dir(path: &Path) -> std::io::Result<String> {
+    let mut files: Vec<PathBuf> = WalkDir::new(path)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.path().to_path_buf())
+        .collect();
+    files.sort_by_key(|file| normalize_relative(path, file));
+
+    let mut hasher = Sha256::new();
+    for file in files {
+        let rel = normalize_relative(path, &file);
+        hasher.update(rel.as_bytes());
+        hasher.update([0]);
+        let bytes = std::fs::read(&file)?;
+        hasher.update(bytes);
+        hasher.update([0xff]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn hash_text(text: &str) -> String {
+    hash_bytes(text.as_bytes())
+}
+
+fn hash_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
+fn normalize_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn normalize_relative(base: &Path, path: &Path) -> String {
+    path.strip_prefix(base)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }

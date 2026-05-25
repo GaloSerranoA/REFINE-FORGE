@@ -10,6 +10,18 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — native proof-repair smoke trainer
+
+- Added `backend.kind=refineforge_native` to `refine-train` as an in-process
+  deterministic proof-repair smoke trainer. It reads proof-repair JSONL,
+  trains a small linear softmax model with SGD, writes `progress.jsonl`, emits
+  `native-checkpoint.json`, and feeds the existing report surface without
+  requiring HELYX, Axolotl, Python, GPUs, or a subprocess trainer.
+- Added `training/configs/refineforge-native-proof-repair-smoke.yaml` as the
+  local native smoke-training entry point.
+- Documentation now distinguishes native smoke-training evidence from
+  production LLM model-quality evidence.
+
 ### Added — agent trust-boundary regression tests
 
 - Added CLI regressions that freeze the DevOps, training, and kernel agent

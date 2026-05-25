@@ -56,20 +56,21 @@ impl LeanLspClient {
             .spawn()
             .context("spawning `lake env lean --server` (is elan / lake on PATH?)")?;
 
-        let stdin = child.stdin.take().ok_or_else(|| anyhow!("no stdin handle"))?;
-        let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout handle"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow!("no stdin handle"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow!("no stdout handle"))?;
 
         let (tx, rx) = channel();
         let reader = thread::spawn(move || {
             let mut r = BufReader::new(stdout);
-            loop {
-                match read_message(&mut r) {
-                    Ok(v) => {
-                        if tx.send(v).is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break, // server closed or framing error
+            while let Ok(v) = read_message(&mut r) {
+                if tx.send(v).is_err() {
+                    break;
                 }
             }
         });
@@ -176,12 +177,12 @@ impl LeanLspClient {
         let mut latest: Vec<Diagnostic> = Vec::new();
         let mut got_any = false;
         let mut last_event = Instant::now();
-        loop {
-            let remaining = match checked_duration_until(deadline) {
-                Some(r) => r,
-                None => break,
+        while let Some(remaining) = checked_duration_until(deadline) {
+            let wait = if got_any {
+                tail.min(remaining)
+            } else {
+                remaining
             };
-            let wait = if got_any { tail.min(remaining) } else { remaining };
             match self.rx.recv_timeout(wait) {
                 Ok(msg) => {
                     if msg.get("method").and_then(|v| v.as_str())
@@ -190,8 +191,10 @@ impl LeanLspClient {
                         let params = msg.get("params").cloned().unwrap_or(Value::Null);
                         let msg_uri = params.get("uri").and_then(|v| v.as_str()).unwrap_or("");
                         if msg_uri == uri {
-                            let diags_raw =
-                                params.get("diagnostics").cloned().unwrap_or(Value::Array(vec![]));
+                            let diags_raw = params
+                                .get("diagnostics")
+                                .cloned()
+                                .unwrap_or(Value::Array(vec![]));
                             let diags: Vec<lsp_types::Diagnostic> =
                                 serde_json::from_value(diags_raw).unwrap_or_default();
                             latest = diags.into_iter().map(Diagnostic::from).collect();
@@ -301,6 +304,9 @@ mod tests {
         let p = Path::new("nonexistent.txt");
         let uri = path_to_uri(p);
         assert!(uri.starts_with("file:///"));
-        assert!(!uri.contains('\\'), "uri should not contain backslashes: {uri}");
+        assert!(
+            !uri.contains('\\'),
+            "uri should not contain backslashes: {uri}"
+        );
     }
 }

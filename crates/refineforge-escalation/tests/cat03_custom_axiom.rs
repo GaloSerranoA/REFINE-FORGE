@@ -2,7 +2,7 @@
 //! axiom declaration in our source escalates, even ones the AI
 //! considers "obviously true."
 
-use refineforge_escalation::{Action, Category, Decision, Engine, ProjectContext};
+use refineforge_escalation::{Action, Category, Engine, ProjectContext};
 
 fn eng() -> Engine {
     Engine::new()

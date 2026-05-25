@@ -13,8 +13,8 @@ refine agent lean --mode execute --target helyx --out agent-reports/lean
 ## Source Of Truth
 
 Use the generated `lean.json` report. It records proof inventory, liveness,
-capabilities, tool checks, command evidence, status, trust level, warnings, and
-blockers.
+runtime authority, action intents, evidence receipts, capabilities, tool
+checks, command evidence, status, trust level, warnings, and blockers.
 
 ## Allowed Work
 
@@ -26,6 +26,9 @@ blockers.
   `model-only` claims to `model-linked`.
 - Propose proof/refinement tasks.
 - Keep model-only and model-linked claims clearly separated.
+
+For the production-proof human review gate, use
+`docs/verification/lean-production-proof-checklist.md`.
 
 ## Forbidden Claims
 

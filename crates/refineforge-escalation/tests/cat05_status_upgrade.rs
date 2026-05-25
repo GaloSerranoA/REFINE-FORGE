@@ -1,7 +1,7 @@
 //! Category 5 — Status upgrades. Claim YAML `status:` changes
 //! and `review.human_operator` flips.
 
-use refineforge_escalation::{Action, Category, ClaimStatus, Decision, Engine, ProjectContext};
+use refineforge_escalation::{Action, Category, ClaimStatus, Engine, ProjectContext};
 
 fn eng() -> Engine {
     Engine::new()

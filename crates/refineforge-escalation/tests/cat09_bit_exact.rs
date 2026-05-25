@@ -1,6 +1,6 @@
 //! Category 9 — Bit-exact regression. Added in criteria v0.2.
 
-use refineforge_escalation::{Action, Category, Decision, Engine, ProjectContext};
+use refineforge_escalation::{Action, Category, Engine, ProjectContext};
 
 fn eng() -> Engine {
     Engine::new()

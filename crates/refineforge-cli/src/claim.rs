@@ -78,9 +78,13 @@ impl Default for Policy {
     }
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
-pub fn claims_dir(root: &Path) -> PathBuf { root.join("claims") }
+pub fn claims_dir(root: &Path) -> PathBuf {
+    root.join("claims")
+}
 
 /// Load a claim by id. Errors if not found or YAML is malformed.
 pub fn load(root: &Path, claim_id: &str) -> Result<(PathBuf, Claim)> {

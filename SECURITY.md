@@ -107,8 +107,8 @@ documented `cosign sign-blob` / `cosign verify-blob` API for
 cosign v2.4.x; any future-version drift would surface as a flag
 mismatch on first real CI run.
 
-`extract_signer_identity()` intentionally returns `None` today after cosign
-validates the signature and identity regex. Reports therefore show the
-fallback string `(identity matched but couldn't extract)` until a real X.509
-SAN parser or stable cosign JSON output path is added. This is a reporting
-gap, not a signature-validation bypass.
+`extract_signer_identity()` now performs best-effort extraction from cosign
+JSON bundle metadata after cosign validates the signature and identity regex.
+If a future cosign bundle shape lacks a workflow subject/SAN string, reports
+fall back to `(identity matched but couldn't extract)`. That fallback remains
+a reporting gap, not a signature-validation bypass.

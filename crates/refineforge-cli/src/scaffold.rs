@@ -2,7 +2,7 @@
 //!
 //! A template is a directory under `templates/<name>/` containing:
 //!   * `lean.lean.tmpl`   — Lean source with `{{CLAIM_ID}}`, `{{MODULE}}`,
-//!                          `{{LEAN_FILE}}`, `{{TITLE}}` placeholders
+//!     `{{LEAN_FILE}}`, `{{TITLE}}` placeholders
 //!   * `claim.yaml.tmpl`  — claim YAML with the same placeholders
 //!
 //! The scaffolder writes:

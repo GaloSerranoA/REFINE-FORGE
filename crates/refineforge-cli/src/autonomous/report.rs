@@ -42,8 +42,10 @@ pub struct RunSummary {
 
 impl RunSummary {
     pub fn from_outcomes(outcomes: &[StepOutcome]) -> Self {
-        let mut s = Self::default();
-        s.total_steps = outcomes.len() as u32;
+        let mut s = Self {
+            total_steps: outcomes.len() as u32,
+            ..Self::default()
+        };
         for o in outcomes {
             match o {
                 StepOutcome::Proceeded { .. } => s.proceeded += 1,

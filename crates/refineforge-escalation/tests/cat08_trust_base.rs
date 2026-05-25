@@ -1,7 +1,7 @@
 //! Category 8 — Trust-base extension. Toolchain / Lake / Cargo
 //! / cosign / GHA-SHA / Docker-tool / Anthropic-model bumps.
 
-use refineforge_escalation::{Action, Category, Decision, Engine, ProjectContext};
+use refineforge_escalation::{Action, Category, Engine, ProjectContext};
 
 fn eng() -> Engine {
     Engine::new()
@@ -77,7 +77,11 @@ fn mathlib_import_after_package_already_in_manifest_proceeds() {
         is_mathlib: true,
     };
     let d = eng().decide(&act, &ctx).unwrap();
-    assert!(d.is_proceed(), "v0.3: post-manifest Mathlib imports proceed; got {:?}", d);
+    assert!(
+        d.is_proceed(),
+        "v0.3: post-manifest Mathlib imports proceed; got {:?}",
+        d
+    );
 }
 
 // ---------- Positive: bump in-bundle Cargo pin ----------
@@ -138,9 +142,7 @@ fn bump_gha_sha_escalates() {
 
 #[test]
 fn add_verifier_docker_tool_escalates() {
-    let act = Action::AddVerifierDockerTool {
-        tool: "jq".into(),
-    };
+    let act = Action::AddVerifierDockerTool { tool: "jq".into() };
     let d = eng().decide(&act, &ProjectContext::test_default()).unwrap();
     assert!(d.is_escalate());
 }

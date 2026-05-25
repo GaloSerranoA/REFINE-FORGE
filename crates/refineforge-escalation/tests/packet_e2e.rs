@@ -8,11 +8,11 @@
 
 #![cfg(unix)]
 
+use refineforge_escalation::engine::EngineError;
 use refineforge_escalation::{
     commit_packet, poll_decision_once, Action, BatchBlock, BatchItem, Category, ClaimSummary,
     DecisionOutcome, Engine, Evidence, LossKind, Packet, ProjectContext, SubprocessGitOps,
 };
-use refineforge_escalation::engine::EngineError;
 use std::path::Path;
 use std::process::Command;
 
@@ -85,7 +85,12 @@ fn end_to_end_real_git_commit_then_poll_pending_then_approved() {
         "escalation: idealisation for EXAMPLE-002",
     )
     .expect("commit_packet");
-    assert_eq!(sha.0.len(), 40, "expected full 40-char git sha, got {:?}", sha);
+    assert_eq!(
+        sha.0.len(),
+        40,
+        "expected full 40-char git sha, got {:?}",
+        sha
+    );
 
     // 2. First poll: section says `(pending)` → Ok(None).
     let r = poll_decision_once(&git, tmp.path(), &rel_path).unwrap();
@@ -193,10 +198,7 @@ fn end_to_end_real_git_partial_decision_on_batched_packet() {
     if let DecisionOutcome::Partial(p) = r {
         assert_eq!(p.approved_indices, vec![1]);
         assert!(p.rejected(2));
-        assert!(p
-            .rejection_reason(2)
-            .unwrap()
-            .contains("timestamps wrap"));
+        assert!(p.rejection_reason(2).unwrap().contains("timestamps wrap"));
     } else {
         panic!("expected Partial, got {:?}", r);
     }

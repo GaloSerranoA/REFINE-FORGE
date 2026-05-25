@@ -1,7 +1,7 @@
 //! Category 2 — Idealisation. Rust→Lean mappings that lose
 //! information. Mirrors the criteria-doc §Category 2 examples.
 
-use refineforge_escalation::{Action, Category, Decision, Engine, LossKind, ProjectContext};
+use refineforge_escalation::{Action, Category, Engine, LossKind, ProjectContext};
 
 fn eng() -> Engine {
     Engine::new()
@@ -85,7 +85,11 @@ fn mutex_t_to_t_escalates() {
 fn result_t_e_to_t_escalates() {
     let d = eng()
         .decide(
-            &map("Result<u64, Err>", "Nat", vec![LossKind::FailurePath, LossKind::UnsignedOverflow]),
+            &map(
+                "Result<u64, Err>",
+                "Nat",
+                vec![LossKind::FailurePath, LossKind::UnsignedOverflow],
+            ),
             &ProjectContext::test_default(),
         )
         .unwrap();
@@ -98,7 +102,11 @@ fn result_t_e_to_t_escalates() {
 fn option_t_to_t_escalates() {
     let d = eng()
         .decide(
-            &map("Option<u64>", "Nat", vec![LossKind::Absence, LossKind::UnsignedOverflow]),
+            &map(
+                "Option<u64>",
+                "Nat",
+                vec![LossKind::Absence, LossKind::UnsignedOverflow],
+            ),
             &ProjectContext::test_default(),
         )
         .unwrap();

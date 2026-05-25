@@ -34,7 +34,11 @@ fn stub_trainer_run_produces_progress_and_report() {
     let root = project_root();
     let runs_root = tempfile::tempdir().unwrap();
     let stub = root.join("training/scripts/stub-trainer.sh");
-    assert!(stub.exists(), "stub trainer must exist at {}", stub.display());
+    assert!(
+        stub.exists(),
+        "stub trainer must exist at {}",
+        stub.display()
+    );
 
     // Build a one-off experiment YAML using the stub trainer as
     // the backend. The {run_dir} token gets substituted by the runner.
@@ -75,7 +79,10 @@ retry:
     let run_dir = runs_root.path().join("trainer-e2e-stub");
     assert!(run_dir.join("config.yaml").exists(), "config.yaml missing");
     assert!(run_dir.join("train.log").exists(), "train.log missing");
-    assert!(run_dir.join("progress.jsonl").exists(), "progress.jsonl missing");
+    assert!(
+        run_dir.join("progress.jsonl").exists(),
+        "progress.jsonl missing"
+    );
     assert!(run_dir.join("report.json").exists(), "report.json missing");
 
     // Progress JSONL should have ~6 lines (one per stub step).
@@ -88,13 +95,18 @@ retry:
     let report: serde_json::Value = serde_json::from_str(&report_str).unwrap();
     assert_eq!(report["final_outcome"], "success");
     assert_eq!(report["progress_record_count"], 6);
-    assert!(report["metric_summary"]["loss"].is_object(),
-            "loss metric should be summarised");
+    assert!(
+        report["metric_summary"]["loss"].is_object(),
+        "loss metric should be summarised"
+    );
 
     // Checkpoints: stub writes one at step 5.
     let ckpts = fs::read_dir(run_dir.join("checkpoints")).unwrap();
     let ckpt_count = ckpts.filter_map(|e| e.ok()).count();
-    assert!(ckpt_count >= 1, "expected at least 1 checkpoint, got {ckpt_count}");
+    assert!(
+        ckpt_count >= 1,
+        "expected at least 1 checkpoint, got {ckpt_count}"
+    );
 }
 
 #[test]
@@ -134,11 +146,17 @@ retry:
         .arg(&exp_path)
         .status()
         .expect("refine-train binary exists");
-    assert!(!status.success(), "should have exited non-zero on training failure");
+    assert!(
+        !status.success(),
+        "should have exited non-zero on training failure"
+    );
 
     let run_dir = runs_root.path().join("trainer-e2e-fail");
     let failures = fs::read_to_string(run_dir.join("failures.jsonl")).unwrap();
-    let first_line = failures.lines().next().expect("at least one failure record");
+    let first_line = failures
+        .lines()
+        .next()
+        .expect("at least one failure record");
     let rec: serde_json::Value = serde_json::from_str(first_line).unwrap();
     // The stub prints "CUDA out of memory" to stderr → log → classify.
     assert_eq!(rec["category"], "OutOfMemory");

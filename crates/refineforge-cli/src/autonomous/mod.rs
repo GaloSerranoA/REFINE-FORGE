@@ -169,10 +169,7 @@ pub fn run_worklist<G: GitOps>(
                     outcomes.push(StepOutcome::Failed {
                         seq: next_seq,
                         kind: "OperatorDecision".into(),
-                        error: format!(
-                            "EDIT_AND_RESUBMIT ({}): {}",
-                            category, suggestions
-                        ),
+                        error: format!("EDIT_AND_RESUBMIT ({}): {}", category, suggestions),
                         elapsed_ms: 0,
                     });
                     break;
@@ -207,6 +204,21 @@ pub fn run_worklist<G: GitOps>(
     outcomes
 }
 
+pub struct RunCliOptions<'a> {
+    pub root: &'a Path,
+    pub claim_id: &'a str,
+    pub strategy: &'a str,
+    pub weights_path: Option<&'a Path>,
+    pub max_cost_usd: f64,
+    pub operator: Option<&'a str>,
+    pub dry_run: bool,
+    pub auto_repair: bool,
+    pub await_decisions: bool,
+    pub inject_counter_idealisation: bool,
+    pub inject_training: &'a [String],
+    pub inject_bitexact: &'a [String],
+}
+
 /// Top-level entry point invoked by `refine autonomous <CLAIM-ID>`.
 ///
 /// MVP scope (per `docs/plans/autonomous-driver-plan.md` Phase 3):
@@ -214,24 +226,27 @@ pub fn run_worklist<G: GitOps>(
 /// honouring the cost gate, writing a `RunReport` JSON when the
 /// run finishes, and respecting `--dry-run` (no commits, no
 /// side effects).
-pub fn run_cli(
-    root: &Path,
-    claim_id: &str,
-    strategy: &str,
-    weights_path: Option<&Path>,
-    max_cost_usd: f64,
-    operator: Option<&str>,
-    dry_run: bool,
-    auto_repair: bool,
-    await_decisions: bool,
-    inject_counter_idealisation: bool,
-    inject_training: &[String],
-    inject_bitexact: &[String],
-) -> Result<()> {
+pub fn run_cli(opts: RunCliOptions<'_>) -> Result<()> {
+    let RunCliOptions {
+        root,
+        claim_id,
+        strategy,
+        weights_path,
+        max_cost_usd,
+        operator,
+        dry_run,
+        auto_repair,
+        await_decisions,
+        inject_counter_idealisation,
+        inject_training,
+        inject_bitexact,
+    } = opts;
     println!("refine autonomous {} (strategy={}, dry_run={}, max-cost-usd=${:.2}, auto_repair={}, await_decisions={})",
         claim_id, strategy, dry_run, max_cost_usd, auto_repair, await_decisions);
     if inject_counter_idealisation {
-        println!("**INJECTED BAIT**: Cat 2 counter-idealisation Action (u64→Nat, UnsignedOverflow)");
+        println!(
+            "**INJECTED BAIT**: Cat 2 counter-idealisation Action (u64→Nat, UnsignedOverflow)"
+        );
     }
     for p in inject_training {
         println!("**INJECTED TRAINING**: refine-train run {} --dry-run", p);
@@ -253,14 +268,22 @@ pub fn run_cli(
     // run can still proceed in dry-run / smoke modes.
     let project_ctx = match load_project_context(root, Some(claim_id)) {
         Ok(ctx) => {
-            println!("loaded ProjectContext: {} lake packages, {} bundle-chain crates, claim={}",
+            println!(
+                "loaded ProjectContext: {} lake packages, {} bundle-chain crates, claim={}",
                 ctx.lake_packages_existing.len(),
                 ctx.bundle_chain_crates.len(),
-                ctx.claim.as_ref().map(|c| c.id.as_str()).unwrap_or("(none)"));
+                ctx.claim
+                    .as_ref()
+                    .map(|c| c.id.as_str())
+                    .unwrap_or("(none)")
+            );
             ctx
         }
         Err(e) => {
-            eprintln!("WARNING: load_project_context failed: {} — falling back to test_default", e);
+            eprintln!(
+                "WARNING: load_project_context failed: {} — falling back to test_default",
+                e
+            );
             let mut ctx = ProjectContext::test_default();
             ctx.claim = Some(ClaimSummary::test_default(claim_id));
             ctx
@@ -301,13 +324,11 @@ pub fn run_cli(
 
     let mut planner = Planner::new();
     if inject_counter_idealisation {
-        planner = planner.with_engine_action(
-            refineforge_escalation::Action::MapRustToLean {
-                rust_type: "u64".into(),
-                lean_type: "Nat".into(),
-                lossy_kinds: vec![refineforge_escalation::LossKind::UnsignedOverflow],
-            },
-        );
+        planner = planner.with_engine_action(refineforge_escalation::Action::MapRustToLean {
+            rust_type: "u64".into(),
+            lean_type: "Nat".into(),
+            lossy_kinds: vec![refineforge_escalation::LossKind::UnsignedOverflow],
+        });
     }
     for p in inject_training {
         planner = planner.with_training_step(p);
@@ -335,10 +356,24 @@ pub fn run_cli(
     // consume it cleanly).
     for o in &outcomes {
         match o {
-            StepOutcome::Proceeded { seq, kind, detail, elapsed_ms } => {
-                println!("  step {:>2} [{}] PROCEEDED ({}ms): {}", seq, kind, elapsed_ms, detail);
+            StepOutcome::Proceeded {
+                seq,
+                kind,
+                detail,
+                elapsed_ms,
+            } => {
+                println!(
+                    "  step {:>2} [{}] PROCEEDED ({}ms): {}",
+                    seq, kind, elapsed_ms, detail
+                );
             }
-            StepOutcome::Escalated { seq, kind, category, packet_path, elapsed_ms } => {
+            StepOutcome::Escalated {
+                seq,
+                kind,
+                category,
+                packet_path,
+                elapsed_ms,
+            } => {
                 println!(
                     "  step {:>2} [{}] ESCALATED [{}] ({}ms) → packet: {}",
                     seq, kind, category, elapsed_ms, packet_path
@@ -347,8 +382,16 @@ pub fn run_cli(
                     println!("    (--await-decisions not set; driver halts here)");
                 }
             }
-            StepOutcome::Failed { seq, kind, error, elapsed_ms } => {
-                println!("  step {:>2} [{}] FAILED ({}ms): {}", seq, kind, elapsed_ms, error);
+            StepOutcome::Failed {
+                seq,
+                kind,
+                error,
+                elapsed_ms,
+            } => {
+                println!(
+                    "  step {:>2} [{}] FAILED ({}ms): {}",
+                    seq, kind, elapsed_ms, error
+                );
             }
         }
     }
@@ -369,14 +412,16 @@ pub fn run_cli(
     };
 
     println!();
-    println!("summary: total={} proceeded={} escalated={} failed={} success={}",
+    println!(
+        "summary: total={} proceeded={} escalated={} failed={} success={}",
         report.summary.total_steps,
         report.summary.proceeded,
         report.summary.escalated,
         report.summary.failed,
         report.summary.success,
     );
-    println!("cost: ${:.4} / ${:.4} (remaining ${:.4})",
+    println!(
+        "cost: ${:.4} / ${:.4} (remaining ${:.4})",
         report.cost_usd_total,
         report.cost_usd_max,
         ex.cost_gate.remaining(),
@@ -459,10 +504,13 @@ pub fn escalations_list(
     }
     found.sort_by_key(|(_, _, _, m)| *m);
     if found.is_empty() {
-        println!("no escalation packets found under {}", escalations_dir.display());
+        println!(
+            "no escalation packets found under {}",
+            escalations_dir.display()
+        );
         return Ok(());
     }
-    println!("{:<10} {:<40} {:<32} {}", "STATUS", "CLAIM", "PACKET", "MODIFIED");
+    println!("{:<10} {:<40} {:<32} MODIFIED", "STATUS", "CLAIM", "PACKET");
     let now = std::time::SystemTime::now();
     for (claim, name, status, mtime) in &found {
         let age = now

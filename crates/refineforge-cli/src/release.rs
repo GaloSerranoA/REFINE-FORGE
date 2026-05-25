@@ -63,6 +63,31 @@ pub struct BundleEvidence {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReleaseEnvironment {
+    pub runner_os: String,
+    pub runner_arch: String,
+    pub rustc_verbose_version: String,
+}
+
+impl ReleaseEnvironment {
+    fn detect() -> Self {
+        Self {
+            runner_os: std::env::var("RUNNER_OS").unwrap_or_else(|_| std::env::consts::OS.into()),
+            runner_arch: std::env::var("RUNNER_ARCH")
+                .unwrap_or_else(|_| std::env::consts::ARCH.into()),
+            rustc_verbose_version: rustc_verbose_version(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ReleaseArtifacts {
+    pub sbom_sha256: Option<String>,
+    pub provenance_sha256: Option<String>,
+    pub verifier_container_digest: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReleaseReport {
     pub requested_version: String,
     pub generated_at: DateTime<Utc>,
@@ -70,6 +95,8 @@ pub struct ReleaseReport {
     pub git_branch: Option<String>,
     pub dirty_tree: bool,
     pub host_os: String,
+    pub environment: ReleaseEnvironment,
+    pub artifacts: ReleaseArtifacts,
     pub evidence_dir: PathBuf,
     pub gates: Vec<GateReport>,
     pub bundles: Vec<BundleEvidence>,
@@ -84,6 +111,12 @@ impl ReleaseReport {
             git_branch: None,
             dirty_tree: false,
             host_os: std::env::consts::OS.to_string(),
+            environment: ReleaseEnvironment::detect(),
+            artifacts: ReleaseArtifacts {
+                verifier_container_digest: std::env::var("REFINEFORGE_VERIFIER_CONTAINER_DIGEST")
+                    .ok(),
+                ..ReleaseArtifacts::default()
+            },
             evidence_dir,
             gates: Vec::new(),
             bundles: Vec::new(),
@@ -101,6 +134,12 @@ impl ReleaseReport {
             git_branch: Some("codex/release-infrastructure-track".into()),
             dirty_tree: false,
             host_os: "test-os".into(),
+            environment: ReleaseEnvironment {
+                runner_os: "test-os".into(),
+                runner_arch: "test-arch".into(),
+                rustc_verbose_version: "rustc 1.0.0 (test)\nhost: test".into(),
+            },
+            artifacts: ReleaseArtifacts::default(),
             evidence_dir: PathBuf::from("release/evidence/test"),
             gates: Vec::new(),
             bundles: Vec::new(),
@@ -131,7 +170,22 @@ impl ReleaseReport {
             self.git_branch.as_deref().unwrap_or("unknown")
         ));
         out.push_str(&format!("- Dirty tree: `{}`\n", self.dirty_tree));
-        out.push_str(&format!("- Host OS: `{}`\n\n", self.host_os));
+        out.push_str(&format!("- Host OS: `{}`\n", self.host_os));
+        out.push_str(&format!(
+            "- Runner: `{}` / `{}`\n",
+            self.environment.runner_os, self.environment.runner_arch
+        ));
+        out.push_str(&format!(
+            "- SBOM SHA-256: `{}`\n",
+            self.artifacts.sbom_sha256.as_deref().unwrap_or("pending")
+        ));
+        out.push_str(&format!(
+            "- Provenance SHA-256: `{}`\n\n",
+            self.artifacts
+                .provenance_sha256
+                .as_deref()
+                .unwrap_or("pending")
+        ));
 
         out.push_str("## Gates\n\n");
         out.push_str("| Gate | Status | Required | Message |\n");
@@ -179,9 +233,26 @@ pub fn gate_log_name(name: &str) -> String {
 
 pub fn sha256_file(path: &Path) -> Result<String> {
     let data = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    Ok(sha256_bytes(&data))
+}
+
+fn sha256_bytes(data: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(data);
-    Ok(hex::encode(h.finalize()))
+    hex::encode(h.finalize())
+}
+
+fn rustc_verbose_version() -> String {
+    match Command::new("rustc").arg("-Vv").output() {
+        Ok(output) if output.status.success() => {
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        }
+        Ok(output) => format!(
+            "rustc -Vv failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ),
+        Err(err) => format!("rustc -Vv unavailable: {err}"),
+    }
 }
 
 pub fn write_evidence(
@@ -192,19 +263,30 @@ pub fn write_evidence(
     std::fs::create_dir_all(&report.evidence_dir)
         .with_context(|| format!("creating {}", report.evidence_dir.display()))?;
 
-    let report_json = serde_json::to_vec_pretty(report)?;
+    let sbom_json = serde_json::to_vec_pretty(sbom)?;
+    let provenance_json = serde_json::to_vec_pretty(provenance)?;
+    std::fs::write(report.evidence_dir.join("sbom.cyclonedx.json"), &sbom_json)?;
+    std::fs::write(
+        report.evidence_dir.join("provenance.intoto.json"),
+        &provenance_json,
+    )?;
+
+    let mut report_with_artifacts = report.clone();
+    report_with_artifacts.artifacts.sbom_sha256 = Some(sha256_bytes(&sbom_json));
+    report_with_artifacts.artifacts.provenance_sha256 = Some(sha256_bytes(&provenance_json));
+    if report_with_artifacts
+        .artifacts
+        .verifier_container_digest
+        .is_none()
+    {
+        report_with_artifacts.artifacts.verifier_container_digest =
+            std::env::var("REFINEFORGE_VERIFIER_CONTAINER_DIGEST").ok();
+    }
+    let report_json = serde_json::to_vec_pretty(&report_with_artifacts)?;
     std::fs::write(report.evidence_dir.join("release-report.json"), report_json)?;
     std::fs::write(
         report.evidence_dir.join("release-report.md"),
-        report.to_markdown(),
-    )?;
-    std::fs::write(
-        report.evidence_dir.join("sbom.cyclonedx.json"),
-        serde_json::to_vec_pretty(sbom)?,
-    )?;
-    std::fs::write(
-        report.evidence_dir.join("provenance.intoto.json"),
-        serde_json::to_vec_pretty(provenance)?,
+        report_with_artifacts.to_markdown(),
     )?;
     Ok(())
 }

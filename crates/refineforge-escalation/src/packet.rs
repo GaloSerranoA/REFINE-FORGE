@@ -125,8 +125,8 @@ impl Packet {
         s.push_str("---\n");
         // serde_yaml inserts a leading `---\n` of its own; strip the
         // outer doc-start to avoid `--- --- yaml ---`.
-        let yaml = serde_yaml::to_string(&self.front_matter)
-            .expect("PacketFrontMatter always serializes");
+        let yaml =
+            serde_yaml::to_string(&self.front_matter).expect("PacketFrontMatter always serializes");
         s.push_str(yaml.trim_start_matches("---\n"));
         s.push_str("---\n\n");
 
@@ -150,7 +150,11 @@ impl Packet {
             "**Generated:** {} by `{}`",
             self.front_matter.generated_at, self.front_matter.generated_by_strategy
         );
-        let _ = writeln!(s, "**Criteria version:** v{}", self.front_matter.criteria_version);
+        let _ = writeln!(
+            s,
+            "**Criteria version:** v{}",
+            self.front_matter.criteria_version
+        );
         let _ = writeln!(s);
 
         let _ = writeln!(s, "## Why this escalates");
@@ -164,8 +168,7 @@ impl Packet {
         let _ = writeln!(
             s,
             "{}",
-            serde_json::to_string_pretty(&self.action)
-                .unwrap_or_else(|_| "{}".into())
+            serde_json::to_string_pretty(&self.action).unwrap_or_else(|_| "{}".into())
         );
         let _ = writeln!(s, "```");
         let _ = writeln!(s);
@@ -221,7 +224,11 @@ fn render_evidence(s: &mut String, ev: &Evidence) {
             what_added,
             smallest_in_scope_alternative,
         } => {
-            let _ = writeln!(s, "- **What's being added (scope-expansion):** {}", what_added);
+            let _ = writeln!(
+                s,
+                "- **What's being added (scope-expansion):** {}",
+                what_added
+            );
             if let Some(alt) = smallest_in_scope_alternative {
                 let _ = writeln!(s, "- **Smallest in-scope alternative considered:** {}", alt);
             } else {
@@ -444,7 +451,11 @@ mod tests {
     #[test]
     fn to_markdown_contains_summary_as_h1() {
         let md = build_idealisation_packet().to_markdown();
-        assert!(md.contains("# Escalation: u64 → Nat loses overflow"), "got:\n{}", md);
+        assert!(
+            md.contains("# Escalation: u64 → Nat loses overflow"),
+            "got:\n{}",
+            md
+        );
     }
 
     #[test]
@@ -453,7 +464,11 @@ mod tests {
         assert!(md.contains("## Human decision"));
         assert!(md.contains("(pending)"));
         // v0.3: no `expires_at` anywhere — auto-expiry was rejected
-        assert!(!md.contains("expires_at"), "v0.3 forbids expires_at: {}", md);
+        assert!(
+            !md.contains("expires_at"),
+            "v0.3 forbids expires_at: {}",
+            md
+        );
         assert!(!md.contains("EXPIRED-AUTO-REJECTED"));
     }
 
@@ -473,7 +488,11 @@ mod tests {
         };
         let p = Packet::build(reason, action, "EXAMPLE-002", "t", "anthropic");
         let md = p.to_markdown();
-        assert!(md.contains("Also trips"), "missing secondary section:\n{}", md);
+        assert!(
+            md.contains("Also trips"),
+            "missing secondary section:\n{}",
+            md
+        );
         assert!(md.contains("scope"), "secondary not listed: {}", md);
     }
 

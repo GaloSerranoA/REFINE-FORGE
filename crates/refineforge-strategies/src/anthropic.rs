@@ -52,13 +52,17 @@ impl MockTransport {
     /// Returns an empty JSON object — parses to `None`, so the
     /// strategy declines every proposal.
     pub fn declines() -> Self {
-        Self { canned_text: "{}".into() }
+        Self {
+            canned_text: "{}".into(),
+        }
     }
 
     /// Returns the supplied JSON. Useful for unit tests; not exposed
     /// via the CLI.
     pub fn returns(json_patch: impl Into<String>) -> Self {
-        Self { canned_text: json_patch.into() }
+        Self {
+            canned_text: json_patch.into(),
+        }
     }
 }
 
@@ -253,7 +257,9 @@ impl<T: AnthropicTransport> AnthropicStrategy<T> {
 
     pub(crate) fn build_request(&self, d: &Diagnostic, file: &str) -> MessagesRequest {
         let cache = if self.enable_caching {
-            Some(CacheControl { kind: "ephemeral".into() })
+            Some(CacheControl {
+                kind: "ephemeral".into(),
+            })
         } else {
             None
         };
@@ -295,11 +301,7 @@ impl<T: AnthropicTransport> AnthropicStrategy<T> {
 }
 
 impl<T: AnthropicTransport> RepairStrategy for AnthropicStrategy<T> {
-    fn propose_patch(
-        &self,
-        diagnostic: &Diagnostic,
-        file_content: &str,
-    ) -> Result<Option<Patch>> {
+    fn propose_patch(&self, diagnostic: &Diagnostic, file_content: &str) -> Result<Option<Patch>> {
         let request = self.build_request(diagnostic, file_content);
         let response = self.transport.send(&request)?;
         if let Ok(mut stats) = self.usage_stats.lock() {
@@ -311,7 +313,9 @@ impl<T: AnthropicTransport> RepairStrategy for AnthropicStrategy<T> {
         Ok(parse_response_into_patch(&response))
     }
 
-    fn name(&self) -> &'static str { "anthropic" }
+    fn name(&self) -> &'static str {
+        "anthropic"
+    }
 }
 
 const SYSTEM_PROMPT: &str = "You are an expert Lean 4 proof engineer assisting refineforge's bounded repair loop. \
@@ -339,8 +343,14 @@ pub fn parse_response_into_patch(response: &MessagesResponse) -> Option<Patch> {
     let p: PatchJson = serde_json::from_str(trimmed).ok()?;
     Some(Patch {
         range: Range {
-            start: Position { line: p.start_line, character: p.start_char },
-            end: Position { line: p.end_line, character: p.end_char },
+            start: Position {
+                line: p.start_line,
+                character: p.start_char,
+            },
+            end: Position {
+                line: p.end_line,
+                character: p.end_char,
+            },
         },
         new_text: p.new_text,
         rationale: if p.rationale.is_empty() {
@@ -376,8 +386,10 @@ pub fn anthropic_mock_strategy() -> Box<dyn RepairStrategy> {
 /// to the shared usage accumulator (always zero for the
 /// declining mock, but type-symmetric with
 /// `anthropic_strategy_from_env_with_usage`).
-pub fn anthropic_mock_strategy_with_usage()
--> (Box<dyn RepairStrategy>, std::sync::Arc<std::sync::Mutex<UsageStats>>) {
+pub fn anthropic_mock_strategy_with_usage() -> (
+    Box<dyn RepairStrategy>,
+    std::sync::Arc<std::sync::Mutex<UsageStats>>,
+) {
     let handle = std::sync::Arc::new(std::sync::Mutex::new(UsageStats::default()));
     let strategy = AnthropicStrategy::with_usage_stats(
         "MOCK-KEY-NOT-USED".to_string(),
@@ -396,8 +408,14 @@ mod tests {
     fn d() -> Diagnostic {
         Diagnostic {
             range: Range {
-                start: Position { line: 5, character: 12 },
-                end: Position { line: 5, character: 18 },
+                start: Position {
+                    line: 5,
+                    character: 12,
+                },
+                end: Position {
+                    line: 5,
+                    character: 18,
+                },
             },
             severity: Severity::Error,
             message: "unsolved goals".into(),
@@ -407,11 +425,7 @@ mod tests {
 
     #[test]
     fn build_request_uses_two_content_blocks_for_caching() {
-        let s = AnthropicStrategy::new(
-            "k".into(),
-            "claude-opus-4-7",
-            MockTransport::declines(),
-        );
+        let s = AnthropicStrategy::new("k".into(), "claude-opus-4-7", MockTransport::declines());
         let req = s.build_request(&d(), "theorem t : True := by sorry");
 
         assert_eq!(req.model, "claude-opus-4-7");
@@ -421,31 +435,40 @@ mod tests {
         let sys = req.system.as_ref().expect("system must be set");
         assert_eq!(sys.len(), 1);
         assert!(sys[0].text.contains("MUST NOT use sorry"));
-        assert!(sys[0].cache_control.is_some(), "system block must be cached");
+        assert!(
+            sys[0].cache_control.is_some(),
+            "system block must be cached"
+        );
 
         // Two user blocks: file (cached) + diagnostic (not cached).
         assert_eq!(req.messages.len(), 1);
         let blocks = &req.messages[0].content;
         assert_eq!(blocks.len(), 2);
         assert!(blocks[0].text.contains("theorem t : True := by sorry"));
-        assert!(blocks[0].cache_control.is_some(), "file block must be cached");
+        assert!(
+            blocks[0].cache_control.is_some(),
+            "file block must be cached"
+        );
         assert!(blocks[1].text.contains("unsolved goals"));
         assert!(blocks[1].text.contains("line 5, col 12"));
-        assert!(blocks[1].cache_control.is_none(), "diagnostic block must NOT be cached (changes per iteration)");
+        assert!(
+            blocks[1].cache_control.is_none(),
+            "diagnostic block must NOT be cached (changes per iteration)"
+        );
     }
 
     #[test]
     fn without_caching_disables_cache_control_on_all_blocks() {
-        let s = AnthropicStrategy::new(
-            "k".into(),
-            "claude-opus-4-7",
-            MockTransport::declines(),
-        ).without_caching();
+        let s = AnthropicStrategy::new("k".into(), "claude-opus-4-7", MockTransport::declines())
+            .without_caching();
         let req = s.build_request(&d(), "file");
         let sys = req.system.as_ref().unwrap();
         assert!(sys[0].cache_control.is_none());
         for b in &req.messages[0].content {
-            assert!(b.cache_control.is_none(), "no block should be cached when caching disabled");
+            assert!(
+                b.cache_control.is_none(),
+                "no block should be cached when caching disabled"
+            );
         }
     }
 
@@ -527,7 +550,10 @@ mod tests {
             "claude-opus-4-7",
             MockTransport::returns(canned),
         );
-        let p = s.propose_patch(&d(), "file contents").unwrap().expect("must propose");
+        let p = s
+            .propose_patch(&d(), "file contents")
+            .unwrap()
+            .expect("must propose");
         assert_eq!(p.new_text, "foo");
         assert_eq!(p.rationale, "bar");
         assert_eq!(s.name(), "anthropic");
@@ -554,7 +580,11 @@ mod tests {
         );
         let _ = s.propose_patch(&d(), "file").unwrap();
         let stats = handle.lock().unwrap().clone();
-        assert_eq!(stats.stop_reasons.len(), 1, "one call → one stop_reason entry");
+        assert_eq!(
+            stats.stop_reasons.len(),
+            1,
+            "one call → one stop_reason entry"
+        );
         assert_eq!(stats.stop_reasons[0].as_deref(), Some("end_turn"));
     }
 
@@ -595,12 +625,17 @@ mod tests {
         let req = s.build_request(&d(), "file");
         let json = serde_json::to_string(&req).unwrap();
         // The cached blocks include "cache_control":{"type":"ephemeral"}
-        assert!(json.contains("\"cache_control\":{\"type\":\"ephemeral\"}"),
-                "serialized request must include cache_control marker");
+        assert!(
+            json.contains("\"cache_control\":{\"type\":\"ephemeral\"}"),
+            "serialized request must include cache_control marker"
+        );
         // The unmarked diagnostic block must NOT include cache_control.
         // (Hard to assert directly without parsing; checked by inspecting
         // count of cache_control occurrences = 2 — system + file.)
         let count = json.matches("\"cache_control\"").count();
-        assert_eq!(count, 2, "expected exactly 2 cache_control markers (system + file); got {count}");
+        assert_eq!(
+            count, 2,
+            "expected exactly 2 cache_control markers (system + file); got {count}"
+        );
     }
 }

@@ -1,6 +1,7 @@
 use super::common::{
-    capability, existing_artifact, repo_tool_check, tool_check, AgentMode, AgentReport,
-    AgentStatus, CommandRecord, TrustLevel,
+    action_intent, capability, existing_artifact, repo_tool_check, seal_runtime,
+    set_production_proof, tool_check, ActionIntent, AgentMode, AgentReport, AgentStatus,
+    CommandRecord, ProductionProofStatus, ProductionRequirement, TrustLevel,
 };
 use crate::release::{self, ReleaseReadyOptions};
 use std::path::{Path, PathBuf};
@@ -65,6 +66,7 @@ pub fn build(
         &mut report,
     );
     existing_artifact(root, "docs/release/ci-audit-report.md", &mut report);
+    existing_artifact(root, "docs/release/devops-production-proof.md", &mut report);
     existing_artifact(root, ".github/workflows/ci.yml", &mut report);
     existing_artifact(root, "containers/Dockerfile.verifier", &mut report);
 
@@ -76,6 +78,14 @@ pub fn build(
             AgentStatus::Passed,
             TrustLevel::ReleaseReadyLocal,
             "DevOps agent inspected release-readiness docs and CI surfaces. Live hosted signing is not claimed.",
+        );
+        apply_devops_production_proof(&mut report, root, false, allow_expensive, target, None);
+        seal_runtime(
+            root,
+            Some(out_dir),
+            &mut report,
+            TrustLevel::ReleaseReadyLocal,
+            devops_action_intents(mode, allow_expensive),
         );
         return report;
     }
@@ -135,7 +145,243 @@ pub fn build(
             "Local release readiness failed. See release evidence and command record.",
         );
     }
+    apply_devops_production_proof(
+        &mut report,
+        root,
+        result.is_ok(),
+        allow_expensive,
+        target,
+        Some(&evidence_dir),
+    );
+    seal_runtime(
+        root,
+        Some(out_dir),
+        &mut report,
+        TrustLevel::ReleaseReadyLocal,
+        devops_action_intents(mode, allow_expensive),
+    );
     report
+}
+
+fn apply_devops_production_proof(
+    report: &mut AgentReport,
+    root: &Path,
+    local_ready: bool,
+    allow_expensive: bool,
+    target: &str,
+    evidence_dir: Option<&Path>,
+) {
+    let mut blockers = Vec::new();
+    let mut requirements = Vec::new();
+
+    requirements.push(ProductionRequirement::new_owned(
+        "devops.local_release_ready",
+        "Local release readiness command passes and writes evidence",
+        if local_ready {
+            AgentStatus::Passed
+        } else {
+            AgentStatus::Blocked
+        },
+        vec![evidence_dir.map_or_else(
+            || "release ready command not run in inspect mode".to_string(),
+            |dir| format!("release evidence directory: {}", dir.display()),
+        )],
+    ));
+    if !local_ready {
+        blockers.push("local release readiness evidence is missing or failed".to_string());
+    }
+
+    let hosted_ci_evidence = std::env::var("REFINEFORGE_HOSTED_CI_EVIDENCE").ok();
+    requirements.push(ProductionRequirement::new_owned(
+        "devops.hosted_ci_artifacts",
+        "Hosted CI workflow passed and uploaded release evidence artifacts",
+        if hosted_ci_evidence.is_some() {
+            AgentStatus::Passed
+        } else {
+            AgentStatus::Blocked
+        },
+        vec![hosted_ci_evidence.unwrap_or_else(|| {
+            "hosted CI evidence path/URL not provided via REFINEFORGE_HOSTED_CI_EVIDENCE"
+                .to_string()
+        })],
+    ));
+    if std::env::var("REFINEFORGE_HOSTED_CI_EVIDENCE").is_err() {
+        blockers.push("hosted CI evidence blocks release-ready-ci production proof".to_string());
+    }
+
+    let sigstore_evidence = std::env::var("REFINEFORGE_SIGSTORE_EVIDENCE").ok();
+    requirements.push(ProductionRequirement::new_owned(
+        "devops.sigstore_oidc_signature",
+        "Sigstore keyless signing ran from GitHub OIDC and verified signer identity",
+        if sigstore_evidence.is_some() {
+            AgentStatus::Passed
+        } else {
+            AgentStatus::Blocked
+        },
+        vec![sigstore_evidence.unwrap_or_else(|| {
+            if allow_expensive {
+                "local expensive gates do not replace hosted OIDC Sigstore evidence".to_string()
+            } else {
+                "Sigstore evidence not run; --allow-expensive was not requested".to_string()
+            }
+        })],
+    ));
+    if std::env::var("REFINEFORGE_SIGSTORE_EVIDENCE").is_err() {
+        blockers.push("Sigstore OIDC signing evidence is missing".to_string());
+    }
+
+    let container_digest = std::env::var("REFINEFORGE_VERIFIER_CONTAINER_DIGEST").ok();
+    requirements.push(ProductionRequirement::new_owned(
+        "devops.verifier_container_digest",
+        "Verifier container image is built, smoke-tested, and digest-recorded",
+        if container_digest.is_some() {
+            AgentStatus::Passed
+        } else {
+            AgentStatus::Blocked
+        },
+        vec![container_digest.unwrap_or_else(|| {
+            "verifier container digest not provided via REFINEFORGE_VERIFIER_CONTAINER_DIGEST"
+                .to_string()
+        })],
+    ));
+    if std::env::var("REFINEFORGE_VERIFIER_CONTAINER_DIGEST").is_err() {
+        blockers.push("verifier container digest is missing".to_string());
+    }
+
+    let sbom = evidence_dir
+        .map(|dir| dir.join("sbom.cyclonedx.json"))
+        .filter(|path| path.exists());
+    let provenance = evidence_dir
+        .map(|dir| dir.join("provenance.intoto.json"))
+        .filter(|path| path.exists());
+    requirements.push(ProductionRequirement::new_owned(
+        "devops.sbom_provenance_uploaded",
+        "SBOM and provenance artifacts are generated and uploaded from CI",
+        if sbom.is_some()
+            && provenance.is_some()
+            && std::env::var("REFINEFORGE_HOSTED_CI_EVIDENCE").is_ok()
+        {
+            AgentStatus::Passed
+        } else {
+            AgentStatus::Blocked
+        },
+        vec![
+            sbom.map_or_else(
+                || "sbom.cyclonedx.json missing from local evidence".to_string(),
+                |path| path.display().to_string(),
+            ),
+            provenance.map_or_else(
+                || "provenance.intoto.json missing from local evidence".to_string(),
+                |path| path.display().to_string(),
+            ),
+        ],
+    ));
+
+    let flake_lock = root.join("flake.lock");
+    requirements.push(ProductionRequirement::new(
+        "devops.nix_locked_check",
+        "Nix flake is locked and nix flake check passes without updating the lock",
+        if flake_lock.exists() {
+            AgentStatus::Partial
+        } else {
+            AgentStatus::Blocked
+        },
+        &[if flake_lock.exists() {
+            "flake.lock exists; nix check evidence still required"
+        } else {
+            "flake.lock is missing"
+        }],
+    ));
+    if !flake_lock.exists() {
+        blockers.push(
+            "Nix reproducibility evidence is missing because flake.lock is absent".to_string(),
+        );
+    }
+
+    requirements.push(ProductionRequirement::new(
+        "devops.architecture_matrix",
+        "Release evidence records runner OS and CPU architecture for every lane",
+        AgentStatus::Blocked,
+        &["runner architecture matrix evidence is only authoritative from hosted CI"],
+    ));
+    blockers.push("hosted architecture matrix evidence is missing".to_string());
+
+    let approval = std::env::var("REFINEFORGE_HUMAN_RELEASE_APPROVAL").ok();
+    requirements.push(ProductionRequirement::new_owned(
+        "devops.human_release_approval",
+        "Named human release approval is present for this version",
+        if approval.is_some() {
+            AgentStatus::Passed
+        } else {
+            AgentStatus::Blocked
+        },
+        vec![approval
+            .unwrap_or_else(|| format!("no human release approval provided for target {target}"))],
+    ));
+    if std::env::var("REFINEFORGE_HUMAN_RELEASE_APPROVAL").is_err() {
+        blockers.push("human release approval is missing".to_string());
+    }
+
+    set_production_proof(
+        report,
+        if blockers.is_empty() {
+            ProductionProofStatus::HumanReviewed
+        } else {
+            ProductionProofStatus::Blocked
+        },
+        requirements,
+        std::env::var("REFINEFORGE_HUMAN_RELEASE_APPROVAL")
+            .ok()
+            .into_iter()
+            .collect(),
+        blockers,
+    );
+}
+
+fn devops_action_intents(mode: AgentMode, allow_expensive: bool) -> Vec<ActionIntent> {
+    let execution_policy = if allow_expensive {
+        "writes_evidence_and_runs_local_expensive_gates"
+    } else {
+        "writes_evidence_with_expensive_gates_skipped"
+    };
+    vec![
+        action_intent(
+            "devops.inspect.release_surfaces",
+            "Inspect release docs, CI workflows, verifier container, and audit surfaces",
+            "inspect",
+            "read_only",
+            "refine agent devops --mode inspect",
+            &[
+                "docs/release/release-readiness-inventory.md",
+                ".github/workflows/ci.yml",
+                "containers/Dockerfile.verifier",
+            ],
+        ),
+        action_intent(
+            "devops.release.ready_local",
+            "Run local release readiness and write evidence artifacts",
+            "verify",
+            execution_policy,
+            &format!("refine agent devops --mode {}", mode.as_str()),
+            &[
+                "release-ready-local",
+                "release/evidence",
+                "SBOM/provenance outputs",
+            ],
+        ),
+        action_intent(
+            "devops.audit.trust_boundary",
+            "Keep hosted CI, OIDC signing, and human approval separate from local evidence",
+            "audit",
+            "evidence_only",
+            "refine agent devops --mode check",
+            &[
+                "tool_checks.docker",
+                "tool_checks.cosign",
+                "release report warnings",
+            ],
+        ),
+    ]
 }
 
 fn release_ready_success_trust_level(_allow_expensive: bool) -> TrustLevel {

@@ -183,7 +183,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: refineforge-release-evidence-${{ matrix.os }}
-          path: release/evidence/
+          path: release/evidence/**
           retention-days: 14
 
   # ─── Verifier container smoke (Ubuntu Docker runner) ───────────────

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://refine-forge.local/schemas/memory-record.schema.json",
+  "title": "Refine-Forge Memory Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "agent",
+    "target",
+    "kind",
+    "content",
+    "source_path",
+    "source_sha256",
+    "created_at",
+    "trust_effect"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "refineforge-memory-v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^rfmem:[0-9a-f]{64}$"
+    },
+    "agent": {
+      "enum": ["lean", "devops", "train", "kernel", "run_all"]
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "enum": [
+        "preference",
+        "citation",
+        "evidence_index",
+        "handoff",
+        "claim_note",
+        "blocker"
+      ]
+    },
+    "content": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_path": {
+      "type": ["string", "null"]
+    },
+    "source_sha256": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trust_effect": {
+      "const": "none"
+    }
+  }
+}

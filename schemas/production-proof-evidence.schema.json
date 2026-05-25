@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://refineforge.local/schemas/production-proof-evidence.schema.json",
+  "title": "Refine-Forge Production Proof Evidence Manifest",
+  "type": "object",
+  "required": ["schema_version", "target", "release", "training", "kernel", "lean"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "refineforge-production-proof-evidence-v1"
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1
+    },
+    "release": {
+      "type": "object",
+      "required": [
+        "hosted_ci_url",
+        "oidc_issuer",
+        "signed_bundle_path",
+        "sbom_path",
+        "provenance_path",
+        "verifier_container_digest",
+        "nix_lock_path",
+        "nix_check_log_path",
+        "architecture_matrix_path",
+        "approval_path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "hosted_ci_url": {
+          "type": "string",
+          "pattern": "^https://github\\.com/.+/actions/runs/.+"
+        },
+        "oidc_issuer": {
+          "const": "https://token.actions.githubusercontent.com"
+        },
+        "signed_bundle_path": { "$ref": "#/$defs/relativePath" },
+        "sbom_path": { "$ref": "#/$defs/relativePath" },
+        "provenance_path": { "$ref": "#/$defs/relativePath" },
+        "verifier_container_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-fA-F]{64}$"
+        },
+        "nix_lock_path": { "$ref": "#/$defs/relativePath" },
+        "nix_check_log_path": { "$ref": "#/$defs/relativePath" },
+        "architecture_matrix_path": { "$ref": "#/$defs/relativePath" },
+        "approval_path": { "$ref": "#/$defs/relativePath" }
+      }
+    },
+    "training": {
+      "type": "object",
+      "required": [
+        "checkpoint_path",
+        "eval_report_path",
+        "regression_report_path",
+        "compute_ledger_path",
+        "promotion_manifest_path",
+        "approval_path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "checkpoint_path": { "$ref": "#/$defs/relativePath" },
+        "eval_report_path": { "$ref": "#/$defs/relativePath" },
+        "regression_report_path": { "$ref": "#/$defs/relativePath" },
+        "compute_ledger_path": { "$ref": "#/$defs/relativePath" },
+        "promotion_manifest_path": { "$ref": "#/$defs/relativePath" },
+        "approval_path": { "$ref": "#/$defs/relativePath" }
+      }
+    },
+    "kernel": {
+      "type": "object",
+      "required": [
+        "source_kind",
+        "source_path",
+        "reference_path",
+        "bitexact_report_path",
+        "hardware_matrix_path",
+        "compiler_metadata_path",
+        "performance_baseline_path",
+        "helyx_handoff_path",
+        "approval_path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "source_kind": {
+          "enum": ["cuda", "rust", "external", "ptx"]
+        },
+        "source_path": { "$ref": "#/$defs/relativePath" },
+        "reference_path": { "$ref": "#/$defs/relativePath" },
+        "bitexact_report_path": { "$ref": "#/$defs/relativePath" },
+        "hardware_matrix_path": { "$ref": "#/$defs/relativePath" },
+        "compiler_metadata_path": { "$ref": "#/$defs/relativePath" },
+        "performance_baseline_path": { "$ref": "#/$defs/relativePath" },
+        "helyx_handoff_path": { "$ref": "#/$defs/relativePath" },
+        "approval_path": { "$ref": "#/$defs/relativePath" }
+      }
+    },
+    "lean": {
+      "type": "object",
+      "required": [
+        "claims_report_path",
+        "proof_inventory_path",
+        "refinement_links_path",
+        "bundle_hashes_path",
+        "approval_path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "claims_report_path": { "$ref": "#/$defs/relativePath" },
+        "proof_inventory_path": { "$ref": "#/$defs/relativePath" },
+        "refinement_links_path": { "$ref": "#/$defs/relativePath" },
+        "bundle_hashes_path": { "$ref": "#/$defs/relativePath" },
+        "approval_path": { "$ref": "#/$defs/relativePath" }
+      }
+    }
+  },
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "anyOf": [
+          { "pattern": "^[A-Za-z]:" },
+          { "pattern": "^/" },
+          { "pattern": "(^|/)\\.\\.(/|$)" }
+        ]
+      }
+    }
+  }
+}

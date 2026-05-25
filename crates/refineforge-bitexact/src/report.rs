@@ -8,9 +8,10 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::experiment::KernelExperiment;
+use crate::experiment::{KernelExperiment, KernelReferenceKind, KernelSourceKind};
 use crate::hash::all_equal;
 use crate::manifest::InputArtifact;
 use crate::runner::RunResult;
@@ -34,6 +35,19 @@ pub struct Report {
     pub expected_sha256: Option<String>,
     pub observed_sha256: Option<String>,
     pub input_manifest: Vec<InputArtifact>,
+    pub production_contract: KernelProductionContract,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KernelProductionContract {
+    pub source_kind: KernelSourceKind,
+    pub source_path: Option<String>,
+    pub reference_kind: KernelReferenceKind,
+    pub reference_path: Option<String>,
+    pub requires_real_cuda: bool,
+    pub hardware: BTreeMap<String, String>,
+    pub compiler_runtime_metadata: BTreeMap<String, String>,
+    pub performance_baseline: Option<String>,
 }
 
 impl Report {
@@ -44,7 +58,7 @@ impl Report {
     ) -> Self {
         let hashes: Vec<String> = runs.iter().filter_map(|r| r.output_hash.clone()).collect();
         let any_error = runs.iter().any(|r| r.error.is_some());
-        let mut unique: Vec<String> = hashes.iter().cloned().collect();
+        let mut unique: Vec<String> = hashes.to_vec();
         unique.sort();
         unique.dedup();
         let observed_sha256 = (unique.len() == 1).then(|| unique[0].clone());
@@ -106,6 +120,7 @@ impl Report {
             expected_sha256,
             observed_sha256,
             input_manifest,
+            production_contract: production_contract(exp),
         }
     }
 
@@ -117,10 +132,47 @@ impl Report {
     }
 }
 
+fn production_contract(exp: &KernelExperiment) -> KernelProductionContract {
+    let mut compiler_runtime_metadata = BTreeMap::new();
+    if let Ok(rustc) = std::process::Command::new("rustc").arg("-Vv").output() {
+        if rustc.status.success() {
+            compiler_runtime_metadata.insert(
+                "rustc".into(),
+                String::from_utf8_lossy(&rustc.stdout).trim().to_string(),
+            );
+        }
+    }
+    if let Ok(nvcc) = std::env::var("REFINEFORGE_NVCC_VERSION") {
+        compiler_runtime_metadata.insert("nvcc".into(), nvcc);
+    }
+
+    KernelProductionContract {
+        source_kind: exp.source.kind.clone(),
+        source_path: exp
+            .source
+            .path
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        reference_kind: exp.reference.kind.clone(),
+        reference_path: exp
+            .reference
+            .path
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        requires_real_cuda: exp.production.requires_real_cuda,
+        hardware: exp.hardware.clone(),
+        compiler_runtime_metadata,
+        performance_baseline: std::env::var("REFINEFORGE_KERNEL_PERFORMANCE_BASELINE").ok(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::experiment::{KernelProfile, OutputSource};
+    use crate::experiment::{
+        KernelProduction, KernelProfile, KernelReference, KernelSource, KernelSourceKind,
+        OutputSource,
+    };
     use crate::manifest::InputArtifact;
     use std::collections::BTreeMap;
 
@@ -135,6 +187,9 @@ mod tests {
             command: "echo x".into(),
             runs: 3,
             output: OutputSource::Stdout,
+            source: KernelSource::default(),
+            reference: KernelReference::default(),
+            production: KernelProduction::default(),
             expected_sha256: expected_sha256.map(String::from),
             input_files: vec![],
             tags: vec![],
@@ -220,6 +275,8 @@ mod tests {
         );
         assert_eq!(r.outcome, Outcome::Pass);
         assert_eq!(r.input_manifest, inputs);
+        assert_eq!(r.production_contract.source_kind, KernelSourceKind::Stub);
+        assert!(!r.production_contract.requires_real_cuda);
     }
 
     #[test]

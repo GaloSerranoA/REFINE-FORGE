@@ -20,9 +20,12 @@ pub struct AuditExpectations {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatasetAudit {
+    pub schema_version: String,
     pub path: String,
     pub sha256: String,
+    pub dataset_sha256: String,
     pub total_rows: usize,
+    pub record_count: usize,
     pub unique_ids: usize,
     pub split_counts: BTreeMap<String, usize>,
     pub valid_patch_rows: usize,
@@ -67,10 +70,7 @@ pub fn audit_jsonl(path: &Path, expectations: &AuditExpectations) -> Result<Data
             }
         };
 
-        let id = value
-            .get("id")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
+        let id = value.get("id").and_then(|v| v.as_str()).map(str::to_string);
         let Some(id_str) = id.clone() else {
             invalid_rows.push(RowIssue {
                 line: line_no,
@@ -83,7 +83,13 @@ pub fn audit_jsonl(path: &Path, expectations: &AuditExpectations) -> Result<Data
             anyhow::bail!("duplicate id {id_str:?} at line {line_no}");
         }
 
-        if value.get("prompt").and_then(|v| v.as_str()).unwrap_or("").trim().is_empty() {
+        if value
+            .get("prompt")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
             invalid_rows.push(RowIssue {
                 line: line_no,
                 id: Some(id_str.clone()),
@@ -135,9 +141,12 @@ pub fn audit_jsonl(path: &Path, expectations: &AuditExpectations) -> Result<Data
     }
 
     Ok(DatasetAudit {
+        schema_version: "training-data-audit-v1".into(),
         path: path.display().to_string(),
+        dataset_sha256: sha256.clone(),
         sha256,
         total_rows,
+        record_count: total_rows,
         unique_ids: seen_ids.len(),
         split_counts,
         valid_patch_rows,
@@ -166,10 +175,7 @@ fn patch_response(value: &Value) -> Result<Value> {
         .and_then(|v| v.as_str())
         .context("missing response")?;
     let parsed: Value = serde_json::from_str(response).context("response is not JSON")?;
-    Ok(parsed
-        .get("patch")
-        .cloned()
-        .unwrap_or(parsed))
+    Ok(parsed.get("patch").cloned().unwrap_or(parsed))
 }
 
 fn validate_patch_value(value: Value) -> Result<()> {
@@ -186,7 +192,7 @@ fn validate_patch_value(value: Value) -> Result<()> {
         }
     }
     for field in ["start_line", "start_char", "end_line", "end_char"] {
-        if !value.get(field).and_then(|v| v.as_u64()).is_some() {
+        if value.get(field).and_then(|v| v.as_u64()).is_none() {
             anyhow::bail!("{field} must be an unsigned integer");
         }
     }
@@ -263,9 +269,8 @@ mod tests {
 
     #[test]
     fn audit_rejects_unparseable_patch_response() {
-        let (_dir, path) = write_jsonl(&[
-            r#"{"id":"bad","prompt":"A","response":"not json","split":"train"}"#,
-        ]);
+        let (_dir, path) =
+            write_jsonl(&[r#"{"id":"bad","prompt":"A","response":"not json","split":"train"}"#]);
         let err = audit_jsonl(&path, &AuditExpectations::default()).unwrap_err();
         assert!(err.to_string().contains("invalid patch"), "{err}");
     }

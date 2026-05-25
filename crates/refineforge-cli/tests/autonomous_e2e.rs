@@ -18,9 +18,7 @@ use refineforge_cli::autonomous::{
     run_worklist, Executor, Planner, RunSummary, StepOutcome, WorkRunConfig,
 };
 use refineforge_cli::claim;
-use refineforge_escalation::{
-    load_project_context, Action, Engine, LossKind, MockGitOps,
-};
+use refineforge_escalation::{load_project_context, Action, Engine, LossKind, MockGitOps};
 use std::path::Path;
 use std::time::Duration;
 
@@ -81,8 +79,7 @@ fn loader_parses_real_example_002_yaml() {
 fn dry_run_plans_and_loads_real_claim() {
     let root = repo_root();
     let (_, claim) = claim::load(&root, "EXAMPLE-001").expect("load EXAMPLE-001");
-    let ctx = load_project_context(&root, Some("EXAMPLE-001"))
-        .expect("load project context");
+    let ctx = load_project_context(&root, Some("EXAMPLE-001")).expect("load project context");
 
     let mut ex = Executor {
         engine: Engine::new(),
@@ -107,7 +104,11 @@ fn dry_run_plans_and_loads_real_claim() {
     for o in &outcomes {
         match o {
             StepOutcome::Proceeded { detail, .. } => {
-                assert!(detail.starts_with("dry-run: "), "non-dry-run leaked: {}", detail);
+                assert!(
+                    detail.starts_with("dry-run: "),
+                    "non-dry-run leaked: {}",
+                    detail
+                );
             }
             other => panic!("dry-run should proceed every step, got {:?}", other),
         }
@@ -133,8 +134,7 @@ fn dry_run_plans_and_loads_real_claim() {
 fn example_002_counter_idealisation_dogfood_with_await_approval() {
     let root = repo_root();
     let (_, claim) = claim::load(&root, "EXAMPLE-002").expect("load EXAMPLE-002");
-    let ctx = load_project_context(&root, Some("EXAMPLE-002"))
-        .expect("load project context");
+    let ctx = load_project_context(&root, Some("EXAMPLE-002")).expect("load project context");
 
     let git = MockGitOps::new();
     git.auto_approve_packets("counter saturating_add gap documented in refinement doc");
@@ -221,7 +221,11 @@ fn example_002_counter_idealisation_dogfood_with_await_approval() {
 
     let summary = RunSummary::from_outcomes(&outcomes);
     // No failures: this is the happy-path dogfood.
-    assert_eq!(summary.failed, 0, "no Failed outcomes expected: {:?}", outcomes);
+    assert_eq!(
+        summary.failed, 0,
+        "no Failed outcomes expected: {:?}",
+        outcomes
+    );
     assert_eq!(summary.escalated, 1);
     assert!(summary.success, "expected success=true: {:?}", summary);
 }
@@ -243,8 +247,7 @@ fn live_lean_check_on_example_001() {
             return;
         }
     };
-    let ctx = load_project_context(&root, Some("EXAMPLE-001"))
-        .expect("load project context");
+    let ctx = load_project_context(&root, Some("EXAMPLE-001")).expect("load project context");
 
     let mut ex = Executor {
         engine: Engine::new(),
@@ -266,7 +269,9 @@ fn live_lean_check_on_example_001() {
     // Execute only the LeanCheck step (skip BundleExport so we
     // don't write into artifacts/ from a test).
     let plan = Planner::new().plan(&ex.claim_id);
-    let lean_step = plan.iter().find(|s| matches!(s.kind, refineforge_cli::autonomous::StepKind::LeanCheck))
+    let lean_step = plan
+        .iter()
+        .find(|s| matches!(s.kind, refineforge_cli::autonomous::StepKind::LeanCheck))
         .expect("planner produces a LeanCheck step");
     let outcome = ex.run_step(lean_step);
     match outcome {
@@ -279,7 +284,10 @@ fn live_lean_check_on_example_001() {
             // environment; print and skip. This is the honest
             // boundary: with lake + the pinned toolchain installed,
             // this test passes; without, it skips.
-            eprintln!("SKIP: LeanCheck failed (likely toolchain missing): {}", error);
+            eprintln!(
+                "SKIP: LeanCheck failed (likely toolchain missing): {}",
+                error
+            );
         }
         other => panic!("unexpected outcome: {:?}", other),
     }

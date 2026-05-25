@@ -1,0 +1,15 @@
+{
+  "schema_version": "kernel-hardware-matrix-v1",
+  "runs": [
+    {
+      "gpu_name": "local-smoke-placeholder",
+      "gpu_arch": "not-cuda",
+      "driver_version": null,
+      "cuda_toolkit": null,
+      "os": "local",
+      "cpu_arch": "local",
+      "rustc": null,
+      "status": "not-production-evidence"
+    }
+  ]
+}

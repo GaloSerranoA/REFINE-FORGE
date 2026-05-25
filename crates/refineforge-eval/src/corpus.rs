@@ -28,8 +28,8 @@ pub struct CorpusEntry {
 }
 
 pub fn load(path: &Path) -> Result<Vec<CorpusEntry>> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let mut out = Vec::new();
     for (i, line) in text.lines().enumerate() {
         let line = line.trim();
@@ -53,9 +53,13 @@ mod tests {
         let dir = tempdir();
         let path = dir.path().join("c.jsonl");
         let mut f = std::fs::File::create(&path).unwrap();
-        writeln!(f, "{{\"id\":\"a\",\"claim_id\":\"X\",\"mutation\":\"m\",\"broken_file\":\"b.lean\"}}").unwrap();
+        writeln!(
+            f,
+            "{{\"id\":\"a\",\"claim_id\":\"X\",\"mutation\":\"m\",\"broken_file\":\"b.lean\"}}"
+        )
+        .unwrap();
         writeln!(f, "# this is a comment").unwrap();
-        writeln!(f, "").unwrap();
+        writeln!(f).unwrap();
         writeln!(f, "{{\"id\":\"b\",\"claim_id\":\"Y\",\"mutation\":\"n\",\"broken_file\":\"c.lean\",\"fixed_file\":\"d.lean\"}}").unwrap();
         drop(f);
 

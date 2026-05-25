@@ -1,9 +1,7 @@
 //! Category 1 — Scope change. Mirrors the positive + negative
 //! examples in `docs/escalation-criteria.md` §Category 1.
 
-use refineforge_escalation::{
-    Action, Category, ClaimSummary, Decision, Engine, ProjectContext,
-};
+use refineforge_escalation::{Action, Category, ClaimSummary, Engine, ProjectContext};
 
 fn eng() -> Engine {
     Engine::new()

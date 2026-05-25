@@ -2,9 +2,7 @@
 //! globals, no `unsafe`. Every branch traces to a positive or
 //! negative example in `docs/escalation-criteria.md` §3.
 
-use crate::action::{
-    Action, ClaimStatus, ExternalCitation, LossKind, SentenceKind, WeakeningKind,
-};
+use crate::action::{Action, ClaimStatus, ExternalCitation, LossKind, SentenceKind, WeakeningKind};
 use crate::category::Category;
 use crate::context::ProjectContext;
 use crate::decision::{Decision, EscalationReason, Evidence};
@@ -28,11 +26,7 @@ impl Engine {
     /// Errors only when the `ctx`'s criteria-doc version differs
     /// from this engine's compiled-in [`crate::CRITERIA_VERSION`]
     /// (per criteria-doc §"Criteria version recording").
-    pub fn decide(
-        &self,
-        action: &Action,
-        ctx: &ProjectContext,
-    ) -> Result<Decision, EngineError> {
+    pub fn decide(&self, action: &Action, ctx: &ProjectContext) -> Result<Decision, EngineError> {
         if ctx.criteria_version != CRITERIA_VERSION {
             return Err(EngineError::CriteriaVersionMismatch {
                 expected: CRITERIA_VERSION.into(),
@@ -160,7 +154,14 @@ fn summarise(action: &Action, primary: Category, all: &[Category]) -> String {
         (Category::Scope, Action::Unknown { description }) => {
             format!("unrecognised action shape: {}", description)
         }
-        (Category::Idealisation, Action::MapRustToLean { rust_type, lean_type, .. }) => {
+        (
+            Category::Idealisation,
+            Action::MapRustToLean {
+                rust_type,
+                lean_type,
+                ..
+            },
+        ) => {
             format!("idealisation {} → {}", rust_type, lean_type)
         }
         (Category::CustomAxiom, Action::WriteAxiom { axiom_name, .. }) => {
@@ -195,7 +196,12 @@ fn summarise(action: &Action, primary: Category, all: &[Category]) -> String {
         }
         (
             Category::TrustBaseExtension,
-            Action::BumpCargoPin { crate_name, from, to, .. },
+            Action::BumpCargoPin {
+                crate_name,
+                from,
+                to,
+                ..
+            },
         ) => format!("bump {} pin {} → {}", crate_name, from, to),
         (Category::TrustBaseExtension, Action::SwitchCrate { from, to, .. }) => {
             format!("switch crate {} → {}", from, to)
@@ -215,17 +221,24 @@ fn summarise(action: &Action, primary: Category, all: &[Category]) -> String {
         (Category::BitExactRegression, Action::EditKernelSource { kernel_id, summary }) => {
             format!("edit kernel {} source: {}", kernel_id, summary)
         }
+        (Category::BitExactRegression, Action::ChangeKernelBuildFlags { kernel_id, .. }) => {
+            format!("change build flags for kernel {}", kernel_id)
+        }
         (
             Category::BitExactRegression,
-            Action::ChangeKernelBuildFlags { kernel_id, .. },
-        ) => format!("change build flags for kernel {}", kernel_id),
-        (
-            Category::BitExactRegression,
-            Action::BumpKernelCompilerPin { kernel_id, compiler, .. },
+            Action::BumpKernelCompilerPin {
+                kernel_id,
+                compiler,
+                ..
+            },
         ) => format!("bump {} pin for kernel {}", compiler, kernel_id),
         (
             Category::BitExactRegression,
-            Action::LowerBitExactRunCount { kernel_id, from, to },
+            Action::LowerBitExactRunCount {
+                kernel_id,
+                from,
+                to,
+            },
         ) => format!(
             "lower run_count for kernel {} from {} to {}",
             kernel_id, from, to
@@ -554,13 +567,11 @@ fn classify_trust_base(action: &Action, ctx: &ProjectContext) -> Option<Evidence
             from: Some(from.clone()),
             to: to.clone(),
         }),
-        Action::BumpGitHubActionSha { action, from, to } => {
-            Some(Evidence::TrustBaseExtension {
-                what: format!("GitHub Action {}", action),
-                from: Some(from.clone()),
-                to: to.clone(),
-            })
-        }
+        Action::BumpGitHubActionSha { action, from, to } => Some(Evidence::TrustBaseExtension {
+            what: format!("GitHub Action {}", action),
+            from: Some(from.clone()),
+            to: to.clone(),
+        }),
         Action::AddVerifierDockerTool { tool } => Some(Evidence::TrustBaseExtension {
             what: "verifier Dockerfile tool".into(),
             from: None,
@@ -583,10 +594,7 @@ fn classify_trust_base(action: &Action, ctx: &ProjectContext) -> Option<Evidence
 
 fn classify_bit_exact(action: &Action) -> Option<Evidence> {
     match action {
-        Action::EditKernelSource {
-            kernel_id,
-            summary,
-        } => Some(Evidence::BitExactRegression {
+        Action::EditKernelSource { kernel_id, summary } => Some(Evidence::BitExactRegression {
             kernel_id: kernel_id.clone(),
             change_summary: format!("edit source: {}", summary),
         }),
@@ -653,7 +661,10 @@ mod tests {
             paths: vec!["x.rs".into()],
         };
         let res = eng.decide(&act, &ctx);
-        assert!(matches!(res, Err(EngineError::CriteriaVersionMismatch { .. })));
+        assert!(matches!(
+            res,
+            Err(EngineError::CriteriaVersionMismatch { .. })
+        ));
     }
 
     #[test]

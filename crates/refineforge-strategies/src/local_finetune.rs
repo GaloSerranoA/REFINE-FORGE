@@ -234,9 +234,7 @@ pub fn local_finetune_from_path(path: impl AsRef<Path>) -> Result<Box<dyn Repair
 
 /// Like [`local_finetune_from_path`] but also returns the local usage
 /// accumulator.
-pub fn local_finetune_from_path_with_usage(
-    path: impl AsRef<Path>,
-) -> Result<StrategyWithUsage> {
+pub fn local_finetune_from_path_with_usage(path: impl AsRef<Path>) -> Result<StrategyWithUsage> {
     let runtime = CommandRuntime::from_weights_path(path.as_ref())?;
     let usage = Arc::new(Mutex::new(UsageStats::default()));
     let strategy = LocalFinetuneStrategy::new(runtime, usage.clone());

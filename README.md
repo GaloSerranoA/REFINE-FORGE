@@ -59,15 +59,15 @@ a verification pipeline.
 ## Four enterprise sections
 
 Refine-Forge now carries the local automation surface for the four specialist
-roles the operator originally described. HELYX owns the real model/kernel
-implementation; Refine-Forge owns proof, release, orchestration, and evidence
-gates around those artifacts.
+roles the operator originally described. HELYX owns the production LLM stack;
+Refine-Forge owns proof, release, training evidence, native smoke training,
+and gate artifacts around those systems.
 
 | Part | Specialist role | Refine-Forge surface | HELYX boundary |
 |---:|---|---|---|
 | 1 | Lean 4 / verification engineer | `refine lean`, `refine scan`, bundle export/verify, template provenance, claim linting | Proves and packages claims about HELYX-adjacent Rust behavior |
 | 2 | Release / infrastructure / DevOps engineer | CI gates, release readiness, verifier container, SBOM/provenance evidence, docs truth audit, signed-bundle flow | Makes releases auditable; first real remote/OIDC signing still depends on hosted CI |
-| 3 | ML / training engineer | `refine-train` dataset audit, HELYX `helyx-train` backend orchestration, checkpoints, reports, local-finetune promotion | HELYX/Axolotl/custom backend trains; Refine-Forge owns audit/run evidence |
+| 3 | ML / training engineer | `refine-train` dataset audit, built-in `refineforge_native` proof-repair smoke training, HELYX `helyx-train` orchestration, checkpoints, reports, local-finetune promotion | Refine-Forge can run local native smoke training; HELYX/Axolotl/custom remain production-scale trainer backends |
 | 4 | GPU / kernel Rust engineer | `refine-bitexact` lint/run/run-all, HELYX-compatible kernel metadata, input manifests, expected SHA-256 baselines, CI summary JSON | `helyx-kernels` implements kernels; Refine-Forge proves bit-exact gate evidence |
 
 The four specialist roles are exposed as CLI agents:
@@ -147,7 +147,7 @@ refineforge/
 │   ├── refineforge-derive/     # #[derive(LeanModel)] proc-macro (Section 1)
 │   ├── refineforge-strategies/ # AnthropicStrategy + ReqwestTransport (Section 2)
 │   ├── refineforge-eval/       # `refine-eval` benchmark harness (Section 2)
-│   ├── refineforge-trainer/    # `refine-train` orchestration CLI (Section 2)
+│   ├── refineforge-trainer/    # `refine-train` native smoke trainer + orchestration CLI (Section 2)
 │   ├── refineforge-bitexact/   # `refine-bitexact` gate primitive (Section 4)
 │   ├── refineforge-escalation/ # AI-to-human escalation engine (cross-section)
 │   └── example-counter/        # EXAMPLE-002 Rust side
@@ -256,7 +256,7 @@ cargo build --release
 | `refine escalations list [--claim X] [--age-gt N]` | Operator queue dashboard for `escalations/<CLAIM-ID>/*.md`; PENDING vs DECIDED sorted by age. Per criteria v0.3 the driver never auto-rejects |
 | `refine-eval --corpus … --strategy …`  | Drive `refine repair` against a JSONL corpus; emit JSON report. See [`docs/repair-evaluation.md`](docs/repair-evaluation.md) |
 | `refine-train data audit <jsonl>`      | Validate proof-repair SFT JSONL counts, split counts, patch JSON, duplicate ids, and SHA-256 before training |
-| `refine-train run <exp.yaml>`          | Run one training experiment (HELYX `helyx-train` / axolotl / HF Trainer / custom backend). See [`training/README.md`](training/README.md). Always start with `--dry-run`. |
+| `refine-train run <exp.yaml>`          | Run one training experiment (`refineforge_native` / HELYX `helyx-train` / axolotl / HF Trainer / custom backend). See [`training/README.md`](training/README.md). Always start with `--dry-run`. |
 | `refine-train sweep <sweep.yaml>`      | Grid or random hyperparameter sweep |
 | `refine-train monitor <run_dir>`       | Tail `progress.jsonl` and show latest metrics |
 | `refine-train report <run_dir>`        | Build / refresh `report.json` for a run |
@@ -305,7 +305,7 @@ Where each thing currently lives:
 | LLM repair loop (LSP client)               | ✅ shipped: `mock`, `anthropic-mock`, **`anthropic`** (real HTTP with retry + prompt caching), and `local-finetune` (command-manifest runtime bridge) |
 | `refineforge-strategies` workspace member  | ✅ `AnthropicStrategy` + `ReqwestTransport` plus `LocalFinetuneStrategy` command-manifest bridge. Native checkpoint loading is still blocked on the final model/tokenizer layout. |
 | `refineforge-eval` (`refine-eval` binary)  | ✅ corpus-driven evaluation harness with JSON output; ships a 3-entry tutorial corpus under [`eval/corpus/`](eval/corpus) |
-| `refineforge-trainer` (`refine-train` binary) | ✅ training-experiment orchestration (HELYX `helyx-train` / axolotl / HF Trainer / custom); deterministic dataset audit, run tracking, checkpoint resume, failure recovery, JSON reports, and local-finetune promotion. Does NOT perform training itself; backend does. See [`training/README.md`](training/README.md) |
+| `refineforge-trainer` (`refine-train` binary) | ✅ training control plane with built-in `refineforge_native` proof-repair smoke training, HELYX `helyx-train` / axolotl / HF Trainer / custom orchestration, deterministic dataset audit, run tracking, checkpoint resume, failure recovery, JSON reports, and local-finetune promotion. Native smoke checkpoints are evidence of local training execution, not proof of production model quality. See [`training/README.md`](training/README.md) |
 | `refineforge-bitexact` (`refine-bitexact` binary) | ✅ enterprise bit-exact gate: strict contract linting, HELYX-compatible metadata, input manifests, expected output baselines, per-run JSONL, run reports, and `run-all` CI aggregation. Real HELYX/CUDA kernels remain external kernel-engineering domain. See [`kernels/README.md`](kernels/README.md). |
 | `refineforge-escalation` (library) | ✅ Phases 1 + 2 + 3.5 of [`docs/plans/autonomous-driver-plan.md`](docs/plans/autonomous-driver-plan.md) under criteria v0.3. Pure-functional engine (`Action` + `ProjectContext` → `Decision::Proceed`/`Escalate`); `Packet` markdown renderer with v0.3 `batch:` support; `DecisionOutcome` parser (`APPROVED:`/`REJECTED:`/`EDIT_AND_RESUBMIT:`/partial form); `GitOps` trait (subprocess `git` + `MockGitOps`); indefinite `await_decision` (no auto-reject); ProjectContext loaders (claim YAML + lake-manifest.json + Cargo.lock). 170 tests; 2 POSIX-only e2e git tests gated `#[cfg(unix)]` |
 | `refine autonomous` driver (in `refineforge-cli`) | ✅ Phases 3 MVP + 3.5 + 3.6 + 3.7 + 3.8 + Phase 4 audit. `Planner` + `Executor<G: GitOps>` + `WorkRunConfig` + `run_worklist`; real `runner::run`/`scan::scan_claim`/`bundle::export` library calls; `Repair` step with `resolve_strategy` (mock / anthropic-mock / **anthropic** real HTTP / `local-finetune` command-manifest bridge) + cost-gate ($0.07/attempt upfront for Anthropic); `RunTrainingExperiment`/`RunBitExactGate` subprocess-shell; `--auto-repair` + `--await-decisions` + `--inject-counter-idealisation` + `--inject-training` + `--inject-bitexact` flags. **Phase 3.8 cross-run await-resume**: existing APPROVED packets survive re-runs. Live LLM auto-repair confirmed end-to-end ([60d2a81](#)). EXAMPLE-002 forced-Counter dogfood passes as integration test AND was exercised against real Anthropic in the Phase 4 audit ($0.35 spend) |

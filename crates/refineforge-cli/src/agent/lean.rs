@@ -1,6 +1,7 @@
 use super::common::{
-    capability, existing_artifact, repo_tool_check, AgentMode, AgentReport, AgentStatus,
-    CommandRecord, TrustLevel,
+    action_intent, capability, existing_artifact, repo_tool_check, seal_runtime,
+    set_production_proof, ActionIntent, AgentMode, AgentReport, AgentStatus, CommandRecord,
+    ProductionProofStatus, ProductionRequirement, TrustLevel,
 };
 use crate::{claim, lint, runner, scan};
 use anyhow::{bail, Result};
@@ -36,6 +37,11 @@ pub fn build(root: &Path, mode: AgentMode, target: &str) -> AgentReport {
         repo_tool_check(root, "lake", false),
     ]);
     existing_artifact(root, "docs/verification/proof-inventory.md", &mut report);
+    existing_artifact(
+        root,
+        "docs/verification/lean-production-proof-checklist.md",
+        &mut report,
+    );
     existing_artifact(root, "claims", &mut report);
     existing_artifact(root, "lean/Refineforge.lean", &mut report);
 
@@ -44,6 +50,14 @@ pub fn build(root: &Path, mode: AgentMode, target: &str) -> AgentReport {
             AgentStatus::Passed,
             TrustLevel::ModelOnly,
             "Lean agent inspected proof inventory and claim/Lean surfaces. No implementation correctness is claimed.",
+        );
+        apply_lean_production_proof(&mut report, root, target, false, false, false);
+        seal_runtime(
+            root,
+            None,
+            &mut report,
+            TrustLevel::ModelLinked,
+            lean_action_intents(mode),
         );
         return report;
     }
@@ -103,7 +117,266 @@ pub fn build(root: &Path, mode: AgentMode, target: &str) -> AgentReport {
             "One or more Lean verification gates failed. See command records for the failing gate.",
         );
     }
+    apply_lean_production_proof(
+        &mut report,
+        root,
+        target,
+        lean.is_ok(),
+        scan.is_ok(),
+        lint.is_ok(),
+    );
+    seal_runtime(
+        root,
+        None,
+        &mut report,
+        TrustLevel::ModelLinked,
+        lean_action_intents(mode),
+    );
     report
+}
+
+fn apply_lean_production_proof(
+    report: &mut AgentReport,
+    root: &Path,
+    target: &str,
+    lean_ok: bool,
+    scan_ok: bool,
+    lint_ok: bool,
+) {
+    let mut requirements = Vec::new();
+    let mut blockers = Vec::new();
+    let mut reviewer_evidence = Vec::new();
+
+    requirements.push(ProductionRequirement::new(
+        "lean.no_sorry_gate",
+        "Lean theorem gate passes without sorry, admit, or project-local axioms",
+        if lean_ok {
+            AgentStatus::Passed
+        } else {
+            AgentStatus::Blocked
+        },
+        &[if lean_ok {
+            "lean-check-all passed"
+        } else {
+            "lean-check-all not run or failed"
+        }],
+    ));
+    requirements.push(ProductionRequirement::new(
+        "lean.rust_scan_symbols",
+        "Deterministic Rust scan resolves every cited implementation symbol",
+        if scan_ok {
+            AgentStatus::Passed
+        } else {
+            AgentStatus::Blocked
+        },
+        &[if scan_ok {
+            "scan-check-all passed"
+        } else {
+            "scan-check-all not run or failed"
+        }],
+    ));
+
+    if !lean_ok {
+        blockers
+            .push("Lean production proof requires a passing lean-check-all command".to_string());
+    }
+    if !scan_ok {
+        blockers
+            .push("Lean production proof requires a passing scan-check-all command".to_string());
+    }
+    if !lint_ok {
+        blockers
+            .push("Lean production proof requires a passing lint-check-all command".to_string());
+    }
+
+    match selected_claims(root, target) {
+        Ok(claims) => {
+            let claim_ids: Vec<String> = claims
+                .iter()
+                .map(|(_, claim)| claim.claim_id.clone())
+                .collect();
+            let model_only: Vec<String> = claims
+                .iter()
+                .filter(|(_, claim)| {
+                    claim.scope.trim().eq_ignore_ascii_case("model-only")
+                        || claim.rust_source.is_empty()
+                })
+                .map(|(_, claim)| claim.claim_id.clone())
+                .collect();
+            let missing_refinement_docs: Vec<String> = claims
+                .iter()
+                .filter(|(_, claim)| {
+                    !claim.scope.trim().eq_ignore_ascii_case("model-only")
+                        && !claim.rust_source.is_empty()
+                        && !refinement_doc(root, &claim.claim_id).exists()
+                })
+                .map(|(_, claim)| claim.claim_id.clone())
+                .collect();
+            let missing_review: Vec<String> = claims
+                .iter()
+                .filter(|(_, claim)| claim.review.human_operator.is_none())
+                .map(|(_, claim)| claim.claim_id.clone())
+                .collect();
+
+            for (_, claim) in &claims {
+                if let Some(operator) = &claim.review.human_operator {
+                    reviewer_evidence.push(format!(
+                        "{} reviewed by {} on {}",
+                        claim.claim_id,
+                        operator,
+                        claim
+                            .review
+                            .reviewed_on
+                            .as_deref()
+                            .unwrap_or("unknown-date")
+                    ));
+                }
+            }
+
+            if !model_only.is_empty() {
+                blockers.push(format!(
+                    "model-only claims block implementation production proof: {}",
+                    model_only.join(", ")
+                ));
+            }
+            if !missing_refinement_docs.is_empty() {
+                blockers.push(format!(
+                    "missing refinement docs block production proof: {}",
+                    missing_refinement_docs.join(", ")
+                ));
+            }
+            if !missing_review.is_empty() {
+                blockers.push(format!(
+                    "missing human review blocks production proof: {}",
+                    missing_review.join(", ")
+                ));
+            }
+            blockers.push(
+                "Lean production proof requires exported bundle hash evidence for selected claims"
+                    .to_string(),
+            );
+
+            requirements.push(ProductionRequirement::new_owned(
+                "lean.claim_scope_model_refined",
+                "Every selected implementation claim uses model+refined scope",
+                if model_only.is_empty() {
+                    AgentStatus::Passed
+                } else {
+                    AgentStatus::Blocked
+                },
+                vec![format!("selected claims: {}", claim_ids.join(", "))],
+            ));
+            requirements.push(ProductionRequirement::new_owned(
+                "lean.refinement_docs",
+                "Every selected implementation claim has a refinement document",
+                if model_only.is_empty() && missing_refinement_docs.is_empty() {
+                    AgentStatus::Passed
+                } else {
+                    AgentStatus::Blocked
+                },
+                vec![if missing_refinement_docs.is_empty() {
+                    "no missing implementation refinement docs detected".to_string()
+                } else {
+                    format!("missing docs: {}", missing_refinement_docs.join(", "))
+                }],
+            ));
+            requirements.push(ProductionRequirement::new(
+                "lean.bundle_hashes",
+                "Selected claims have exported verification bundle hashes",
+                AgentStatus::Blocked,
+                &["bundle export is not run by the Lean agent yet"],
+            ));
+            requirements.push(ProductionRequirement::new_owned(
+                "lean.human_review",
+                "Every selected implementation claim has explicit human review",
+                if missing_review.is_empty() && !reviewer_evidence.is_empty() {
+                    AgentStatus::Passed
+                } else {
+                    AgentStatus::Blocked
+                },
+                if reviewer_evidence.is_empty() {
+                    vec!["review.human_operator is absent for selected claims".to_string()]
+                } else {
+                    reviewer_evidence.clone()
+                },
+            ));
+        }
+        Err(err) => {
+            blockers.push(format!(
+                "could not inspect selected claims for Lean production proof: {err}"
+            ));
+            requirements.push(ProductionRequirement::new(
+                "lean.claim_scope_model_refined",
+                "Every selected implementation claim uses model+refined scope",
+                AgentStatus::Blocked,
+                &["selected claims could not be loaded"],
+            ));
+            requirements.push(ProductionRequirement::new(
+                "lean.refinement_docs",
+                "Every selected implementation claim has a refinement document",
+                AgentStatus::Blocked,
+                &["selected claims could not be loaded"],
+            ));
+            requirements.push(ProductionRequirement::new(
+                "lean.bundle_hashes",
+                "Selected claims have exported verification bundle hashes",
+                AgentStatus::Blocked,
+                &["selected claims could not be loaded"],
+            ));
+            requirements.push(ProductionRequirement::new(
+                "lean.human_review",
+                "Every selected implementation claim has explicit human review",
+                AgentStatus::Blocked,
+                &["selected claims could not be loaded"],
+            ));
+        }
+    }
+
+    let status = if blockers.is_empty() && !reviewer_evidence.is_empty() {
+        ProductionProofStatus::HumanReviewed
+    } else if blockers.is_empty() {
+        ProductionProofStatus::Ready
+    } else {
+        ProductionProofStatus::Blocked
+    };
+    set_production_proof(report, status, requirements, reviewer_evidence, blockers);
+}
+
+fn lean_action_intents(mode: AgentMode) -> Vec<ActionIntent> {
+    vec![
+        action_intent(
+            "lean.inspect.claims",
+            "Inspect Lean inventory and claim scopes",
+            "inspect",
+            "read_only",
+            "refine agent lean --mode inspect",
+            &[
+                "docs/verification/proof-inventory.md",
+                "claims/*.yaml",
+                "lean/Refineforge.lean",
+            ],
+        ),
+        action_intent(
+            "lean.verify.gates",
+            "Run Lean, scan, and claim lint gates",
+            "verify",
+            "writes_evidence",
+            "refine agent lean --mode check",
+            &["lean-check-all", "scan-check-all", "lint-check-all"],
+        ),
+        action_intent(
+            "lean.classify.trust",
+            "Classify model-only versus model-linked trust",
+            "audit",
+            "evidence_only",
+            &format!("refine agent lean --mode {}", mode.as_str()),
+            &[
+                "claim.scope",
+                "claim.rust_source",
+                "docs/refinement/<claim>.md",
+            ],
+        ),
+    ]
 }
 
 struct ClaimTrustAssessment {

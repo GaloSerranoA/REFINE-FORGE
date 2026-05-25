@@ -42,6 +42,26 @@ fn release_ready_dry_run_writes_evidence_files() {
     assert!(evidence.join("release-report.md").exists());
     assert!(evidence.join("sbom.cyclonedx.json").exists());
     assert!(evidence.join("provenance.intoto.json").exists());
+
+    let report: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(evidence.join("release-report.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(report["environment"]["runner_os"].is_string());
+    assert!(report["environment"]["runner_arch"].is_string());
+    assert!(report["environment"]["rustc_verbose_version"].is_string());
+    assert_eq!(
+        report["artifacts"]["sbom_sha256"].as_str().unwrap().len(),
+        64
+    );
+    assert_eq!(
+        report["artifacts"]["provenance_sha256"]
+            .as_str()
+            .unwrap()
+            .len(),
+        64
+    );
+    assert!(report["artifacts"]["verifier_container_digest"].is_null());
 }
 
 #[test]

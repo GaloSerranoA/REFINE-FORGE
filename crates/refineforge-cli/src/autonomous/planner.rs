@@ -45,17 +45,13 @@ pub enum StepKind {
     /// `--dry-run`; a real training run requires the operator's
     /// backend (axolotl / HF Trainer / etc.) and a dataset, neither
     /// of which the autonomous driver provisions.
-    RunTrainingExperiment {
-        config_path: String,
-    },
+    RunTrainingExperiment { config_path: String },
     /// Subprocess-shell to `refine-bitexact run <kernel.yaml>`.
     /// Section 4 (CUDA / bit-exact gate) integration. Phase 3.7
     /// runs the gate at its current configured `run_count`; a
     /// real CUDA kernel requires the operator's nvcc / driver
     /// setup, which the autonomous driver inherits via PATH.
-    RunBitExactGate {
-        config_path: String,
-    },
+    RunBitExactGate { config_path: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -116,8 +112,7 @@ impl Planner {
             out.push(PlannedStep {
                 seq,
                 kind: StepKind::EngineAction(a.clone()),
-                rationale:
-                    "AI-proposed action — routes through the escalation engine first".into(),
+                rationale: "AI-proposed action — routes through the escalation engine first".into(),
             });
             seq += 1;
         }
@@ -133,7 +128,10 @@ impl Planner {
         out.push(PlannedStep {
             seq,
             kind: StepKind::BundleExport,
-            rationale: format!("seal {} into a SHA-256 manifested verification bundle", claim_id),
+            rationale: format!(
+                "seal {} into a SHA-256 manifested verification bundle",
+                claim_id
+            ),
         });
         seq += 1;
         for cfg in &self.extra_training {
@@ -155,10 +153,7 @@ impl Planner {
                 kind: StepKind::RunBitExactGate {
                     config_path: cfg.clone(),
                 },
-                rationale: format!(
-                    "Section 4 bit-exact gate (refine-bitexact run {})",
-                    cfg
-                ),
+                rationale: format!("Section 4 bit-exact gate (refine-bitexact run {})", cfg),
             });
             seq += 1;
         }
@@ -200,7 +195,9 @@ mod tests {
             lean_type: "Nat".into(),
             lossy_kinds: vec![LossKind::UnsignedOverflow],
         };
-        let p = Planner::new().with_engine_action(action).plan("EXAMPLE-002");
+        let p = Planner::new()
+            .with_engine_action(action)
+            .plan("EXAMPLE-002");
         assert_eq!(p.len(), 4);
         assert_eq!(p[0].kind, StepKind::LeanCheck);
         assert!(matches!(p[1].kind, StepKind::EngineAction(_)));
@@ -241,7 +238,10 @@ mod tests {
         if let StepKind::RunTrainingExperiment { config_path } = &p[3].kind {
             assert!(config_path.contains("example-qwen-1.5b.yaml"));
         } else {
-            panic!("expected RunTrainingExperiment at end of plan, got {:?}", p[3].kind);
+            panic!(
+                "expected RunTrainingExperiment at end of plan, got {:?}",
+                p[3].kind
+            );
         }
     }
 
@@ -257,7 +257,10 @@ mod tests {
         if let StepKind::RunBitExactGate { config_path } = &p[4].kind {
             assert!(config_path.contains("matmul.yaml"));
         } else {
-            panic!("expected RunBitExactGate at end of plan, got {:?}", p[4].kind);
+            panic!(
+                "expected RunBitExactGate at end of plan, got {:?}",
+                p[4].kind
+            );
         }
     }
 
@@ -302,7 +305,11 @@ mod tests {
         let j = serde_json::to_string(&step).expect("ser");
         let back: PlannedStep = serde_json::from_str(&j).expect("de");
         assert_eq!(back, step);
-        if let StepKind::Repair { strategy, max_iterations } = back.kind {
+        if let StepKind::Repair {
+            strategy,
+            max_iterations,
+        } = back.kind
+        {
             assert_eq!(strategy, "anthropic");
             assert_eq!(max_iterations, 5);
         } else {

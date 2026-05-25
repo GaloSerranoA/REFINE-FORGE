@@ -35,6 +35,8 @@ pub struct PromotionReport {
     pub base_model: String,
     pub dataset_path: String,
     pub checkpoint: Option<PromotedCheckpoint>,
+    pub evaluation: PromotionEvaluation,
+    pub rollback: PromotionRollback,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,6 +44,20 @@ pub struct PromotedCheckpoint {
     pub step: u64,
     pub path: String,
     pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromotionEvaluation {
+    pub config: String,
+    pub metrics: serde_json::Value,
+    pub baseline_report: Option<String>,
+    pub candidate_report: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromotionRollback {
+    pub previous_model_id: Option<String>,
+    pub restore_command: String,
 }
 
 pub fn promote(opts: &PromotionOptions) -> Result<PromotionReport> {
@@ -88,7 +104,22 @@ pub fn promote(opts: &PromotionOptions) -> Result<PromotionReport> {
         .with_context(|| format!("creating {}", opts.out_dir.display()))?;
 
     let manifest_path = opts.out_dir.join(LOCAL_FINETUNE_MANIFEST);
-    let status = if blockers.is_empty() { "ready" } else { "blocked" };
+    let status = if blockers.is_empty() {
+        "ready"
+    } else {
+        "blocked"
+    };
+    let evaluation = PromotionEvaluation {
+        config: std::env::var("REFINEFORGE_TRAINING_EVAL_CONFIG")
+            .unwrap_or_else(|_| "training/evals/proof-repair-smoke.yaml".into()),
+        metrics: serde_json::to_value(&training_report.metric_summary)?,
+        baseline_report: std::env::var("REFINEFORGE_TRAINING_BASELINE_REPORT").ok(),
+        candidate_report: source_report.display().to_string(),
+    };
+    let rollback = PromotionRollback {
+        previous_model_id: std::env::var("REFINEFORGE_PREVIOUS_MODEL_ID").ok(),
+        restore_command: format!("refine-train promote --rollback {}", opts.model_id),
+    };
     let promotion_report = PromotionReport {
         status: status.to_string(),
         blockers,
@@ -102,8 +133,15 @@ pub fn promote(opts: &PromotionOptions) -> Result<PromotionReport> {
         source_experiment_id: training_report.experiment.id.clone(),
         backend_kind: training_report.experiment.backend.kind.clone(),
         base_model: training_report.experiment.base_model.name.clone(),
-        dataset_path: training_report.experiment.dataset.path.display().to_string(),
+        dataset_path: training_report
+            .experiment
+            .dataset
+            .path
+            .display()
+            .to_string(),
         checkpoint: checkpoint.clone(),
+        evaluation: evaluation.clone(),
+        rollback: rollback.clone(),
     };
 
     if status == "ready" {
@@ -131,8 +169,12 @@ pub fn promote(opts: &PromotionOptions) -> Result<PromotionReport> {
             },
             "dataset": {
                 "path": training_report.experiment.dataset.path.display().to_string(),
-                "format": training_report.experiment.dataset.format
-            }
+                "format": training_report.experiment.dataset.format,
+                "sha256": training_report.dataset_lineage.sha256,
+                "size_bytes": training_report.dataset_lineage.size_bytes
+            },
+            "evaluation": evaluation,
+            "rollback": rollback
         });
         std::fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)
             .with_context(|| format!("writing {}", manifest_path.display()))?;
@@ -184,7 +226,7 @@ mod tests {
     use crate::experiment::{
         Backend, BaseModel, CheckpointConfig, Dataset, Experiment, MonitoringConfig, RetryConfig,
     };
-    use crate::report::{CheckpointInfo, Report};
+    use crate::report::{CheckpointInfo, ComputeLedger, DatasetLineage, Report};
     use chrono::Utc;
     use std::collections::BTreeMap;
 
@@ -217,6 +259,18 @@ mod tests {
             finished_at: Utc::now(),
             final_outcome: final_outcome.into(),
             attempts: 1,
+            dataset_lineage: DatasetLineage {
+                path: "training/data/fixture.jsonl".into(),
+                sha256: "0".repeat(64),
+                size_bytes: 12,
+                format: "jsonl".into(),
+            },
+            compute_ledger: ComputeLedger {
+                backend_kind: "helyx_train".into(),
+                device: None,
+                attempts: 1,
+                run_budget: None,
+            },
             progress_record_count: 1,
             metric_summary: BTreeMap::new(),
             checkpoints: checkpoint
@@ -276,12 +330,22 @@ mod tests {
         assert_eq!(manifest["model_id"], "helyx-proof-repair-smoke");
         assert_eq!(manifest["producer"]["kind"], "helyx-train");
         assert_eq!(manifest["checkpoint"]["step"], 5);
-        assert!(
-            manifest["command"][2]
-                .as_str()
-                .unwrap()
-                .contains("step-5")
+        assert_eq!(
+            manifest["evaluation"]["config"],
+            "training/evals/proof-repair-smoke.yaml"
         );
+        assert!(manifest["evaluation"]["metrics"].is_object());
+        assert!(manifest["evaluation"]["baseline_report"].is_null());
+        assert!(manifest["evaluation"]["candidate_report"]
+            .as_str()
+            .unwrap()
+            .ends_with("report.json"));
+        assert!(manifest["rollback"]["previous_model_id"].is_null());
+        assert_eq!(
+            manifest["rollback"]["restore_command"],
+            "refine-train promote --rollback helyx-proof-repair-smoke"
+        );
+        assert!(manifest["command"][2].as_str().unwrap().contains("step-5"));
     }
 
     #[test]
