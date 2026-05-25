@@ -1,0 +1,33 @@
+{
+  "checkpoint_sha256": "d8e2cbc51ff9789032dd029e3097bca5e975a3bd36751b91ea2832caf26ec738",
+  "conversion": {
+    "manifest_path": "training/conversion-manifest.json",
+    "manifest_sha256": "c03fef414c15702e8d38b69afd8b2b1e176488c5fcbb50daf3af9012db55a0a7"
+  },
+  "decision": "promote",
+  "lineage": {
+    "checkpoint_shards": [
+      {
+        "path": "training/checkpoint.safetensors",
+        "sha256": "d8e2cbc51ff9789032dd029e3097bca5e975a3bd36751b91ea2832caf26ec738"
+      }
+    ],
+    "config_sha256": "31bb351a3622a606583580af90826eea26811a7ad54bcb517783e45612911572",
+    "ema_policy": "none",
+    "epoch": 3,
+    "resume_source": "fresh",
+    "tokenizer_sha256": "8d3b45e3d7735135a6a1af63eac90f0cec8b7200d83618983f3fedfb5cf1e56d",
+    "train_metadata_sha256": "db00f57c77543c630ba2ba04d21a6e2d3dea8a91a247b7a48e4e6ea6b472710b"
+  },
+  "metrics": {
+    "dev_loss_inverse": 0.14803699725415603,
+    "heldout_exact_patch_acceptance": 0.029574861367837334,
+    "target_token_accuracy": 0.029574861367837334
+  },
+  "model_id": "live-heldout-smoke-candidate-2026-05-25",
+  "rollback": {
+    "restore_command": "refine-train promote --model-id live-heldout-smoke-candidate-2026-05-25 --require-success"
+  },
+  "schema_version": "refineforge-training-promotion-manifest-v1",
+  "status": "approved"
+}

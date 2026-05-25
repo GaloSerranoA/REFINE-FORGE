@@ -1,0 +1,10 @@
+{
+  "attempts": 1,
+  "backend_kind": "refineforge_native_causal_lm",
+  "checkpoint_count": 1,
+  "device": "cpu/native",
+  "duration_ms": 300,
+  "run_budget": "local-smoke",
+  "schema_version": "refineforge-training-compute-ledger-v1",
+  "status": "passed"
+}

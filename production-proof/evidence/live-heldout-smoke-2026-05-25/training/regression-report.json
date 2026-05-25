@@ -1,0 +1,21 @@
+{
+  "baseline": {
+    "dev_loss_inverse": 0.1424765204082133,
+    "heldout_exact_patch_acceptance": 0.029574861367837334,
+    "target_token_accuracy": 0.029574861367837334
+  },
+  "baseline_report": "training/runs/live-heldout-smoke-2026-05-25/baseline-eval-report.json",
+  "candidate": {
+    "dev_loss_inverse": 0.14803699725415603,
+    "heldout_exact_patch_acceptance": 0.029574861367837334,
+    "target_token_accuracy": 0.029574861367837334
+  },
+  "candidate_report": "training/eval-report.json",
+  "metric_deltas": {
+    "dev_loss_inverse": 0.005560476845942741,
+    "heldout_exact_patch_acceptance": 0.0,
+    "target_token_accuracy": 0.0
+  },
+  "schema_version": "refineforge-training-regression-report-v1",
+  "status": "passed"
+}

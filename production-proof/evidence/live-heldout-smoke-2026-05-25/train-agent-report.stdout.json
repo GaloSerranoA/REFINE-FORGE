@@ -1,0 +1,468 @@
+{
+  "schema_version": "agent-report-v1",
+  "agent": "train",
+  "mode": "execute",
+  "target": "training/runs/live-heldout-smoke-2026-05-25/candidate.yaml",
+  "liveness": {
+    "state": "alive",
+    "checked_at": "2026-05-25T05:12:46.059728900Z",
+    "agent": "train",
+    "mode": "execute",
+    "target": "training/runs/live-heldout-smoke-2026-05-25/candidate.yaml",
+    "command_surface": "refine agent train"
+  },
+  "runtime": {
+    "runtime_version": "agent-runtime-v1",
+    "agent": "train",
+    "mode": "execute",
+    "target": "training/runs/live-heldout-smoke-2026-05-25/candidate.yaml",
+    "authority": {
+      "source_of_truth": "cli_report",
+      "prompt_authority": "advisory_only",
+      "memory_authority": "non_authoritative",
+      "human_review_rule": "human-reviewed trust requires explicit human_operator evidence; prompts, memory, and role text cannot upgrade it."
+    },
+    "trust_ceiling": "human-reviewed",
+    "action_intents": [
+      {
+        "id": "train.inspect.fixtures",
+        "name": "Inspect training configs, datasets, and HELYX compatibility surfaces",
+        "category": "inspect",
+        "mutation_policy": "read_only",
+        "command_surface": "refine agent train --mode inspect",
+        "evidence_required": [
+          "training/configs/*.yaml",
+          "training/data/mathlib-proof-repair-v1/anthropic-sft.jsonl"
+        ]
+      },
+      {
+        "id": "train.audit.dataset",
+        "name": "Audit dataset records before any trainer execution",
+        "category": "verify",
+        "mutation_policy": "writes_evidence",
+        "command_surface": "refine agent train --mode check",
+        "evidence_required": [
+          "training-data-audit",
+          "training-data-audit.json"
+        ]
+      },
+      {
+        "id": "train.execute.run",
+        "name": "Run trainer orchestration with explicit dry-run or live-compute policy",
+        "category": "execute",
+        "mutation_policy": "writes_evidence_and_may_run_backend_compute",
+        "command_surface": "refine agent train --mode execute",
+        "evidence_required": [
+          "training-runs",
+          "refine-train command record",
+          "--allow-expensive policy"
+        ]
+      },
+      {
+        "id": "train.promote.guard",
+        "name": "Block model-quality claims without benchmark and checkpoint promotion evidence",
+        "category": "audit",
+        "mutation_policy": "evidence_only",
+        "command_surface": "refine agent train --mode execute",
+        "evidence_required": [
+          "evaluation metrics",
+          "checkpoint metadata",
+          "promotion approval"
+        ]
+      }
+    ],
+    "evidence_receipts": [
+      {
+        "id": "artifact:./training/runs/live-heldout-smoke-2026-05-25/candidate.yaml",
+        "kind": "artifact",
+        "subject": "artifact:./training/runs/live-heldout-smoke-2026-05-25/candidate.yaml",
+        "status": "present_file",
+        "sha256": "3004e409d89cdca5b6a3e960104a36c6760e9b125e4b1806ca729b3ececc142d",
+        "detail": "file evidence at .\\./training/runs/live-heldout-smoke-2026-05-25/candidate.yaml"
+      },
+      {
+        "id": "artifact:agent-reports/live-heldout-smoke-train/training-data-audit.json",
+        "kind": "artifact",
+        "subject": "artifact:agent-reports/live-heldout-smoke-train/training-data-audit.json",
+        "status": "present_file",
+        "sha256": "e786f170cbd52beb7373b4d9b3597fcc981c708dce5b443b289ab15edf504e5d",
+        "detail": "file evidence at .\\agent-reports/live-heldout-smoke-train/training-data-audit.json"
+      },
+      {
+        "id": "artifact:agent-reports/live-heldout-smoke-train/training-runs",
+        "kind": "artifact",
+        "subject": "artifact:agent-reports/live-heldout-smoke-train/training-runs",
+        "status": "present_dir",
+        "sha256": "86dd43a9f4c7c09f8a48feae2fe082c42cf926b2f9a0fe28e26fddaba5a46f5a",
+        "detail": "directory evidence at .\\agent-reports/live-heldout-smoke-train/training-runs"
+      },
+      {
+        "id": "artifact:docs/training/training-production-proof.md",
+        "kind": "artifact",
+        "subject": "artifact:docs/training/training-production-proof.md",
+        "status": "present_file",
+        "sha256": "5e0a67d6812764b2947423c067d7a331f7b2455d59bcfc8d26e4c3c2e1ee3f86",
+        "detail": "file evidence at .\\docs/training/training-production-proof.md"
+      },
+      {
+        "id": "artifact:production-proof/evidence/live-heldout-smoke-2026-05-25/approvals/training.json",
+        "kind": "artifact",
+        "subject": "artifact:production-proof/evidence/live-heldout-smoke-2026-05-25/approvals/training.json",
+        "status": "present_file",
+        "sha256": "5156d17aa03dcdd3e8e6feb8fb3ad2b7b99016644d0b5eaf905881fa866b3de7",
+        "detail": "file evidence at .\\production-proof/evidence/live-heldout-smoke-2026-05-25/approvals/training.json"
+      },
+      {
+        "id": "artifact:production-proof/evidence/live-heldout-smoke-2026-05-25/training/checkpoint.safetensors",
+        "kind": "artifact",
+        "subject": "artifact:production-proof/evidence/live-heldout-smoke-2026-05-25/training/checkpoint.safetensors",
+        "status": "present_file",
+        "sha256": "d8e2cbc51ff9789032dd029e3097bca5e975a3bd36751b91ea2832caf26ec738",
+        "detail": "file evidence at .\\production-proof/evidence/live-heldout-smoke-2026-05-25/training/checkpoint.safetensors"
+      },
+      {
+        "id": "artifact:production-proof/evidence/live-heldout-smoke-2026-05-25/training/compute-ledger.json",
+        "kind": "artifact",
+        "subject": "artifact:production-proof/evidence/live-heldout-smoke-2026-05-25/training/compute-ledger.json",
+        "status": "present_file",
+        "sha256": "c186f59b9c3dfc6a9d7a6d60dee3846cef360ae179ec58468f1b6049d8a3cb38",
+        "detail": "file evidence at .\\production-proof/evidence/live-heldout-smoke-2026-05-25/training/compute-ledger.json"
+      },
+      {
+        "id": "artifact:production-proof/evidence/live-heldout-smoke-2026-05-25/training/conversion-manifest.json",
+        "kind": "artifact",
+        "subject": "artifact:production-proof/evidence/live-heldout-smoke-2026-05-25/training/conversion-manifest.json",
+        "status": "present_file",
+        "sha256": "c03fef414c15702e8d38b69afd8b2b1e176488c5fcbb50daf3af9012db55a0a7",
+        "detail": "file evidence at .\\production-proof/evidence/live-heldout-smoke-2026-05-25/training/conversion-manifest.json"
+      },
+      {
+        "id": "artifact:production-proof/evidence/live-heldout-smoke-2026-05-25/training/eval-report.json",
+        "kind": "artifact",
+        "subject": "artifact:production-proof/evidence/live-heldout-smoke-2026-05-25/training/eval-report.json",
+        "status": "present_file",
+        "sha256": "a340f1d4d4fb83db1b230516c4620a0c71a6712140f7224ee11636c6f9a6aef8",
+        "detail": "file evidence at .\\production-proof/evidence/live-heldout-smoke-2026-05-25/training/eval-report.json"
+      },
+      {
+        "id": "artifact:production-proof/evidence/live-heldout-smoke-2026-05-25/training/promotion-manifest.json",
+        "kind": "artifact",
+        "subject": "artifact:production-proof/evidence/live-heldout-smoke-2026-05-25/training/promotion-manifest.json",
+        "status": "present_file",
+        "sha256": "07d32f1747b01af147f5418cfa60088e77e503335534909a929447d9b5268882",
+        "detail": "file evidence at .\\production-proof/evidence/live-heldout-smoke-2026-05-25/training/promotion-manifest.json"
+      },
+      {
+        "id": "artifact:production-proof/evidence/live-heldout-smoke-2026-05-25/training/regression-report.json",
+        "kind": "artifact",
+        "subject": "artifact:production-proof/evidence/live-heldout-smoke-2026-05-25/training/regression-report.json",
+        "status": "present_file",
+        "sha256": "f5f63fa98075d9924d1fcb270c3c09b756c6f3911fde3f228d28b3eaea3e2e19",
+        "detail": "file evidence at .\\production-proof/evidence/live-heldout-smoke-2026-05-25/training/regression-report.json"
+      },
+      {
+        "id": "artifact:training/configs/helyx-mathlib-proof-repair-smoke.yaml",
+        "kind": "artifact",
+        "subject": "artifact:training/configs/helyx-mathlib-proof-repair-smoke.yaml",
+        "status": "present_file",
+        "sha256": "c10a5b1fe78265b94900738aa6777c3e6e6f5d84019c1f3bedf85961aa7b8ae9",
+        "detail": "file evidence at .\\training/configs/helyx-mathlib-proof-repair-smoke.yaml"
+      },
+      {
+        "id": "artifact:training/configs/lean-proof-repair-smoke-stub.yaml",
+        "kind": "artifact",
+        "subject": "artifact:training/configs/lean-proof-repair-smoke-stub.yaml",
+        "status": "present_file",
+        "sha256": "37690dcc608caeb68f70fbef33e680368e0975665a359f58635f2d1bf63a5401",
+        "detail": "file evidence at .\\training/configs/lean-proof-repair-smoke-stub.yaml"
+      },
+      {
+        "id": "artifact:training/configs/refineforge-native-proof-repair-smoke.yaml",
+        "kind": "artifact",
+        "subject": "artifact:training/configs/refineforge-native-proof-repair-smoke.yaml",
+        "status": "present_file",
+        "sha256": "48e78a2c152a3adb5b5656e31368aa540f491a2e48c14872d69ca3cd10abac6e",
+        "detail": "file evidence at .\\training/configs/refineforge-native-proof-repair-smoke.yaml"
+      },
+      {
+        "id": "artifact:training/data/mathlib-proof-repair-v1/anthropic-sft.jsonl",
+        "kind": "artifact",
+        "subject": "artifact:training/data/mathlib-proof-repair-v1/anthropic-sft.jsonl",
+        "status": "present_file",
+        "sha256": "11f1183e4bad6d79180aba8d729c7c3f5ae6ec02410d9882fb96e0a1b3a94d38",
+        "detail": "file evidence at .\\training/data/mathlib-proof-repair-v1/anthropic-sft.jsonl"
+      },
+      {
+        "id": "artifact:training/evals/proof-repair-smoke.yaml",
+        "kind": "artifact",
+        "subject": "artifact:training/evals/proof-repair-smoke.yaml",
+        "status": "present_file",
+        "sha256": "6fc682126b51692b4c02764b7a8239130668a4aab556d3361505a77348c265f3",
+        "detail": "file evidence at .\\training/evals/proof-repair-smoke.yaml"
+      },
+      {
+        "id": "command:training-data-audit",
+        "kind": "command",
+        "subject": "command:training-data-audit",
+        "status": "passed",
+        "sha256": "798d9443a61866c4564a70653591dd14a95afc19dbc4482fb51a38e3de2468e0",
+        "detail": "D:\\cargo-target\\debug\\refine-train.exe data audit training/data/mathlib-proof-repair-v1/anthropic-sft.jsonl --output agent-reports/live-heldout-smoke-train\\training-data-audit.json"
+      },
+      {
+        "id": "command:training-run",
+        "kind": "command",
+        "subject": "command:training-run",
+        "status": "passed",
+        "sha256": "c6b72d698cdbd4f40f2ed5be69593a41aca3bf8e06ab0776f274a2960bc105d5",
+        "detail": "D:\\cargo-target\\debug\\refine-train.exe --runs-root agent-reports/live-heldout-smoke-train\\training-runs run training/runs/live-heldout-smoke-2026-05-25/candidate.yaml"
+      },
+      {
+        "id": "tool_check:helyx-train",
+        "kind": "tool_check",
+        "subject": "tool_check:helyx-train",
+        "status": "not_checked",
+        "sha256": "9210ba89a59852cffa57f9f5a7351de768daa4ad2eebdd827ef151fbdb403efd",
+        "detail": "external tool availability is environment-specific"
+      },
+      {
+        "id": "tool_check:refine-train",
+        "kind": "tool_check",
+        "subject": "tool_check:refine-train",
+        "status": "available",
+        "sha256": "9939294cf5999f8cb4a5ad076c3d1801fd1083b1e50f7b3a86df52411a940425",
+        "detail": "provided by the local Cargo workspace command surface"
+      }
+    ],
+    "policy_decisions": [
+      {
+        "id": "human_review_required",
+        "status": "enforced",
+        "detail": "human-reviewed trust requires explicit human_operator evidence and is never inferred from an agent pass"
+      },
+      {
+        "id": "memory_non_authoritative",
+        "status": "enforced",
+        "detail": "memory and prior runs may guide investigation but cannot upgrade trust without current report evidence"
+      },
+      {
+        "id": "no_prompt_trust_upgrade",
+        "status": "enforced",
+        "detail": "role prompts may guide work, but only CLI evidence and claim scope rules can set report trust"
+      },
+      {
+        "id": "trust_ceiling",
+        "status": "enforced",
+        "detail": "train agent trust is bounded at or below human-reviewed for this command surface"
+      }
+    ],
+    "typed_blockers": []
+  },
+  "production_proof": {
+    "agent": "train",
+    "profile": "train-production-proof",
+    "status": "human-reviewed",
+    "trust_effect": "bounded-by-evidence",
+    "requirements": [
+      {
+        "id": "train.dataset_hashes",
+        "description": "Dataset audit passes and records deterministic dataset hashes",
+        "status": "passed",
+        "evidence": [
+          "agent-reports/live-heldout-smoke-train\\training-data-audit.json dataset_sha256=11f1183e4bad6d79180aba8d729c7c3f5ae6ec02410d9882fb96e0a1b3a94d38 record_count=1000"
+        ]
+      },
+      {
+        "id": "train.reproducible_config",
+        "description": "Training config is explicit and tied to immutable dataset evidence",
+        "status": "passed",
+        "evidence": [
+          "training config path=.\\training/runs/live-heldout-smoke-2026-05-25/candidate.yaml",
+          ".\\training/runs/live-heldout-smoke-2026-05-25/candidate.yaml sha256=3004e409d89cdca5b6a3e960104a36c6760e9b125e4b1806ca729b3ececc142d",
+          "config_path=.\\training/runs/live-heldout-smoke-2026-05-25/candidate.yaml"
+        ]
+      },
+      {
+        "id": "train.live_checkpoint",
+        "description": "Live backend training run produced checkpoint metadata",
+        "status": "passed",
+        "evidence": [
+          "live training command passed with --allow-expensive",
+          "training checkpoint path=production-proof/evidence/live-heldout-smoke-2026-05-25\\training/checkpoint.safetensors",
+          "production-proof/evidence/live-heldout-smoke-2026-05-25\\training/checkpoint.safetensors sha256=d8e2cbc51ff9789032dd029e3097bca5e975a3bd36751b91ea2832caf26ec738"
+        ]
+      },
+      {
+        "id": "train.benchmark_eval",
+        "description": "Benchmark evaluation compares baseline and candidate model quality",
+        "status": "passed",
+        "evidence": [
+          "training evaluation report path=production-proof/evidence/live-heldout-smoke-2026-05-25\\training/eval-report.json",
+          "production-proof/evidence/live-heldout-smoke-2026-05-25\\training/eval-report.json sha256=a340f1d4d4fb83db1b230516c4620a0c71a6712140f7224ee11636c6f9a6aef8"
+        ]
+      },
+      {
+        "id": "train.baseline_regression",
+        "description": "Required benchmark metrics do not regress below threshold",
+        "status": "passed",
+        "evidence": [
+          "training regression report path=production-proof/evidence/live-heldout-smoke-2026-05-25\\training/regression-report.json",
+          "production-proof/evidence/live-heldout-smoke-2026-05-25\\training/regression-report.json sha256=f5f63fa98075d9924d1fcb270c3c09b756c6f3911fde3f228d28b3eaea3e2e19"
+        ]
+      },
+      {
+        "id": "train.compute_ledger",
+        "description": "Compute ledger records backend, device, duration, and run budget",
+        "status": "passed",
+        "evidence": [
+          "training compute ledger path=production-proof/evidence/live-heldout-smoke-2026-05-25\\training/compute-ledger.json",
+          "production-proof/evidence/live-heldout-smoke-2026-05-25\\training/compute-ledger.json sha256=c186f59b9c3dfc6a9d7a6d60dee3846cef360ae179ec58468f1b6049d8a3cb38"
+        ]
+      },
+      {
+        "id": "train.conversion_manifest",
+        "description": "Checkpoint conversion evidence records source format, target format, checkpoint hash, and output artifacts",
+        "status": "passed",
+        "evidence": [
+          "training conversion manifest path=production-proof/evidence/live-heldout-smoke-2026-05-25\\training/conversion-manifest.json",
+          "production-proof/evidence/live-heldout-smoke-2026-05-25\\training/conversion-manifest.json sha256=c03fef414c15702e8d38b69afd8b2b1e176488c5fcbb50daf3af9012db55a0a7",
+          "conversion checkpoint_sha256 matches checkpoint artifact"
+        ]
+      },
+      {
+        "id": "train.promotion_manifest",
+        "description": "Promotion manifest records model id, checkpoint hash, lineage, conversion, metrics, and rollback path",
+        "status": "passed",
+        "evidence": [
+          "training promotion manifest path=production-proof/evidence/live-heldout-smoke-2026-05-25\\training/promotion-manifest.json",
+          "production-proof/evidence/live-heldout-smoke-2026-05-25\\training/promotion-manifest.json sha256=07d32f1747b01af147f5418cfa60088e77e503335534909a929447d9b5268882",
+          "promotion checkpoint_sha256 matches checkpoint artifact",
+          "promotion conversion manifest_sha256 matches conversion artifact"
+        ]
+      },
+      {
+        "id": "train.human_promotion_approval",
+        "description": "Named human reviewer approved model promotion",
+        "status": "passed",
+        "evidence": [
+          "training human approval path=production-proof/evidence/live-heldout-smoke-2026-05-25\\approvals/training.json",
+          "production-proof/evidence/live-heldout-smoke-2026-05-25\\approvals/training.json sha256=5156d17aa03dcdd3e8e6feb8fb3ad2b7b99016644d0b5eaf905881fa866b3de7",
+          "human_operator=Galo Training Operator"
+        ]
+      }
+    ],
+    "reviewer_evidence": [
+      "training: Galo Training Operator (production-proof/evidence/live-heldout-smoke-2026-05-25\\approvals/training.json)"
+    ],
+    "blockers": []
+  },
+  "capabilities": [
+    {
+      "name": "dataset-audit",
+      "status": "available",
+      "evidence": "validates proof-repair SFT JSONL before any training execution"
+    },
+    {
+      "name": "native-smoke-training",
+      "status": "available",
+      "evidence": "runs refineforge_native proof-repair smoke training without external trainer binaries"
+    },
+    {
+      "name": "trainer-orchestration",
+      "status": "available",
+      "evidence": "invokes refine-train with explicit run directories and command evidence"
+    },
+    {
+      "name": "training-production-proof-validation",
+      "status": "available",
+      "evidence": "validates checkpoint, eval, regression, compute ledger, conversion, lineage, promotion, and human approval files before any trust upgrade"
+    },
+    {
+      "name": "loss-only-eval-linter",
+      "status": "available",
+      "evidence": "blocks model-quality trust when evaluation evidence contains only loss or perplexity metrics"
+    },
+    {
+      "name": "safe-execute-default",
+      "status": "available",
+      "evidence": "execute mode runs trainer dry-run unless --allow-expensive is set"
+    },
+    {
+      "name": "helyx-train-compatibility",
+      "status": "tool_gated",
+      "evidence": "HELYX backend execution is delegated to helyx-train when the config selects it"
+    }
+  ],
+  "tool_checks": [
+    {
+      "name": "refine-train",
+      "required": true,
+      "status": "available",
+      "detail": "provided by the local Cargo workspace command surface"
+    },
+    {
+      "name": "helyx-train",
+      "required": false,
+      "status": "not_checked",
+      "detail": "external tool availability is environment-specific"
+    }
+  ],
+  "started_at": "2026-05-25T05:12:46.059728900Z",
+  "finished_at": "2026-05-25T05:13:38.419579Z",
+  "status": "passed",
+  "trust_level": "human-reviewed",
+  "commands": [
+    {
+      "name": "training-data-audit",
+      "command": [
+        "D:\\cargo-target\\debug\\refine-train.exe",
+        "data",
+        "audit",
+        "training/data/mathlib-proof-repair-v1/anthropic-sft.jsonl",
+        "--output",
+        "agent-reports/live-heldout-smoke-train\\training-data-audit.json"
+      ],
+      "status": "passed",
+      "duration_ms": 223,
+      "exit_code": 0,
+      "stdout_tail": "dataset audit OK: rows=1000 unique_ids=1000 valid_patches=1000 sha256=11f1183e4bad6d79180aba8d729c7c3f5ae6ec02410d9882fb96e0a1b3a94d38\n  splits: heldout=100, train=800, val=100\n  wrote agent-reports/live-heldout-smoke-train\\training-data-audit.json",
+      "stderr_tail": ""
+    },
+    {
+      "name": "training-run",
+      "command": [
+        "D:\\cargo-target\\debug\\refine-train.exe",
+        "--runs-root",
+        "agent-reports/live-heldout-smoke-train\\training-runs",
+        "run",
+        "training/runs/live-heldout-smoke-2026-05-25/candidate.yaml"
+      ],
+      "status": "passed",
+      "duration_ms": 52131,
+      "exit_code": 0,
+      "stdout_tail": "Running experiment 'live-heldout-smoke-candidate-2026-05-25' (max 1 attempts)\n  attempts:           1\n  progress records:   3\n  runner records:     3\n  failure records:    1\n  checkpoints:        1\n  final:              success\n  report:             agent-reports/live-heldout-smoke-train\\training-runs\\live-heldout-smoke-candidate-2026-05-25\\report.json",
+      "stderr_tail": ""
+    }
+  ],
+  "changed_files": [],
+  "artifacts": [
+    "training/configs/refineforge-native-proof-repair-smoke.yaml",
+    "training/configs/lean-proof-repair-smoke-stub.yaml",
+    "training/data/mathlib-proof-repair-v1/anthropic-sft.jsonl",
+    "training/configs/helyx-mathlib-proof-repair-smoke.yaml",
+    "docs/training/training-production-proof.md",
+    "training/evals/proof-repair-smoke.yaml",
+    "agent-reports/live-heldout-smoke-train\\training-data-audit.json",
+    "agent-reports/live-heldout-smoke-train\\training-runs",
+    ".\\training/runs/live-heldout-smoke-2026-05-25/candidate.yaml",
+    "production-proof/evidence/live-heldout-smoke-2026-05-25\\training/checkpoint.safetensors",
+    "production-proof/evidence/live-heldout-smoke-2026-05-25\\training/eval-report.json",
+    "production-proof/evidence/live-heldout-smoke-2026-05-25\\training/regression-report.json",
+    "production-proof/evidence/live-heldout-smoke-2026-05-25\\training/compute-ledger.json",
+    "production-proof/evidence/live-heldout-smoke-2026-05-25\\training/conversion-manifest.json",
+    "production-proof/evidence/live-heldout-smoke-2026-05-25\\training/promotion-manifest.json",
+    "production-proof/evidence/live-heldout-smoke-2026-05-25\\approvals/training.json"
+  ],
+  "blockers": [],
+  "warnings": [],
+  "summary": "Training dataset audit, live run, checkpoint, evaluation, regression, compute ledger, conversion manifest, promotion manifest, and named human approval evidence all passed."
+}

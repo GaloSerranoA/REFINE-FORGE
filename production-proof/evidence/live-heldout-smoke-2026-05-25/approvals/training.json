@@ -1,0 +1,8 @@
+{
+  "schema_version": "refineforge-human-approval-v1",
+  "human_operator": "Galo Training Operator",
+  "role": "training",
+  "decision": "approved",
+  "approved_at": "2026-05-25T05:12:32Z",
+  "evidence_summary": "Approved by the human operator after review request. Evidence: live local native causal smoke run on 32 real Mathlib Anthropic SFT rows, 24 train and 8 heldout; candidate completed 3 non-dry-run steps; baseline completed 1 non-dry-run step; regression passed with dev_loss_inverse +0.005560476845942741, heldout_exact_patch_acceptance delta 0.0, target_token_accuracy delta 0.0; checkpoint, conversion, eval, regression, compute ledger, and promotion evidence generated under production-proof/evidence/live-heldout-smoke-2026-05-25/training."
+}

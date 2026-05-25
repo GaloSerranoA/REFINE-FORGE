@@ -1,0 +1,15 @@
+{
+  "artifacts": [
+    {
+      "path": "training/checkpoint.safetensors",
+      "sha256": "d8e2cbc51ff9789032dd029e3097bca5e975a3bd36751b91ea2832caf26ec738"
+    }
+  ],
+  "checkpoint_sha256": "d8e2cbc51ff9789032dd029e3097bca5e975a3bd36751b91ea2832caf26ec738",
+  "note": "Refine-Forge native smoke checkpoints are converted into a deterministic safetensors evidence carrier; production LLM export requires backend-native weights.",
+  "schema_version": "refineforge-training-conversion-manifest-v1",
+  "source_checkpoint": "training/runs/live-heldout-smoke-2026-05-25/runs/live-heldout-smoke-candidate-2026-05-25/checkpoints/step-3/causal-lm-checkpoint.json",
+  "source_format": "refineforge_native_causal_lm",
+  "status": "passed",
+  "target_format": "safetensors"
+}

@@ -1,0 +1,24 @@
+{
+  "baseline": {
+    "model_id": "live-heldout-smoke-baseline-2026-05-25",
+    "report": "training/runs/live-heldout-smoke-2026-05-25/baseline-eval-report.json"
+  },
+  "candidate": {
+    "model_id": "live-heldout-smoke-candidate-2026-05-25",
+    "report": "training/runs/live-heldout-smoke-2026-05-25/runs/live-heldout-smoke-candidate-2026-05-25/report.json"
+  },
+  "metrics": {
+    "dev_loss_inverse": 0.14803699725415603,
+    "heldout_exact_patch_acceptance": 0.029574861367837334,
+    "target_token_accuracy": 0.029574861367837334
+  },
+  "output_hash": "43a18ebc24aba309b632b5c10336b3abb01df1a899870d16ca6e63f7f5a95dbd",
+  "prompt_hash": "43a18ebc24aba309b632b5c10336b3abb01df1a899870d16ca6e63f7f5a95dbd",
+  "quality_metrics": {
+    "dev_loss_inverse": 0.14803699725415603,
+    "heldout_exact_patch_acceptance": 0.029574861367837334,
+    "target_token_accuracy": 0.029574861367837334
+  },
+  "schema_version": "refineforge-training-eval-report-v1",
+  "status": "passed"
+}
