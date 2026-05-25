@@ -1,10 +1,14 @@
 {
   "schema_version": "refineforge-human-approval-request-v1",
   "role": "training",
-  "status": "pending-human-review",
+  "status": "approved",
   "requested_at": "2026-05-25T05:03:03Z",
+  "resolved_at": "2026-05-25T05:12:32Z",
+  "resolved_by": "Galo Training Operator",
   "candidate_model_id": "live-heldout-smoke-candidate-2026-05-25",
   "evidence_summary": "Live local native causal smoke run on 32 real Mathlib Anthropic SFT rows: 24 train, 8 heldout. Candidate completed 3 non-dry-run steps; baseline completed 1 non-dry-run step. Regression passed: dev_loss_inverse +0.005560476845942741, heldout_exact_patch_acceptance delta 0.0, target_token_accuracy delta 0.0. Checkpoint/conversion/promotion evidence generated under training/.",
   "approval_file_to_create_after_review": "approvals/training.json",
+  "approval_path": "approvals/training.json",
+  "resolution_summary": "The human operator approved the request in approvals/training.json; the Training Agent report reached human-reviewed with zero production-proof blockers.",
   "required_approval_schema": "refineforge-human-approval-v1"
 }
