@@ -10,6 +10,19 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added — hosted DevOps production evidence path
+
+- Added `scripts/ci/write-release-production-evidence.sh` for GitHub Actions
+  to write DevOps production-proof evidence files: hosted CI metadata,
+  architecture matrix, release-ready artifacts, verifier container digest,
+  Sigstore verification JSON, and Nix check logs.
+- Updated `.github/workflows/ci.yml` to run on `main` and `master`, wire the
+  verifier, Nix, and signing jobs together, and upload
+  `refineforge-devops-production-evidence`.
+- Added `docs/agents/human-reviewed-closure-runbook.md`, the operator runbook
+  for moving DevOps, Lean, Training, and Kernel agents to `human-reviewed`
+  without prompt or memory trust inflation.
+
 ### Changed — Lean, DevOps, and Kernel evidence hardening
 
 - Added shared agent evidence validators for real files, JSON status checks,

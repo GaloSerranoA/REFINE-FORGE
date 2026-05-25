@@ -2,10 +2,10 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
     tags: ['v*']
   pull_request:
-    branches: [main]
+    branches: [main, master]
 
 env:
   RUST_BACKTRACE: 1
@@ -214,6 +214,20 @@ jobs:
           docker run --rm -v "${{ github.workspace }}/artifacts:/artifacts:ro" refineforge-verifier:ci \
             bundle verify /artifacts/EXAMPLE-003
 
+      - name: Write verifier container digest evidence
+        run: |
+          chmod +x scripts/ci/write-release-production-evidence.sh
+          scripts/ci/write-release-production-evidence.sh verifier-digest \
+            production-proof/evidence/devops \
+            refineforge-verifier:ci
+
+      - name: Upload verifier container evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: refineforge-verifier-container-evidence
+          path: production-proof/evidence/devops/release/verifier-container-digest.txt
+          retention-days: 90
+
   # ─── Nix flake check (Ubuntu only — Nix on Windows would need WSL)
   # Verifies the flake builds + flake-check passes. Uses Cachix's
   # magic-nix-cache for transparent caching across runs.
@@ -241,7 +255,11 @@ jobs:
         # `--all-systems false` skips evaluating other architectures
         # (we only care about x86_64-linux here; macOS / Darwin runners
         # are not part of this job).
-        run: nix flake check --no-update-lock-file --print-build-logs
+        run: |
+          chmod +x scripts/ci/write-release-production-evidence.sh
+          scripts/ci/write-release-production-evidence.sh nix-check \
+            production-proof/evidence/devops \
+            -- nix flake check --no-update-lock-file --print-build-logs
 
       - name: Build refine binary via Nix
         run: nix build .#refine --no-update-lock-file --print-build-logs
@@ -260,6 +278,15 @@ jobs:
             echo "Nix-built EXAMPLE-002 bundle content hashes:"
             cat /tmp/bundle-hashes.txt
           fi
+
+      - name: Upload Nix evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: refineforge-nix-evidence
+          path: |
+            production-proof/evidence/devops/release/flake.lock
+            production-proof/evidence/devops/release/nix-check.log
+          retention-days: 90
 
   # ─── Bit-exact gate (CPU stub on every push; real GPU gate when
   # a self-hosted GPU runner is available) ─────────────────────────────
@@ -321,7 +348,7 @@ jobs:
   # identities are not the canonical signer.
   sign-bundles:
     name: sign-bundles
-    needs: build-and-verify
+    needs: [build-and-verify, verifier-container-smoke, nix-flake-check]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     # cosign keyless signing requires id-token write permission to get
@@ -351,6 +378,28 @@ jobs:
         with:
           name: refineforge-release-evidence-ubuntu-latest
           path: release/evidence/
+
+      - name: Download verifier container evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: refineforge-verifier-container-evidence
+          path: production-proof/evidence/devops/release/
+
+      - name: Download Nix evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: refineforge-nix-evidence
+          path: production-proof/evidence/devops/release/
+
+      - name: Write hosted CI and architecture evidence
+        run: |
+          chmod +x scripts/ci/write-release-production-evidence.sh
+          scripts/ci/write-release-production-evidence.sh hosted-ci production-proof/evidence/devops
+          scripts/ci/write-release-production-evidence.sh architecture production-proof/evidence/devops
+          release_ready_dir="$(find release/evidence -name sbom.cyclonedx.json -print -quit | xargs dirname)"
+          scripts/ci/write-release-production-evidence.sh copy-release-ready \
+            production-proof/evidence/devops \
+            "$release_ready_dir"
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
@@ -390,6 +439,13 @@ jobs:
               "$manifest"
           done
 
+      - name: Write Sigstore verification evidence
+        env:
+          EXPECTED_IDENTITY_REGEX: "https://github.com/[^/]+/refineforge/.github/workflows/ci.yml@refs/(heads|tags)/.*"
+          EXPECTED_OIDC_ISSUER: "https://token.actions.githubusercontent.com"
+        run: |
+          scripts/ci/write-release-production-evidence.sh cosign-verify production-proof/evidence/devops
+
       - name: Upload signed bundle artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -397,4 +453,12 @@ jobs:
           path: |
             artifacts/
             release/evidence/
+            production-proof/evidence/devops/
+          retention-days: 90
+
+      - name: Upload DevOps production-proof evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: refineforge-devops-production-evidence
+          path: production-proof/evidence/devops/
           retention-days: 90

@@ -110,6 +110,9 @@ See `docs/agents/production-proof-evidence.md` and
 OIDC signing, Nix, approval, checkpoint/eval/promotion, and CUDA
 source/hardware/performance evidence.
 
+For the exact operator sequence to move the four agents to `human-reviewed`,
+see `docs/agents/human-reviewed-closure-runbook.md`.
+
 ## Production-Proof Plans
 
 The four role-specific enterprise closure plans are:

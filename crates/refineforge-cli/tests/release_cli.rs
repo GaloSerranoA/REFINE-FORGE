@@ -93,3 +93,25 @@ fn ci_workflow_runs_release_evidence_and_container_smoke() {
     assert!(workflow.contains("rustc -Vv"));
     assert!(!workflow.contains("scan check-all || echo"));
 }
+
+#[test]
+fn ci_workflow_emits_devops_production_proof_evidence() {
+    let workflow =
+        std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();
+    let writer = std::fs::read_to_string(
+        workspace_root().join("scripts/ci/write-release-production-evidence.sh"),
+    )
+    .unwrap();
+    let evidence_surface = format!("{workflow}\n{writer}");
+
+    assert!(workflow.contains("branches: [main, master]"));
+    assert!(workflow.contains("scripts/ci/write-release-production-evidence.sh"));
+    assert!(workflow.contains("production-proof/evidence/devops"));
+    assert!(workflow.contains("refineforge-devops-production-evidence"));
+    assert!(evidence_surface.contains("hosted-ci.json"));
+    assert!(evidence_surface.contains("architecture-matrix.json"));
+    assert!(evidence_surface.contains("cosign-verify.json"));
+    assert!(evidence_surface.contains("nix-check.log"));
+    assert!(evidence_surface.contains("verifier-container-digest.txt"));
+    assert!(workflow.contains("id-token: write"));
+}

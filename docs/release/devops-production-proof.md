@@ -14,3 +14,8 @@ includes:
 | Nix reproducibility | `flake.lock` and `nix flake check --no-update-lock-file` log |
 | Architecture coverage | runner OS and CPU architecture records |
 | Human approval | named reviewer, date, release version, decision |
+
+The CI workflow writes the DevOps evidence artifact
+`refineforge-devops-production-evidence` from the hosted signing job. That
+artifact is the input for `REFINEFORGE_RELEASE_EVIDENCE_DIR`; a local
+`release ready` report alone remains `release-ready-local`.

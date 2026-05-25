@@ -238,7 +238,7 @@ fn apply_devops_production_proof(
         blockers.push("Sigstore OIDC signing evidence is missing".to_string());
     }
 
-    let container_digest = validate_container_digest();
+    let container_digest = validate_container_digest(role_evidence_dir.as_deref());
     requirements.push(ProductionRequirement::new_owned(
         "devops.verifier_container_digest",
         "Verifier container image is built, smoke-tested, and digest-recorded",
@@ -438,12 +438,22 @@ fn validate_release_file(
     validate_existing_file(path.as_deref(), label)
 }
 
-fn validate_container_digest() -> EvidenceValidation {
-    let Some(digest) = std::env::var("REFINEFORGE_VERIFIER_CONTAINER_DIGEST").ok() else {
+fn validate_container_digest(evidence_dir: Option<&Path>) -> EvidenceValidation {
+    let digest_source = evidence_dir
+        .and_then(|dir| {
+            release_file_path(
+                dir,
+                "release/verifier-container-digest.txt",
+                "verifier-container-digest.txt",
+            )
+        })
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .or_else(|| std::env::var("REFINEFORGE_VERIFIER_CONTAINER_DIGEST").ok());
+    let Some(digest) = digest_source.map(|digest| digest.trim().to_string()) else {
         return EvidenceValidation {
             passed: false,
             evidence: vec![
-                "verifier container digest not provided via REFINEFORGE_VERIFIER_CONTAINER_DIGEST"
+                "verifier container digest not provided via REFINEFORGE_VERIFIER_CONTAINER_DIGEST or release/verifier-container-digest.txt"
                     .to_string(),
             ],
             reviewer_evidence: None,
