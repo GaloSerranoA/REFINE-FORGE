@@ -31,6 +31,8 @@ Read in this order — each doc is short and points at the next.
 | [docs/release/release-readiness-inventory.md](docs/release/release-readiness-inventory.md) | Release infrastructure inventory: shipped-local, stub-tested, CI-pending, blocked, and planned surfaces |
 | [docs/release/ci-audit-report.md](docs/release/ci-audit-report.md) | CI/release audit report template and current local blocker record |
 | [docs/agents/README.md](docs/agents/README.md) | CLI-first HELYX specialist agents: Lean, DevOps, training, and kernel evidence reports |
+| [docs/training/hrm-text-analysis.md](docs/training/hrm-text-analysis.md) | Analysis of HRM-Text and which production-training ideas can inform Refine-Forge |
+| [docs/training/train-llm-from-scratch-analysis.md](docs/training/train-llm-from-scratch-analysis.md) | Analysis of an external PyTorch from-scratch LLM repo and what should/should not be ported |
 | [docs/bit-exact-reproducibility.md](docs/bit-exact-reproducibility.md) | GPU kernel bit-exact reproducibility: non-determinism sources + mitigations + gate primitive |
 | [docs/superpowers/plans/2026-05-22-gpu-kernel-bitexact-track.md](docs/superpowers/plans/2026-05-22-gpu-kernel-bitexact-track.md) | Part 4 execution plan for the HELYX `helyx-kernels` → Refine-Forge `refineforge-bitexact` handoff |
 | [docs/escalation-criteria.md](docs/escalation-criteria.md) | **CONTRACT v0.3** (operator-signed; v0.2 superseded same-day with Q1/Q3/Q4 revisions). 9 categories that always escalate to the human during `refine autonomous` runs. Enforced by `crates/refineforge-escalation` |
@@ -67,7 +69,7 @@ and gate artifacts around those systems.
 |---:|---|---|---|
 | 1 | Lean 4 / verification engineer | `refine lean`, `refine scan`, bundle export/verify, template provenance, claim linting | Proves and packages claims about HELYX-adjacent Rust behavior |
 | 2 | Release / infrastructure / DevOps engineer | CI gates, release readiness, verifier container, SBOM/provenance evidence, docs truth audit, signed-bundle flow | Makes releases auditable; first real remote/OIDC signing still depends on hosted CI |
-| 3 | ML / training engineer | `refine-train` dataset audit, built-in `refineforge_native` proof-repair smoke training, HELYX `helyx-train` orchestration, checkpoints, reports, local-finetune promotion | Refine-Forge can run local native smoke training; HELYX/Axolotl/custom remain production-scale trainer backends |
+| 3 | ML / training engineer | `refine-train` dataset audit, SFT packing, causal-LM preprocessing, built-in `refineforge_native` and `refineforge_native_causal_lm` smoke training, HELYX/HRM/PyTorch orchestration, checkpoints, reports, evidence generation, local-finetune promotion, and Training Agent evidence validation | Refine-Forge can run local native smoke training and produce evidence packs; production model trust still requires real held-out eval, regression, compute ledger, conversion, promotion lineage, and human approval evidence |
 | 4 | GPU / kernel Rust engineer | `refine-bitexact` lint/run/run-all, HELYX-compatible kernel metadata, input manifests, expected SHA-256 baselines, CI summary JSON | `helyx-kernels` implements kernels; Refine-Forge proves bit-exact gate evidence |
 
 The four specialist roles are exposed as CLI agents:
@@ -78,6 +80,12 @@ mode runs the local role execution surface: Lean gates, release readiness,
 trainer dry-run by default, and the bit-exact kernel gate. Pass
 `--allow-expensive` only when live trainer backends or Docker/signature release
 gates should run.
+
+The Training agent accepts `REFINEFORGE_TRAINING_EVIDENCE_DIR` only as a
+pointer to real files. It validates checkpoint, eval, regression, compute
+ledger, promotion, and human approval artifacts before it can emit
+`human-reviewed`; missing paths or placeholder approvals keep it
+`measured-only`.
 
 ## What this is *not*
 
@@ -256,10 +264,13 @@ cargo build --release
 | `refine escalations list [--claim X] [--age-gt N]` | Operator queue dashboard for `escalations/<CLAIM-ID>/*.md`; PENDING vs DECIDED sorted by age. Per criteria v0.3 the driver never auto-rejects |
 | `refine-eval --corpus … --strategy …`  | Drive `refine repair` against a JSONL corpus; emit JSON report. See [`docs/repair-evaluation.md`](docs/repair-evaluation.md) |
 | `refine-train data audit <jsonl>`      | Validate proof-repair SFT JSONL counts, split counts, patch JSON, duplicate ids, and SHA-256 before training |
-| `refine-train run <exp.yaml>`          | Run one training experiment (`refineforge_native` / HELYX `helyx-train` / axolotl / HF Trainer / custom backend). See [`training/README.md`](training/README.md). Always start with `--dry-run`. |
+| `refine-train data pack-sft <jsonl>`   | Build deterministic SFT token packs with target-only loss masks, shuffle files, packing reports, and multipack rank plans |
+| `refine-train data causal-lm-preprocess <jsonl>` | Convert JSONL/JSONL.zst text rows into causal-LM token/chunk manifests |
+| `refine-train run <exp.yaml>`          | Run one training experiment (`refineforge_native`, `refineforge_native_causal_lm`, HELYX `helyx-train`, HRM/PyTorch `torchrun`, axolotl, HF Trainer, or custom backend). See [`training/README.md`](training/README.md). Always start with `--dry-run`. |
 | `refine-train sweep <sweep.yaml>`      | Grid or random hyperparameter sweep |
 | `refine-train monitor <run_dir>`       | Tail `progress.jsonl` and show latest metrics |
 | `refine-train report <run_dir>`        | Build / refresh `report.json` for a run |
+| `refine-train evidence <run_dir>`      | Generate training production-proof evidence: checkpoint carrier, eval, regression, compute ledger, conversion manifest, and promotion manifest |
 | `refine-train promote <run_dir>`       | Convert a successful training report + latest checkpoint into a `refineforge-local-finetune.json` runtime directory plus `promotion-report.json` |
 | `refine-bitexact lint <kernel.yaml> [--json] [--output <path>]` | Lint a kernel experiment for strict CUDA / HELYX contract readiness before execution |
 | `refine-bitexact run <kernel.yaml>`    | Bit-exact reproducibility gate: run kernel N times, fail if SHA-256 hashes disagree or miss `expected_sha256`. See [`kernels/README.md`](kernels/README.md) and [`docs/bit-exact-reproducibility.md`](docs/bit-exact-reproducibility.md) |
@@ -305,7 +316,7 @@ Where each thing currently lives:
 | LLM repair loop (LSP client)               | ✅ shipped: `mock`, `anthropic-mock`, **`anthropic`** (real HTTP with retry + prompt caching), and `local-finetune` (command-manifest runtime bridge) |
 | `refineforge-strategies` workspace member  | ✅ `AnthropicStrategy` + `ReqwestTransport` plus `LocalFinetuneStrategy` command-manifest bridge. Native checkpoint loading is still blocked on the final model/tokenizer layout. |
 | `refineforge-eval` (`refine-eval` binary)  | ✅ corpus-driven evaluation harness with JSON output; ships a 3-entry tutorial corpus under [`eval/corpus/`](eval/corpus) |
-| `refineforge-trainer` (`refine-train` binary) | ✅ training control plane with built-in `refineforge_native` proof-repair smoke training, HELYX `helyx-train` / axolotl / HF Trainer / custom orchestration, deterministic dataset audit, run tracking, checkpoint resume, failure recovery, JSON reports, and local-finetune promotion. Native smoke checkpoints are evidence of local training execution, not proof of production model quality. See [`training/README.md`](training/README.md) |
+| `refineforge-trainer` (`refine-train` binary) | ✅ training control plane and local training framework with deterministic dataset audit, SFT packing, causal-LM preprocessing, built-in `refineforge_native` and `refineforge_native_causal_lm` smoke backends, HELYX `helyx-train` / HRM-Text / PyTorch baseline / axolotl / HF Trainer / custom orchestration, run tracking, checkpoint resume, failure recovery, JSON reports, production-proof evidence generation, and local-finetune promotion. Native smoke checkpoints are evidence of local training execution, not proof of production model quality. See [`training/README.md`](training/README.md) |
 | `refineforge-bitexact` (`refine-bitexact` binary) | ✅ enterprise bit-exact gate: strict contract linting, HELYX-compatible metadata, input manifests, expected output baselines, per-run JSONL, run reports, and `run-all` CI aggregation. Real HELYX/CUDA kernels remain external kernel-engineering domain. See [`kernels/README.md`](kernels/README.md). |
 | `refineforge-escalation` (library) | ✅ Phases 1 + 2 + 3.5 of [`docs/plans/autonomous-driver-plan.md`](docs/plans/autonomous-driver-plan.md) under criteria v0.3. Pure-functional engine (`Action` + `ProjectContext` → `Decision::Proceed`/`Escalate`); `Packet` markdown renderer with v0.3 `batch:` support; `DecisionOutcome` parser (`APPROVED:`/`REJECTED:`/`EDIT_AND_RESUBMIT:`/partial form); `GitOps` trait (subprocess `git` + `MockGitOps`); indefinite `await_decision` (no auto-reject); ProjectContext loaders (claim YAML + lake-manifest.json + Cargo.lock). 170 tests; 2 POSIX-only e2e git tests gated `#[cfg(unix)]` |
 | `refine autonomous` driver (in `refineforge-cli`) | ✅ Phases 3 MVP + 3.5 + 3.6 + 3.7 + 3.8 + Phase 4 audit. `Planner` + `Executor<G: GitOps>` + `WorkRunConfig` + `run_worklist`; real `runner::run`/`scan::scan_claim`/`bundle::export` library calls; `Repair` step with `resolve_strategy` (mock / anthropic-mock / **anthropic** real HTTP / `local-finetune` command-manifest bridge) + cost-gate ($0.07/attempt upfront for Anthropic); `RunTrainingExperiment`/`RunBitExactGate` subprocess-shell; `--auto-repair` + `--await-decisions` + `--inject-counter-idealisation` + `--inject-training` + `--inject-bitexact` flags. **Phase 3.8 cross-run await-resume**: existing APPROVED packets survive re-runs. Live LLM auto-repair confirmed end-to-end ([60d2a81](#)). EXAMPLE-002 forced-Counter dogfood passes as integration test AND was exercised against real Anthropic in the Phase 4 audit ($0.35 spend) |

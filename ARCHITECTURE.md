@@ -148,13 +148,15 @@ The ML engineer owns:
 - Driver loop with no-sorry gate after every patch: ✅
 - `MockStrategy` (declines every proposal): ✅
 - Real strategies: ✅ `anthropic`, `anthropic-mock`, and `local-finetune` command-manifest runtime. Local Ollama/llama.cpp strategy remains open.
-- Training pipeline: ✅ Mathlib proof-repair corpus, deterministic SFT audit, trainer orchestration, HELYX-compatible backend adapter, run reports, and promotion handoff. Real accepted checkpoint remains open.
+- Training pipeline: ✅ Mathlib proof-repair corpus, deterministic SFT audit, SFT packing, causal-LM preprocessing, native smoke backends, trainer orchestration, HELYX/HRM/PyTorch-compatible backend adapters, run reports, evidence generation, conversion manifests, and promotion handoff. Real accepted production checkpoint with held-out comparison and human approval remains open.
 - Evaluation harness: ✅ `refine-eval` with JSON output and tutorial corpus. Held-out comparison for a real promoted checkpoint remains open.
 
 **Open work, in order**
 
-1. Run HELYX or Axolotl training on the audited Mathlib SFT split.
-2. Promote the latest successful checkpoint with `refine-train promote`.
+1. Run HELYX, Axolotl, HRM/PyTorch baseline, or `refineforge_native_causal_lm`
+   training on an audited/packed Mathlib SFT split.
+2. Generate evidence with `refine-train evidence`, then promote the latest
+   successful checkpoint with `refine-train promote`.
 3. Evaluate the promoted local-finetune runtime on the held-out split and
    compare it against the Anthropic strategy.
 4. Ship only the measured result: either the local model beats the hosted

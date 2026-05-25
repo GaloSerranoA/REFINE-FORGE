@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::process::Command;
 
@@ -58,6 +59,12 @@ fn write_text(path: &Path, content: &str) {
     std::fs::write(path, content).unwrap();
 }
 
+fn hex_sha256(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
 fn approval(operator: &str, role: &str) -> Value {
     json!({
         "schema_version": "refineforge-human-approval-v1",
@@ -91,6 +98,7 @@ fn complete_manifest(source_kind: &str) -> Value {
             "regression_report_path": "training/regression-report.json",
             "compute_ledger_path": "training/compute-ledger.json",
             "promotion_manifest_path": "training/promotion-manifest.json",
+            "conversion_manifest_path": "training/conversion-manifest.json",
             "approval_path": "approvals/training.json"
         },
         "kernel": {
@@ -142,25 +150,91 @@ fn write_complete_evidence(evidence_dir: &Path, manifest: Value) {
         json!({"status": "passed", "runners": [{"os": "ubuntu-latest", "arch": "x86_64"}]}),
     );
 
+    let checkpoint_bytes = b"checkpoint bytes";
     write_text(
         &evidence_dir.join("training/checkpoint.safetensors"),
-        "checkpoint bytes",
+        std::str::from_utf8(checkpoint_bytes).unwrap(),
     );
+    let checkpoint_sha256 = hex_sha256(checkpoint_bytes);
     write_json(
         &evidence_dir.join("training/eval-report.json"),
-        json!({"status": "passed", "metric": "proof_repair_smoke"}),
+        json!({
+            "status": "passed",
+            "baseline": {"model_id": "baseline-proof-repair"},
+            "candidate": {"model_id": "candidate-proof-repair"},
+            "metrics": {
+                "heldout_exact_patch_acceptance": 1.0,
+                "target_token_accuracy": 1.0
+            },
+            "quality_metrics": {
+                "heldout_exact_patch_acceptance": 1.0,
+                "target_token_accuracy": 1.0
+            }
+        }),
     );
     write_json(
         &evidence_dir.join("training/regression-report.json"),
-        json!({"status": "passed"}),
+        json!({
+            "status": "passed",
+            "baseline_report": "baseline-eval-report.json",
+            "candidate_report": "eval-report.json",
+            "metric_deltas": {
+                "heldout_exact_patch_acceptance": 0.0,
+                "target_token_accuracy": 0.0
+            }
+        }),
     );
     write_json(
         &evidence_dir.join("training/compute-ledger.json"),
-        json!({"status": "passed", "gpu_hours": 1.0}),
+        json!({
+            "status": "passed",
+            "backend_kind": "refineforge_native_causal_lm",
+            "device": "cpu/native",
+            "duration_ms": 100,
+            "gpu_hours": 0.0
+        }),
     );
     write_json(
+        &evidence_dir.join("training/conversion-manifest.json"),
+        json!({
+            "schema_version": "refineforge-training-conversion-manifest-v1",
+            "status": "passed",
+            "source_format": "refineforge-native",
+            "target_format": "safetensors",
+            "checkpoint_sha256": checkpoint_sha256,
+            "artifacts": [{
+                "path": "training/checkpoint.safetensors",
+                "sha256": checkpoint_sha256
+            }]
+        }),
+    );
+    let conversion_manifest_sha256 =
+        hex_sha256(&std::fs::read(evidence_dir.join("training/conversion-manifest.json")).unwrap());
+    write_json(
         &evidence_dir.join("training/promotion-manifest.json"),
-        json!({"status": "approved", "rollback": {"available": true}}),
+        json!({
+            "status": "approved",
+            "decision": "promote",
+            "model_id": "proof-repair-local-v1",
+            "checkpoint_sha256": checkpoint_sha256,
+            "rollback": {"available": true},
+            "lineage": {
+                "config_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "train_metadata_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "tokenizer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "checkpoint_shards": [{
+                    "path": "training/checkpoint.safetensors",
+                    "sha256": checkpoint_sha256
+                }],
+                "ema_policy": "none",
+                "resume_source": "fresh",
+                "epoch": 1
+            },
+            "conversion": {
+                "manifest_path": "training/conversion-manifest.json",
+                "manifest_sha256": conversion_manifest_sha256
+            }
+        }),
     );
 
     write_text(
@@ -339,5 +413,74 @@ fn production_proof_complete_fixture_reaches_human_reviewed() {
             .iter()
             .any(|receipt| receipt["subject"] == "artifact:evidence.json"),
         "manifest should be hashed as runtime evidence"
+    );
+}
+
+#[test]
+fn production_proof_rejects_loss_only_training_eval() {
+    let td = tempfile::tempdir().unwrap();
+    let evidence = td.path().join("evidence");
+    let out = td.path().join("out");
+    write_complete_evidence(&evidence, complete_manifest("cuda"));
+    write_json(
+        &evidence.join("training/eval-report.json"),
+        json!({
+            "status": "passed",
+            "baseline": {"model_id": "baseline-proof-repair"},
+            "candidate": {"model_id": "candidate-proof-repair"},
+            "metrics": {"loss": 0.01}
+        }),
+    );
+
+    let output = run_production_proof(&evidence, &out);
+
+    assert_success(&output);
+    let report = read_json(&out.join("summary.json"));
+    assert_eq!(report["status"], "blocked");
+    assert_eq!(report["trust_level"], "blocked");
+    assert!(
+        report["production_proof"]["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b.as_str().unwrap().contains("loss-only")),
+        "loss-only training eval must block production proof"
+    );
+}
+
+#[test]
+fn production_proof_rejects_conversion_manifest_checkpoint_hash_mismatch() {
+    let td = tempfile::tempdir().unwrap();
+    let evidence = td.path().join("evidence");
+    let out = td.path().join("out");
+    write_complete_evidence(&evidence, complete_manifest("cuda"));
+    write_json(
+        &evidence.join("training/conversion-manifest.json"),
+        json!({
+            "schema_version": "refineforge-training-conversion-manifest-v1",
+            "status": "passed",
+            "source_format": "refineforge-native",
+            "target_format": "safetensors",
+            "checkpoint_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "artifacts": [{
+                "path": "training/checkpoint.safetensors",
+                "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            }]
+        }),
+    );
+
+    let output = run_production_proof(&evidence, &out);
+
+    assert_success(&output);
+    let report = read_json(&out.join("summary.json"));
+    assert_eq!(report["status"], "blocked");
+    assert_eq!(report["trust_level"], "blocked");
+    assert!(
+        report["production_proof"]["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b.as_str().unwrap().contains("conversion manifest")),
+        "conversion/checkpoint hash mismatch must block production proof"
     );
 }

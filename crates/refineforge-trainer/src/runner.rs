@@ -19,8 +19,8 @@ use std::sync::{Arc, Mutex};
 
 use crate::checkpoint;
 use crate::experiment::{Backend, Experiment};
-use crate::native;
 use crate::progress::parser_for;
+use crate::{native, native_causal};
 
 #[derive(Debug, Clone)]
 pub struct RunPaths {
@@ -57,8 +57,8 @@ pub struct RunOutcome {
 
 /// Build the command line for the given backend by substituting
 /// template tokens. Defaults are provided for `axolotl`, `helyx_train`,
-/// and the in-process `refineforge_native` dry-run label; `custom`
-/// requires the user to provide `command`.
+/// HRM-Text, and the in-process native dry-run labels; `custom`
+/// and `pytorch_baseline` usually provide `command`.
 pub fn build_command(backend: &Backend, paths: &RunPaths, exp: &Experiment) -> Result<Vec<String>> {
     let resume_from = checkpoint::latest(&paths.checkpoint_dir)?
         .map(|c| c.path.display().to_string())
@@ -88,6 +88,9 @@ pub fn build_command(backend: &Backend, paths: &RunPaths, exp: &Experiment) -> R
         ("refineforge_native", None) => {
             "refineforge-native run --dataset {dataset_path} --output {run_dir} --checkpoint-dir {checkpoint_dir}".to_string()
         }
+        ("refineforge_native_causal_lm", None) => {
+            "refineforge-native-causal-lm run --dataset {dataset_path} --output {run_dir} --checkpoint-dir {checkpoint_dir}".to_string()
+        }
         ("helyx_train", None) => {
             let cfg = backend.config_file.as_ref().ok_or_else(|| {
                 anyhow!("backend.kind=helyx_train with no command requires backend.config_file")
@@ -96,6 +99,20 @@ pub fn build_command(backend: &Backend, paths: &RunPaths, exp: &Experiment) -> R
                 "helyx-train run --config {} --dataset {{dataset_path}} --output {{run_dir}} --checkpoint-dir {{checkpoint_dir}}",
                 cfg.display()
             )
+        }
+        ("hrm_text", None) => {
+            let cfg = backend.config_file.as_ref().ok_or_else(|| {
+                anyhow!("backend.kind=hrm_text with no command requires backend.config_file")
+            })?;
+            format!(
+                "torchrun --nproc_per_node=1 pretrain.py --config-name {} data.path={{dataset_path}} +checkpoint_path={{checkpoint_dir}}",
+                cfg.display()
+            )
+        }
+        ("pytorch_baseline", None) => {
+            return Err(anyhow!(
+                "backend.kind=pytorch_baseline with no command requires `backend.command` template"
+            ));
         }
         ("custom", None) => {
             return Err(anyhow!("backend.kind=custom requires command template"));
@@ -147,6 +164,17 @@ pub fn run_once(runs_root: &Path, exp: &Experiment) -> Result<RunOutcome> {
 
     if exp.backend.kind == "refineforge_native" {
         let native_outcome = native::run(&paths, exp)?;
+        if let Some(keep_last) = exp.checkpoint.keep_last {
+            let _ = checkpoint::prune(&paths.checkpoint_dir, keep_last);
+        }
+        return Ok(RunOutcome {
+            exit_status: successful_exit_status(),
+            progress_records: native_outcome.progress_records,
+            paths,
+        });
+    }
+    if exp.backend.kind == "refineforge_native_causal_lm" {
+        let native_outcome = native_causal::run(&paths, exp)?;
         if let Some(keep_last) = exp.checkpoint.keep_last {
             let _ = checkpoint::prune(&paths.checkpoint_dir, keep_last);
         }

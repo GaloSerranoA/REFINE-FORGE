@@ -18,9 +18,12 @@
 
 mod checkpoint;
 mod dataset;
+mod evidence;
 mod experiment;
 mod failure;
 mod native;
+mod native_causal;
+mod pack;
 mod progress;
 mod promotion;
 mod report;
@@ -116,6 +119,20 @@ enum Cmd {
         #[arg(long)]
         require_success: bool,
     },
+    /// Generate production-proof training evidence from a completed run.
+    Evidence {
+        /// Run directory containing report.json.
+        run_dir: PathBuf,
+        /// Output evidence directory.
+        #[arg(long)]
+        out_dir: PathBuf,
+        /// Baseline eval report used for regression deltas.
+        #[arg(long)]
+        baseline_report: PathBuf,
+        /// Model id written to eval and promotion evidence.
+        #[arg(long)]
+        model_id: String,
+    },
     /// List all checkpoints in a run dir.
     Checkpoints { run_dir: PathBuf },
 }
@@ -135,6 +152,43 @@ enum DataCmd {
         /// Optional path for JSON audit output.
         #[arg(long)]
         output: Option<PathBuf>,
+    },
+    /// Pack proof-repair SFT JSONL into deterministic token, mask, and packing artifacts.
+    PackSft {
+        /// Path to proof-repair SFT JSONL.
+        path: PathBuf,
+        /// Output pack directory.
+        #[arg(long)]
+        out: PathBuf,
+        /// Number of deterministic per-epoch shuffle files.
+        #[arg(long, default_value_t = 1)]
+        epochs: usize,
+        /// Shuffle seed.
+        #[arg(long, default_value_t = 0)]
+        seed: u64,
+        /// Maximum packed sequence length.
+        #[arg(long, default_value_t = 2048)]
+        max_seq_len: usize,
+        /// Distributed world size for multipack rank planning.
+        #[arg(long, default_value_t = 1)]
+        world_size: usize,
+        /// Mask prompt/context tokens out of the supervised SFT loss.
+        #[arg(long)]
+        target_only: bool,
+    },
+    /// Convert JSONL or JSONL.zst text rows into a deterministic causal-LM token stream.
+    CausalLmPreprocess {
+        /// Path to JSONL or JSONL.zst rows with a `text` field.
+        path: PathBuf,
+        /// Output token-pack directory.
+        #[arg(long)]
+        out: PathBuf,
+        /// Chunk length for next-token training windows.
+        #[arg(long, default_value_t = 2048)]
+        chunk_len: usize,
+        /// Chunk stride.
+        #[arg(long, default_value_t = 2048)]
+        stride: usize,
     },
 }
 
@@ -170,6 +224,12 @@ fn main() -> Result<()> {
             producer,
             require_success,
         ),
+        Cmd::Evidence {
+            run_dir,
+            out_dir,
+            baseline_report,
+            model_id,
+        } => cmd_evidence(run_dir, out_dir, baseline_report, model_id),
         Cmd::Checkpoints { run_dir } => cmd_checkpoints(&run_dir),
     }
 }
@@ -203,6 +263,56 @@ fn cmd_data(cmd: DataCmd) -> Result<()> {
                 dataset::write_audit_json(&audit, &out)?;
                 println!("  wrote {}", out.display());
             }
+            Ok(())
+        }
+        DataCmd::PackSft {
+            path,
+            out,
+            epochs,
+            seed,
+            max_seq_len,
+            world_size,
+            target_only,
+        } => {
+            let manifest = pack::pack_sft(&pack::PackSftOptions {
+                input: path,
+                out_dir: out.clone(),
+                epochs,
+                seed,
+                max_seq_len,
+                world_size,
+                target_only,
+            })?;
+            println!(
+                "SFT pack OK: rows={} tokens={} target_tokens={} sha256={}",
+                manifest.record_count,
+                manifest.total_tokens,
+                manifest.supervised_target_tokens,
+                manifest.pack_sha256
+            );
+            println!("  wrote {}", out.display());
+            Ok(())
+        }
+        DataCmd::CausalLmPreprocess {
+            path,
+            out,
+            chunk_len,
+            stride,
+        } => {
+            let manifest = pack::causal_lm_preprocess(&pack::CausalPreprocessOptions {
+                input: path,
+                out_dir: out.clone(),
+                chunk_len,
+                stride,
+            })?;
+            println!(
+                "causal-LM preprocess OK: documents={} tokens={} chunks={} sha256={}",
+                manifest["document_count"].as_u64().unwrap_or_default(),
+                manifest["token_count"].as_u64().unwrap_or_default(),
+                manifest["chunk_count"].as_u64().unwrap_or_default(),
+                manifest["output_sha256"].as_str().unwrap_or("")
+            );
+            println!("  wrote {}", out.display());
             Ok(())
         }
     }
@@ -437,6 +547,20 @@ fn cmd_promote(
     }
     println!("  report:     {}/promotion-report.json", report.out_dir);
     Ok(())
+}
+
+fn cmd_evidence(
+    run_dir: PathBuf,
+    out_dir: PathBuf,
+    baseline_report: PathBuf,
+    model_id: String,
+) -> Result<()> {
+    evidence::generate(&evidence::EvidenceOptions {
+        run_dir,
+        out_dir,
+        baseline_report,
+        model_id,
+    })
 }
 
 fn cmd_checkpoints(run_dir: &Path) -> Result<()> {

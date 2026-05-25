@@ -57,6 +57,7 @@
         "regression_report_path",
         "compute_ledger_path",
         "promotion_manifest_path",
+        "conversion_manifest_path",
         "approval_path"
       ],
       "additionalProperties": false,
@@ -66,6 +67,7 @@
         "regression_report_path": { "$ref": "#/$defs/relativePath" },
         "compute_ledger_path": { "$ref": "#/$defs/relativePath" },
         "promotion_manifest_path": { "$ref": "#/$defs/relativePath" },
+        "conversion_manifest_path": { "$ref": "#/$defs/relativePath" },
         "approval_path": { "$ref": "#/$defs/relativePath" }
       }
     },

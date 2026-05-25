@@ -186,12 +186,17 @@ fn dir_size(dir: &Path) -> Result<u64> {
 }
 
 fn dataset_lineage(exp: &Experiment) -> Result<DatasetLineage> {
-    let bytes = std::fs::read(&exp.dataset.path)
-        .with_context(|| format!("reading dataset {}", exp.dataset.path.display()))?;
-    let size_bytes = bytes.len() as u64;
+    let (sha256, size_bytes) = if exp.dataset.path.is_dir() {
+        (dir_sha256(&exp.dataset.path)?, dir_size(&exp.dataset.path)?)
+    } else {
+        let bytes = std::fs::read(&exp.dataset.path)
+            .with_context(|| format!("reading dataset {}", exp.dataset.path.display()))?;
+        let size_bytes = bytes.len() as u64;
+        (hex_sha256(&bytes), size_bytes)
+    };
     Ok(DatasetLineage {
         path: exp.dataset.path.display().to_string(),
-        sha256: hex_sha256(&bytes),
+        sha256,
         size_bytes,
         format: exp.dataset.format.clone(),
     })
@@ -205,6 +210,39 @@ fn hex_sha256(bytes: &[u8]) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+fn dir_sha256(path: &Path) -> Result<String> {
+    let mut files: Vec<std::path::PathBuf> = walkdir::WalkDir::new(path)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.path().to_path_buf())
+        .collect();
+    files.sort_by_key(|file| {
+        file.strip_prefix(path)
+            .unwrap_or(file)
+            .to_string_lossy()
+            .replace('\\', "/")
+    });
+    let mut hasher = Sha256::new();
+    for file in files {
+        let relative = file
+            .strip_prefix(path)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        hasher.update(relative.as_bytes());
+        hasher.update([0]);
+        hasher.update(std::fs::read(&file)?);
+        hasher.update([0xff]);
+    }
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
 fn compute_ledger(exp: &Experiment, attempts: usize) -> ComputeLedger {

@@ -10,6 +10,51 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Changed — Training Agent production-proof evidence gate
+
+- `refine agent train --mode execute --allow-expensive` no longer treats
+  `REFINEFORGE_TRAINING_*` environment variable presence as production
+  evidence. Checkpoint, eval, regression, compute ledger, promotion manifest,
+  and human approval paths must exist, parse where applicable, pass content
+  checks, and be hashable.
+- Added `REFINEFORGE_TRAINING_EVIDENCE_DIR` as a conventional evidence pack
+  directory for Training Agent production proof. Missing files, failed JSON
+  status, incomplete compute/promotion metadata, or AI/placeholder approvals
+  keep the agent at `measured-only`.
+- Promotion manifests must now declare a `checkpoint_sha256` that matches the
+  checkpoint artifact hash; mismatches block Training production proof.
+- Training production proof now also requires a conversion manifest, checkpoint
+  lineage, promotion conversion hash, and non-loss quality metrics. Loss-only
+  or perplexity-only eval reports cannot upgrade the Training agent or central
+  production-proof verifier to `human-reviewed`.
+- Added regressions proving fake evidence paths cannot produce
+  `human-reviewed`, loss-only evals are rejected, checkpoint/conversion hash
+  mismatches are rejected, and a complete evidence directory can pass.
+- Added `docs/training/train-llm-from-scratch-analysis.md`, recording which
+  ideas from the external PyTorch from-scratch LLM repository are useful for
+  Refine-Forge and which parts should not be copied into the trust boundary.
+- Added `docs/training/hrm-text-analysis.md`, capturing HRM-Text ideas that
+  should influence the Training Agent roadmap: PrefixLM target-only masking,
+  deterministic SFT packing, multipack scheduling, checkpoint lineage,
+  benchmark grouping, conversion manifests, and hardware/runtime evidence.
+
+### Added — native training framework evidence flow
+
+- Added `refine-train data pack-sft` for deterministic SFT packs with
+  `tokens.bin`, `loss-mask.bin`, tokenizer hash, per-epoch shuffle files,
+  `packing_report.json`, and `multipack-plan.json`.
+- Added `refine-train data causal-lm-preprocess` for JSONL/JSONL.zst text rows
+  with deterministic causal-LM token/chunk manifests.
+- Added `backend.kind=refineforge_native_causal_lm`, a Rust-native causal
+  smoke backend with deterministic token/position embeddings, causal prefix
+  aggregation, an MLP block, next-token SGD training, held-out/dev metrics,
+  generation smoke output, and checkpoint lineage.
+- Added HRM-Text and PyTorch baseline backend adapters through explicit
+  external `torchrun` command resolution.
+- Added `refine-train evidence <run_dir>` to generate checkpoint conversion,
+  eval, regression, compute ledger, and promotion evidence from a successful
+  training run plus a baseline report.
+
 ### Added — native proof-repair smoke trainer
 
 - Added `backend.kind=refineforge_native` to `refine-train` as an in-process

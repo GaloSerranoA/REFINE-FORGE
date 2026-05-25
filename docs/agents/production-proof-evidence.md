@@ -35,10 +35,18 @@ DevOps:
 Training:
 
 - Real checkpoint artifact.
-- Evaluation report with `status: "passed"`.
-- Regression report with `status: "passed"`.
-- Compute ledger, promotion manifest with rollback data, and training approval
-  file.
+- Evaluation report with `status: "passed"`, non-loss held-out quality
+  metrics, baseline, and candidate references. Loss-only or perplexity-only
+  reports are rejected.
+- Regression report with `status: "passed"`, baseline/candidate references,
+  and metric deltas.
+- Compute ledger with backend, device, and duration/budget data.
+- Conversion manifest with source format, target format, output artifact list,
+  and a checkpoint SHA-256 matching the checkpoint artifact.
+- Promotion manifest with model id, decision/approval, rollback data, lineage
+  hashes, conversion manifest hash, and a checkpoint SHA-256 matching the
+  checkpoint artifact.
+- Training approval file with a named non-AI human operator.
 
 Kernel:
 

@@ -49,6 +49,7 @@ struct TrainingEvidence {
     regression_report_path: String,
     compute_ledger_path: String,
     promotion_manifest_path: String,
+    conversion_manifest_path: String,
     approval_path: String,
 }
 
@@ -425,12 +426,31 @@ fn validate_training(
         "training.eval_report",
         validation,
     );
+    let eval_loss_only = eval.exists
+        && read_json(&eval.path)
+            .as_ref()
+            .is_some_and(eval_report_is_loss_only);
+    let eval_passed = eval.exists
+        && read_json(&eval.path)
+            .as_ref()
+            .is_some_and(eval_report_is_complete);
+    let mut eval_evidence = eval.evidence;
+    if eval_loss_only {
+        eval_evidence.push(
+            "training evaluation report is loss-only; held-out quality metrics are required"
+                .to_string(),
+        );
+    }
     validation.requirement(
         "training.eval_report",
-        "Evaluation report exists and passed",
-        eval.exists && json_status_is(&eval.path, "passed"),
-        eval.evidence,
-        "training evaluation evidence is missing or not passed",
+        "Evaluation report exists, passed, compares baseline/candidate, and includes non-loss held-out quality metrics",
+        eval_passed,
+        eval_evidence,
+        if eval_loss_only {
+            "training evaluation evidence is loss-only"
+        } else {
+            "training evaluation evidence is missing, not passed, or lacks held-out quality metrics"
+        },
     );
 
     let regression = required_file(
@@ -442,9 +462,12 @@ fn validate_training(
     validation.requirement(
         "training.regression_report",
         "Regression comparison exists and passed",
-        regression.exists && json_status_is(&regression.path, "passed"),
+        regression.exists
+            && read_json(&regression.path)
+                .as_ref()
+                .is_some_and(regression_report_is_complete),
         regression.evidence,
-        "training regression evidence is missing or not passed",
+        "training regression evidence is missing, not passed, or lacks metric deltas",
     );
 
     let ledger = required_file(
@@ -455,10 +478,35 @@ fn validate_training(
     );
     validation.requirement(
         "training.compute_ledger",
-        "Compute ledger is present for the live run",
-        ledger.exists,
+        "Compute ledger records backend, device, and duration/budget data for the live run",
+        ledger.exists
+            && read_json(&ledger.path)
+                .as_ref()
+                .is_some_and(compute_ledger_is_complete),
         ledger.evidence,
-        "training compute ledger evidence is missing",
+        "training compute ledger evidence is missing or incomplete",
+    );
+
+    let conversion = required_file(
+        evidence_dir,
+        &training.conversion_manifest_path,
+        "training.conversion_manifest",
+        validation,
+    );
+    let conversion_passed = conversion.exists
+        && read_json(&conversion.path)
+            .as_ref()
+            .is_some_and(conversion_manifest_is_complete)
+        && hashes_match(
+            conversion_checkpoint_sha256(&conversion.path).as_deref(),
+            checkpoint.sha256.as_deref(),
+        );
+    validation.requirement(
+        "training.conversion_manifest",
+        "Conversion manifest records source format, target format, checkpoint hash, and converted artifacts",
+        conversion_passed,
+        conversion.evidence,
+        "training conversion manifest evidence is missing, incomplete, or checkpoint hash mismatches",
     );
 
     let promotion = required_file(
@@ -467,15 +515,24 @@ fn validate_training(
         "training.promotion_manifest",
         validation,
     );
+    let promotion_passed = promotion.exists
+        && read_json(&promotion.path)
+            .as_ref()
+            .is_some_and(promotion_manifest_is_complete)
+        && hashes_match(
+            promotion_checkpoint_sha256(&promotion.path).as_deref(),
+            checkpoint.sha256.as_deref(),
+        )
+        && hashes_match(
+            promotion_conversion_manifest_sha256(&promotion.path).as_deref(),
+            conversion.sha256.as_deref(),
+        );
     validation.requirement(
         "training.promotion_manifest",
-        "Promotion manifest records approval and rollback evidence",
-        promotion.exists
-            && (json_status_is(&promotion.path, "approved")
-                || json_field_is(&promotion.path, "decision", "promote"))
-            && json_has_object(&promotion.path, "rollback"),
+        "Promotion manifest records approval, rollback, lineage, conversion, and matching checkpoint/conversion hashes",
+        promotion_passed,
         promotion.evidence,
-        "training promotion or rollback evidence is missing",
+        "training promotion, rollback, lineage, conversion, or hash evidence is missing",
     );
 
     validate_approval(
@@ -727,6 +784,7 @@ struct FileEvidence {
     exists: bool,
     path: PathBuf,
     evidence: Vec<String>,
+    sha256: Option<String>,
 }
 
 fn required_file(
@@ -740,19 +798,22 @@ fn required_file(
         Ok(path) => {
             validation.add_artifact(&normalized);
             if path.is_file() {
-                let hash = hash_file(&path)
-                    .map(|hash| format!("{normalized} sha256={hash}"))
-                    .unwrap_or_else(|err| format!("{normalized} unreadable: {err}"));
+                let (evidence, sha256) = match hash_file(&path) {
+                    Ok(hash) => (vec![format!("{normalized} sha256={hash}")], Some(hash)),
+                    Err(err) => (vec![format!("{normalized} unreadable: {err}")], None),
+                };
                 FileEvidence {
                     exists: true,
                     path,
-                    evidence: vec![hash],
+                    evidence,
+                    sha256,
                 }
             } else {
                 FileEvidence {
                     exists: false,
                     path,
                     evidence: vec![format!("{label} missing: {normalized}")],
+                    sha256: None,
                 }
             }
         }
@@ -760,6 +821,7 @@ fn required_file(
             exists: false,
             path: evidence_dir.join(&normalized),
             evidence: vec![format!("{label} invalid path {normalized}: {err}")],
+            sha256: None,
         },
     }
 }
@@ -809,17 +871,203 @@ fn json_field_is(path: &Path, field: &str, expected: &str) -> bool {
         .is_some_and(|value| value.eq_ignore_ascii_case(expected))
 }
 
-fn json_has_object(path: &Path, field: &str) -> bool {
-    read_json(path)
-        .and_then(|value| value.get(field).cloned())
-        .is_some_and(|value| value.is_object())
-}
-
 fn json_has_nonempty_array(path: &Path, field: &str) -> bool {
     read_json(path)
         .and_then(|value| value.get(field).cloned())
         .and_then(|value| value.as_array().cloned())
         .is_some_and(|items| !items.is_empty())
+}
+
+fn eval_report_is_complete(value: &Value) -> bool {
+    json_value_status_is(value, "passed")
+        && value.get("metrics").and_then(Value::as_object).is_some()
+        && eval_report_has_quality_metrics(value)
+        && !eval_report_is_loss_only(value)
+        && (object_field_nonempty(value, "baseline")
+            || string_field_nonempty(value, "baseline_report"))
+        && (object_field_nonempty(value, "candidate")
+            || string_field_nonempty(value, "candidate_report"))
+}
+
+fn eval_report_has_quality_metrics(value: &Value) -> bool {
+    metrics_object(value, "quality_metrics")
+        .or_else(|| metrics_object(value, "metrics"))
+        .is_some_and(|metrics| {
+            metrics
+                .iter()
+                .any(|(name, metric)| metric.is_number() && !metric_name_is_loss_only(name))
+        })
+}
+
+fn eval_report_is_loss_only(value: &Value) -> bool {
+    let Some(metrics) =
+        metrics_object(value, "quality_metrics").or_else(|| metrics_object(value, "metrics"))
+    else {
+        return false;
+    };
+    let numeric_metric_names: Vec<&str> = metrics
+        .iter()
+        .filter_map(|(name, metric)| metric.is_number().then_some(name.as_str()))
+        .collect();
+    !numeric_metric_names.is_empty()
+        && numeric_metric_names
+            .iter()
+            .all(|name| metric_name_is_loss_only(name))
+}
+
+fn metrics_object<'a>(value: &'a Value, field: &str) -> Option<&'a serde_json::Map<String, Value>> {
+    value.get(field).and_then(Value::as_object)
+}
+
+fn metric_name_is_loss_only(name: &str) -> bool {
+    let normalized = name.to_ascii_lowercase();
+    normalized.contains("loss")
+        || normalized.contains("perplexity")
+        || normalized == "ppl"
+        || normalized == "nll"
+}
+
+fn regression_report_is_complete(value: &Value) -> bool {
+    json_value_status_is(value, "passed")
+        && (string_field_nonempty(value, "baseline_report")
+            || object_field_nonempty(value, "baseline"))
+        && (string_field_nonempty(value, "candidate_report")
+            || object_field_nonempty(value, "candidate"))
+        && (object_field_nonempty(value, "metric_deltas")
+            || object_field_nonempty(value, "metrics"))
+}
+
+fn compute_ledger_is_complete(value: &Value) -> bool {
+    json_value_status_is(value, "passed")
+        && (string_field_nonempty(value, "backend_kind") || string_field_nonempty(value, "backend"))
+        && (value.get("device").is_some() || value.get("devices").is_some())
+        && (value.get("duration_ms").is_some()
+            || value.get("duration_seconds").is_some()
+            || value.get("gpu_hours").is_some()
+            || value.get("run_budget").is_some())
+}
+
+fn conversion_manifest_is_complete(value: &Value) -> bool {
+    json_value_status_is(value, "passed")
+        && string_field_nonempty(value, "source_format")
+        && string_field_nonempty(value, "target_format")
+        && value
+            .get("checkpoint_sha256")
+            .and_then(Value::as_str)
+            .is_some_and(valid_sha256)
+        && value
+            .get("artifacts")
+            .and_then(Value::as_array)
+            .is_some_and(|artifacts| {
+                !artifacts.is_empty() && artifacts.iter().all(artifact_is_complete)
+            })
+}
+
+fn promotion_manifest_is_complete(value: &Value) -> bool {
+    (json_value_status_is(value, "approved") || json_value_field_is(value, "decision", "promote"))
+        && string_field_nonempty(value, "model_id")
+        && object_field_nonempty(value, "rollback")
+        && value
+            .get("checkpoint_sha256")
+            .and_then(Value::as_str)
+            .is_some_and(valid_sha256)
+        && lineage_is_complete(value.get("lineage"))
+        && conversion_reference_is_complete(value.get("conversion"))
+}
+
+fn lineage_is_complete(value: Option<&Value>) -> bool {
+    let Some(lineage) = value else {
+        return false;
+    };
+    ["config_sha256", "train_metadata_sha256", "tokenizer_sha256"]
+        .iter()
+        .all(|field| {
+            lineage
+                .get(*field)
+                .and_then(Value::as_str)
+                .is_some_and(valid_sha256)
+        })
+        && lineage
+            .get("checkpoint_shards")
+            .and_then(Value::as_array)
+            .is_some_and(|shards| !shards.is_empty() && shards.iter().all(artifact_is_complete))
+        && string_field_nonempty(lineage, "ema_policy")
+        && string_field_nonempty(lineage, "resume_source")
+        && lineage
+            .get("epoch")
+            .is_some_and(|epoch| epoch.is_u64() || epoch.is_i64() || epoch.is_f64())
+}
+
+fn conversion_reference_is_complete(value: Option<&Value>) -> bool {
+    let Some(conversion) = value else {
+        return false;
+    };
+    string_field_nonempty(conversion, "manifest_path")
+        && conversion
+            .get("manifest_sha256")
+            .and_then(Value::as_str)
+            .is_some_and(valid_sha256)
+}
+
+fn artifact_is_complete(value: &Value) -> bool {
+    value
+        .get("path")
+        .and_then(Value::as_str)
+        .is_some_and(|path| !path.trim().is_empty())
+        && value
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_some_and(valid_sha256)
+}
+
+fn promotion_checkpoint_sha256(path: &Path) -> Option<String> {
+    read_json(path)?
+        .get("checkpoint_sha256")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn promotion_conversion_manifest_sha256(path: &Path) -> Option<String> {
+    read_json(path)?
+        .pointer("/conversion/manifest_sha256")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn conversion_checkpoint_sha256(path: &Path) -> Option<String> {
+    read_json(path)?
+        .get("checkpoint_sha256")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn hashes_match(declared: Option<&str>, actual: Option<&str>) -> bool {
+    matches!((declared, actual), (Some(declared), Some(actual)) if declared.eq_ignore_ascii_case(actual))
+}
+
+fn json_value_status_is(value: &Value, expected: &str) -> bool {
+    json_value_field_is(value, "status", expected)
+}
+
+fn json_value_field_is(value: &Value, field: &str, expected: &str) -> bool {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
+}
+
+fn string_field_nonempty(value: &Value, field: &str) -> bool {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .is_some_and(|actual| !actual.trim().is_empty())
+}
+
+fn object_field_nonempty(value: &Value, field: &str) -> bool {
+    value
+        .get(field)
+        .and_then(Value::as_object)
+        .is_some_and(|object| !object.is_empty())
 }
 
 fn text_contains(path: &Path, needle: &str) -> bool {
@@ -837,6 +1085,10 @@ fn valid_digest(digest: &str) -> bool {
         return false;
     };
     hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 fn valid_kernel_hardware_matrix(path: &Path) -> bool {

@@ -1,4 +1,5 @@
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::process::Command;
 
@@ -235,6 +236,122 @@ fn write_kernel_enterprise_stub(dir: &Path) -> std::path::PathBuf {
         std::fs::set_permissions(&path, perms).unwrap();
     }
     path
+}
+
+fn write_json(path: &Path, value: Value) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    std::fs::write(path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+}
+
+fn write_training_approval(path: &Path, operator: &str) {
+    write_json(
+        path,
+        serde_json::json!({
+            "schema_version": "refineforge-human-approval-v1",
+            "human_operator": operator,
+            "role": "training",
+            "decision": "approved",
+            "approved_at": "2026-05-25T00:00:00Z",
+            "evidence_summary": "training production evidence reviewed"
+        }),
+    );
+}
+
+fn write_complete_training_evidence(dir: &Path) {
+    std::fs::create_dir_all(dir.join("training")).unwrap();
+    let checkpoint_bytes = b"checkpoint bytes";
+    std::fs::write(
+        dir.join("training/checkpoint.safetensors"),
+        checkpoint_bytes,
+    )
+    .unwrap();
+    let checkpoint_sha256 = hex_sha256(checkpoint_bytes);
+    write_json(
+        &dir.join("training/eval-report.json"),
+        serde_json::json!({
+            "schema_version": "refineforge-training-eval-report-v1",
+            "status": "passed",
+            "baseline": {"model_id": "baseline-proof-repair"},
+            "candidate": {"model_id": "candidate-proof-repair"},
+            "metrics": {"exact_patch_acceptance": 1.0, "lean_recheck_pass_rate": 1.0}
+        }),
+    );
+    write_json(
+        &dir.join("training/regression-report.json"),
+        serde_json::json!({
+            "schema_version": "refineforge-training-regression-report-v1",
+            "status": "passed",
+            "baseline_report": "baseline-eval-report.json",
+            "candidate_report": "eval-report.json",
+            "metric_deltas": {"exact_patch_acceptance": 0.0, "lean_recheck_pass_rate": 0.0}
+        }),
+    );
+    write_json(
+        &dir.join("training/compute-ledger.json"),
+        serde_json::json!({
+            "schema_version": "refineforge-training-compute-ledger-v1",
+            "status": "passed",
+            "backend_kind": "refineforge_native",
+            "device": "cpu/native",
+            "duration_ms": 123,
+            "run_budget": "local-smoke"
+        }),
+    );
+    write_json(
+        &dir.join("training/conversion-manifest.json"),
+        serde_json::json!({
+            "schema_version": "refineforge-training-conversion-manifest-v1",
+            "status": "passed",
+            "source_format": "refineforge-native",
+            "target_format": "safetensors",
+            "checkpoint_sha256": checkpoint_sha256,
+            "artifacts": [{
+                "path": "training/checkpoint.safetensors",
+                "sha256": checkpoint_sha256
+            }]
+        }),
+    );
+    let conversion_manifest_sha256 =
+        hex_sha256(&std::fs::read(dir.join("training/conversion-manifest.json")).unwrap());
+    write_json(
+        &dir.join("training/promotion-manifest.json"),
+        serde_json::json!({
+            "schema_version": "refineforge-training-promotion-manifest-v1",
+            "status": "approved",
+            "decision": "promote",
+            "model_id": "proof-repair-local-v1",
+            "checkpoint_sha256": checkpoint_sha256,
+            "rollback": {"restore_command": "refine-train promote --rollback proof-repair-local-v1"},
+            "lineage": {
+                "config_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "train_metadata_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "tokenizer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "checkpoint_shards": [{
+                    "path": "training/checkpoint.safetensors",
+                    "sha256": checkpoint_sha256
+                }],
+                "ema_policy": "none",
+                "resume_source": "fresh",
+                "epoch": 1
+            },
+            "conversion": {
+                "manifest_path": "training/conversion-manifest.json",
+                "manifest_sha256": conversion_manifest_sha256
+            }
+        }),
+    );
+    write_training_approval(
+        &dir.join("approvals/training.json"),
+        "Galo Training Operator",
+    );
+}
+
+fn hex_sha256(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
 }
 
 #[test]
@@ -677,6 +794,250 @@ fn agent_train_allow_expensive_still_cannot_claim_model_quality() {
     assert!(
         !run_command.iter().any(|arg| arg == "--dry-run"),
         "--allow-expensive should request live trainer execution while keeping trust measured-only"
+    );
+}
+
+#[test]
+fn agent_train_rejects_fake_production_evidence_env_paths() {
+    let td = tempfile::tempdir().unwrap();
+    let stub = write_stub(td.path(), "refine-train-fake-evidence", true);
+    let out = td.path().join("train-fake-evidence");
+    let missing = td.path().join("missing");
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .env("REFINEFORGE_REFINE_TRAIN_BIN", &stub)
+        .env(
+            "REFINEFORGE_TRAINING_CHECKPOINT",
+            missing.join("checkpoint.safetensors"),
+        )
+        .env(
+            "REFINEFORGE_TRAINING_EVAL_REPORT",
+            missing.join("eval-report.json"),
+        )
+        .env(
+            "REFINEFORGE_TRAINING_REGRESSION_REPORT",
+            missing.join("regression-report.json"),
+        )
+        .env(
+            "REFINEFORGE_TRAINING_COMPUTE_LEDGER",
+            missing.join("compute-ledger.json"),
+        )
+        .env(
+            "REFINEFORGE_TRAINING_PROMOTION_MANIFEST",
+            missing.join("promotion-manifest.json"),
+        )
+        .env(
+            "REFINEFORGE_TRAINING_HUMAN_APPROVAL",
+            missing.join("approval.json"),
+        )
+        .env(
+            "REFINEFORGE_TRAINING_CONVERSION_MANIFEST",
+            missing.join("conversion-manifest.json"),
+        )
+        .args([
+            "--root",
+            ".",
+            "agent",
+            "train",
+            "--mode",
+            "execute",
+            "--target",
+            "helyx",
+            "--allow-expensive",
+            "--out",
+        ])
+        .arg(&out)
+        .arg("--json")
+        .output()
+        .expect("run train fake-evidence execute");
+
+    assert_success(&output);
+    let report = read_json(&out.join("train.json"));
+    assert_eq!(report["status"], "passed");
+    assert_eq!(report["trust_level"], "measured-only");
+    assert_eq!(report["production_proof"]["status"], "blocked");
+    assert!(
+        report["production_proof"]["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b.as_str().unwrap().contains("evaluation evidence")),
+        "missing eval file must block Training production proof"
+    );
+}
+
+#[test]
+fn agent_train_rejects_loss_only_eval_evidence() {
+    let td = tempfile::tempdir().unwrap();
+    let stub = write_stub(td.path(), "refine-train-loss-only", true);
+    let evidence_dir = td.path().join("evidence");
+    write_complete_training_evidence(&evidence_dir);
+    write_json(
+        &evidence_dir.join("training/eval-report.json"),
+        serde_json::json!({
+            "schema_version": "refineforge-training-eval-report-v1",
+            "status": "passed",
+            "baseline": {"model_id": "baseline-proof-repair"},
+            "candidate": {"model_id": "candidate-proof-repair"},
+            "metrics": {"loss": 0.01}
+        }),
+    );
+    let out = td.path().join("train-loss-only");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .env("REFINEFORGE_REFINE_TRAIN_BIN", &stub)
+        .env("REFINEFORGE_TRAINING_EVIDENCE_DIR", &evidence_dir)
+        .args([
+            "--root",
+            ".",
+            "agent",
+            "train",
+            "--mode",
+            "execute",
+            "--target",
+            "helyx",
+            "--allow-expensive",
+            "--out",
+        ])
+        .arg(&out)
+        .arg("--json")
+        .output()
+        .expect("run train loss-only execute");
+
+    assert_success(&output);
+    let report = read_json(&out.join("train.json"));
+    assert_eq!(report["trust_level"], "measured-only");
+    assert_eq!(report["production_proof"]["status"], "blocked");
+    assert!(
+        report["production_proof"]["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b.as_str().unwrap().contains("loss-only")),
+        "loss-only eval evidence must block Training production proof"
+    );
+}
+
+#[test]
+fn agent_train_complete_production_evidence_reaches_human_reviewed() {
+    let td = tempfile::tempdir().unwrap();
+    let stub = write_stub(td.path(), "refine-train-complete-evidence", true);
+    let evidence_dir = td.path().join("evidence");
+    write_complete_training_evidence(&evidence_dir);
+    let out = td.path().join("train-complete-evidence");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .env("REFINEFORGE_REFINE_TRAIN_BIN", &stub)
+        .env("REFINEFORGE_TRAINING_EVIDENCE_DIR", &evidence_dir)
+        .args([
+            "--root",
+            ".",
+            "agent",
+            "train",
+            "--mode",
+            "execute",
+            "--target",
+            "helyx",
+            "--allow-expensive",
+            "--out",
+        ])
+        .arg(&out)
+        .arg("--json")
+        .output()
+        .expect("run train complete-evidence execute");
+
+    assert_success(&output);
+    let report = read_json(&out.join("train.json"));
+    assert_eq!(report["status"], "passed");
+    assert_eq!(report["trust_level"], "human-reviewed");
+    assert_eq!(report["runtime"]["trust_ceiling"], "human-reviewed");
+    assert_eq!(report["production_proof"]["status"], "human-reviewed");
+    assert!(report["production_proof"]["blockers"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(
+        report["runtime"]["evidence_receipts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|receipt| receipt["subject"]
+                .as_str()
+                .unwrap()
+                .contains("training/eval-report.json")),
+        "training eval evidence should be hashed into runtime receipts"
+    );
+}
+
+#[test]
+fn agent_train_rejects_promotion_manifest_with_checkpoint_hash_mismatch() {
+    let td = tempfile::tempdir().unwrap();
+    let stub = write_stub(td.path(), "refine-train-hash-mismatch", true);
+    let evidence_dir = td.path().join("evidence");
+    write_complete_training_evidence(&evidence_dir);
+    write_json(
+        &evidence_dir.join("training/promotion-manifest.json"),
+        serde_json::json!({
+            "schema_version": "refineforge-training-promotion-manifest-v1",
+            "status": "approved",
+            "decision": "promote",
+            "model_id": "proof-repair-local-v1",
+            "checkpoint_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "rollback": {"restore_command": "refine-train promote --rollback proof-repair-local-v1"},
+            "lineage": {
+                "config_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "train_metadata_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "tokenizer_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "checkpoint_shards": [{
+                    "path": "training/checkpoint.safetensors",
+                    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                }],
+                "ema_policy": "none",
+                "resume_source": "fresh",
+                "epoch": 1
+            },
+            "conversion": {
+                "manifest_path": "training/conversion-manifest.json",
+                "manifest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            }
+        }),
+    );
+    let out = td.path().join("train-hash-mismatch");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_refine"))
+        .current_dir(workspace_root())
+        .env("REFINEFORGE_REFINE_TRAIN_BIN", &stub)
+        .env("REFINEFORGE_TRAINING_EVIDENCE_DIR", &evidence_dir)
+        .args([
+            "--root",
+            ".",
+            "agent",
+            "train",
+            "--mode",
+            "execute",
+            "--target",
+            "helyx",
+            "--allow-expensive",
+            "--out",
+        ])
+        .arg(&out)
+        .arg("--json")
+        .output()
+        .expect("run train hash-mismatch execute");
+
+    assert_success(&output);
+    let report = read_json(&out.join("train.json"));
+    assert_eq!(report["trust_level"], "measured-only");
+    assert_eq!(report["production_proof"]["status"], "blocked");
+    assert!(
+        report["production_proof"]["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b.as_str().unwrap().contains("checkpoint hash")),
+        "promotion checkpoint hash mismatch must block Training production proof"
     );
 }
 

@@ -202,16 +202,32 @@ impl Experiment {
             );
         }
         match self.backend.kind.as_str() {
-            "refineforge_native" | "axolotl" | "hf_trainer" | "helyx_train" | "custom" => {}
+            "refineforge_native"
+            | "refineforge_native_causal_lm"
+            | "axolotl"
+            | "hf_trainer"
+            | "helyx_train"
+            | "hrm_text"
+            | "pytorch_baseline"
+            | "custom" => {}
             other => anyhow::bail!(
-                "unknown backend.kind {:?} — supported: refineforge_native, axolotl, hf_trainer, helyx_train, custom",
+                "unknown backend.kind {:?} — supported: refineforge_native, refineforge_native_causal_lm, axolotl, hf_trainer, helyx_train, hrm_text, pytorch_baseline, custom",
                 other
             ),
         }
-        if self.backend.kind == "refineforge_native" && self.backend.command.is_some() {
-            anyhow::bail!("backend.kind=refineforge_native does not accept backend.command");
+        if matches!(
+            self.backend.kind.as_str(),
+            "refineforge_native" | "refineforge_native_causal_lm"
+        ) && self.backend.command.is_some()
+        {
+            anyhow::bail!(
+                "backend.kind={} does not accept backend.command",
+                self.backend.kind
+            );
         }
-        if self.backend.kind == "custom" && self.backend.command.is_none() {
+        if matches!(self.backend.kind.as_str(), "custom" | "pytorch_baseline")
+            && self.backend.command.is_none()
+        {
             anyhow::bail!("backend.kind=custom requires backend.command template");
         }
         Ok(())

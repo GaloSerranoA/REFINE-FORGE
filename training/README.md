@@ -4,10 +4,12 @@ Owned by **Section 2: ML Training Engineer** ([../ARCHITECTURE.md](../ARCHITECTU
 
 > **Status:** The training control plane is shipped
 > (`crates/refineforge-trainer`, binary `refine-train`). Dataset audit,
-> built-in `refineforge_native` proof-repair smoke training,
-> Axolotl/custom/HELYX command resolution, run reports, and local-finetune
-> promotion are implemented. No accepted production proof-repair checkpoint
-> has been produced yet.
+> deterministic SFT packing, causal-LM preprocessing, built-in
+> `refineforge_native` and `refineforge_native_causal_lm` smoke training,
+> Axolotl/custom/HELYX/HRM/PyTorch command resolution, run reports,
+> production-proof evidence generation, and local-finetune promotion are
+> implemented. No accepted production proof-repair checkpoint has been
+> human-approved yet.
 
 ## What lives here
 
@@ -30,23 +32,41 @@ refine-train data audit \
 # 2. Validate the built-in native smoke trainer without spending compute:
 refine-train run training/configs/refineforge-native-proof-repair-smoke.yaml --dry-run
 
-# 3. Run local native smoke training:
+# 3. Pack SFT rows with target-only loss masks:
+refine-train data pack-sft \
+  training/data/mathlib-proof-repair-v1/anthropic-sft.train.jsonl \
+  --out training/runs/mathlib-sft-pack \
+  --target-only \
+  --epochs 1
+
+# 4. Preprocess causal-LM text rows:
+refine-train data causal-lm-preprocess corpus.jsonl \
+  --out training/runs/causal-pack \
+  --chunk-len 2048
+
+# 5. Run local native smoke training:
 refine-train run training/configs/refineforge-native-proof-repair-smoke.yaml
 
-# 4. Validate an external experiment config without running training:
+# 6. Validate an external experiment config without running training:
 refine-train run training/configs/example-qwen-1.5b.yaml --dry-run
 
-# 5. Actually run an external trainer (assumes `axolotl`, `helyx-train`, or your training tool is on PATH):
+# 7. Actually run an external trainer (assumes `axolotl`, `helyx-train`, `torchrun`, or your training tool is on PATH):
 refine-train run training/configs/example-qwen-1.5b.yaml
 
-# 6. Tail progress in another shell:
+# 8. Tail progress in another shell:
 refine-train monitor training/runs/<experiment-id>
 
-# 7. After completion:
+# 9. After completion:
 refine-train report training/runs/<experiment-id>
 cat training/runs/<experiment-id>/report.json
 
-# 8. Promote a successful checkpoint into the local-finetune runtime shape:
+# 10. Generate production-proof evidence from a successful run:
+refine-train evidence training/runs/<experiment-id> \
+  --out-dir production-proof/evidence/<model-id> \
+  --baseline-report training/evals/baseline-eval-report.json \
+  --model-id proof-repair-local-v1
+
+# 11. Promote a successful checkpoint into the local-finetune runtime shape:
 refine-train promote training/runs/<experiment-id> \
   --out-dir training/runs/<experiment-id>/promoted-local-finetune \
   --model-id proof-repair-local-v1 \
@@ -68,6 +88,8 @@ training/runs/<experiment-id>/
 ├── progress.jsonl       # per-step parsed metrics (one JSON object per line)
 ├── failures.jsonl       # one entry per failed attempt + category + recovery action
 ├── report.json          # final report (built by `report` subcommand or at end of `run`)
+├── train-metadata.json   # native causal backend metadata, when available
+├── generation-smoke.json # native causal generation smoke output, when available
 ├── checkpoints/         # native or backend-written checkpoints (step-N or checkpoint-N)
 └── promoted-local-finetune/  # optional `promote` output
     ├── refineforge-local-finetune.json
@@ -106,6 +128,70 @@ refine-train run training/configs/refineforge-native-proof-repair-smoke.yaml
 
 This is real local gradient-based smoke training. It is not an LLM-quality
 checkpoint and does not prove proof-repair model improvement.
+
+## SFT packing, causal preprocessing, and native causal smoke training
+
+`refine-train data pack-sft` converts proof-repair SFT JSONL into a
+self-contained pack:
+
+```text
+<pack-dir>/
+├── tokens.bin
+├── loss-mask.bin
+├── records.json
+├── tokenizer.json
+├── pack-manifest.json
+├── packing_report.json
+├── multipack-plan.json
+└── epoch-000-shuffle.json
+```
+
+Use `--target-only` to mask prompt/context tokens out of the supervised loss.
+`packing_report.json` records total tokens, supervised target tokens, context
+tokens, sequence length, slot utilization, rank balance, and dropped samples.
+
+`refine-train data causal-lm-preprocess` converts JSONL or JSONL.zst rows with
+a `text` field into `tokens.bin`, `chunks.json`, `tokenizer.json`, and
+`causal-lm-manifest.json` for next-token smoke training.
+
+`backend.kind = refineforge_native_causal_lm` consumes SFT packs and trains a
+small Rust-native causal backend with deterministic embeddings, causal prefix
+aggregation, an MLP block, SGD over a real next-token objective, held-out/dev
+loss, target-token accuracy, generation smoke output, and checkpoint lineage.
+It is a production-proof smoke backend, not a production LLM.
+
+## Training Agent production-proof evidence
+
+`refine agent train --mode execute --allow-expensive` remains
+`measured-only` unless the run is paired with validated production evidence.
+The simplest handoff is a self-contained evidence directory:
+
+```text
+<evidence-dir>/
+├── training/
+│   ├── checkpoint.safetensors
+│   ├── eval-report.json
+│   ├── regression-report.json
+│   ├── compute-ledger.json
+│   ├── conversion-manifest.json
+│   └── promotion-manifest.json
+└── approvals/
+    └── training.json
+```
+
+Point the agent at it with:
+
+```bash
+REFINEFORGE_TRAINING_EVIDENCE_DIR=<evidence-dir> \
+refine agent train --mode execute --allow-expensive --out agent-reports/train-reviewed
+```
+
+The agent verifies file existence, hashes the artifacts, checks passed eval and
+regression JSON, rejects loss-only evaluation, requires compute ledger
+backend/device/duration data, requires conversion evidence with checkpoint hash
+matching, requires promotion rollback plus lineage and conversion hashes, and
+rejects AI or placeholder human approval identities. Missing or malformed
+evidence keeps the Training agent at `measured-only`.
 
 ## Smoke-testing external orchestration WITHOUT a real backend
 

@@ -13,7 +13,7 @@ discipline split (Lean Specialist / ML Engineer / DevOps / CUDA Engineer) read
 |---:|---|---|---|
 | 1 | Lean 4 / verification | `lean/`, `claims/`, `crates/refineforge-cli`, `refine agent lean`, templates, bundle artifacts | Lean proves the model; refinement docs and claim linting carry the human-reviewed Rust link |
 | 2 | Release / infrastructure / DevOps | `.github/workflows/ci.yml`, `release/`, `containers/Dockerfile.verifier`, `refine agent devops`, SBOM/provenance evidence | Local release-readiness works; Docker/signature gates require `--allow-expensive` or hosted CI; real hosted OIDC signing still requires a remote CI run |
-| 3 | ML / training engine | `crates/refineforge-trainer`, `training/`, `refine agent train`, local-finetune bridge in `refineforge-strategies` | Refine-Forge now runs native proof-repair smoke training and evidence gates; HELYX/Axolotl/custom remain production-scale trainer backends |
+| 3 | ML / training engine | `crates/refineforge-trainer`, `training/`, `refine agent train`, local-finetune bridge in `refineforge-strategies` | Refine-Forge now runs native proof-repair smoke training and validates production evidence; HELYX/Axolotl/custom remain production-scale trainer backends |
 | 4 | GPU / kernel Rust | `crates/refineforge-bitexact`, `kernels/`, `refine agent kernel`, `docs/bit-exact-reproducibility.md` | `helyx-kernels` owns actual kernels; Refine-Forge owns deterministic gate evidence, input manifests, and expected-output baselines |
 
 ## Top-level layout
@@ -291,22 +291,35 @@ The Windows-compatible HELYX smoke fixture lives at
 
 ### `crates/refineforge-trainer/` — training control plane (Section 2)
 
-Binary `refine-train`. Runs the built-in `refineforge_native`
-proof-repair smoke trainer or wraps external training backends
-(HELYX `helyx-train`, axolotl, HuggingFace Trainer, custom script)
-with dataset audit, run tracking, checkpoint resume, retry-with-backoff
-failure recovery, JSON training reports, and local-finetune promotion.
-The native backend performs a small deterministic gradient-based smoke
-training loop; it is not production LLM training evidence by itself.
+Binary `refine-train`. Runs deterministic data audit, SFT packing,
+causal-LM preprocessing, the built-in `refineforge_native` proof-repair smoke
+trainer, the built-in `refineforge_native_causal_lm` causal smoke trainer, or
+wraps external training backends (HELYX `helyx-train`, HRM-Text/PyTorch
+baseline through `torchrun`, axolotl, HuggingFace Trainer, custom script) with
+run tracking, checkpoint resume, retry-with-backoff failure recovery, JSON
+training reports, production-proof evidence generation, and local-finetune
+promotion. The native backends perform small deterministic gradient-based
+smoke training loops; they are not production LLM training evidence by
+themselves.
+`refine agent train` validates `REFINEFORGE_TRAINING_EVIDENCE_DIR` or
+individual training evidence paths before any `human-reviewed` trust upgrade:
+checkpoint, eval report, regression report, compute ledger, conversion
+manifest, promotion lineage, and non-AI human approval must all exist and pass
+content checks.
 
-Subcommands: `data audit <jsonl>`, `run <exp.yaml>` (+ `--dry-run`),
+Subcommands: `data audit <jsonl>`, `data pack-sft <jsonl>`,
+`data causal-lm-preprocess <jsonl>`, `run <exp.yaml>` (+ `--dry-run`),
 `sweep <sweep.yaml>` (cartesian or random:N), `monitor <run_dir>` (tail
 `progress.jsonl`), `report <run_dir>` (build/refresh `report.json`),
-`promote <run_dir>` (write `refineforge-local-finetune.json` +
+`evidence <run_dir>` (write eval/regression/ledger/conversion/promotion
+evidence), `promote <run_dir>` (write `refineforge-local-finetune.json` +
 `promotion-report.json`), `checkpoints <run_dir>` (list).
 
 Modules: `dataset` (proof-repair SFT JSONL audit + SHA-256),
+`pack` (deterministic SFT packs, target-only loss masks, causal-LM packs),
 `native` (in-process deterministic proof-repair smoke trainer),
+`native_causal` (Rust-native causal smoke trainer),
+`evidence` (training production-proof evidence generation),
 `experiment` (YAML schema), `runner` (native dispatch or subprocess +
 log capture + per-line progress parsing), `progress` (HF / axolotl / generic parsers),
 `checkpoint` (find latest / prune old), `sweep` (cartesian +
@@ -550,6 +563,8 @@ the bundle exporter once had is documented in `CHANGELOG.md`).
 | `release/ci-audit-report.md` | DevOps (Section 3) | CI/release audit report template and current local blocker record |
 | `agents/README.md` | operator, AI agents | CLI-first HELYX specialist agents and the rule that JSON reports are the source of truth |
 | `agents/*-agent.md` | operator, AI agents | Role prompts for Lean, DevOps, training, and kernel agents, including forbidden claims |
+| `training/hrm-text-analysis.md` | ML engineer (Section 2) | HRM-Text analysis: PrefixLM/SFT packing, FSDP2, checkpoint lineage, eval/conversion ideas, and trust boundary |
+| `training/train-llm-from-scratch-analysis.md` | ML engineer (Section 2) | External PyTorch from-scratch LLM repo analysis; useful ideas and non-portable gaps |
 | `llm-repair-design.md` | ML engineer (Section 2) | Architecture of the repair loop + four-step swap-in recipe for a real LLM strategy |
 | `repair-evaluation.md` | ML engineer (Section 2) | Benchmark methodology, mutation taxonomy, training/eval separation rules |
 | `security.md` | DevOps (Section 3) | Threat model, supply chain, reviewer-side signature verification, first-CI-signing boundary, vuln reporting |
