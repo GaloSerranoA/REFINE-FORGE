@@ -18,7 +18,8 @@ CLI surface is declared stable.
 - Added `refine approval draft|approve`, a role-agnostic human approval
   workflow for Training, Kernel, and Lean evidence packs. It infers roles from
   review-request JSON, verifies role-aware policy evidence, writes only
-  `approvals/<role>.draft.json` during draft, and requires
+  `approvals/<role>.draft.json` with the draft-only schema
+  `refineforge-human-approval-draft-v1` during draft, and requires
   `--i-reviewed-this-evidence` before final approval.
 - Added `approval-policy.example.yaml` for shared role-aware approval policy.
 - Added `production-proof/evidence/kernel-local-cuda-2026-05-25/` with CPU

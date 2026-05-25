@@ -1,11 +1,14 @@
 {
-  "approved_at": "2026-05-25T14:34:11.392183200+00:00",
   "candidate_id": "helyx.hvector_add.cuda_v1",
-  "decision": "approved",
+  "decision": "draft-ready",
+  "draft_operator": "Galo Kernel Operator",
+  "drafted_at": "2026-05-25T14:43:05.139795700+00:00",
   "evidence_dir": ".\\production-proof/evidence/kernel-local-cuda-2026-05-25",
-  "evidence_summary": "kernel production-proof evidence reviewed for helyx.hvector_add.cuda_v1",
-  "human_operator": "Galo Kernel Operator",
+  "evidence_summary": "kernel production-proof evidence validated for human review for helyx.hvector_add.cuda_v1",
+  "final_approval_path": ".\\production-proof/evidence/kernel-local-cuda-2026-05-25\\approvals\\kernel.json",
+  "final_approval_schema": "refineforge-human-approval-v1",
   "kernel_id": "helyx.hvector_add.cuda_v1",
+  "not_approval": true,
   "policy_path": ".\\approval-policy.example.yaml",
   "required_evidence": [
     "kernels/src/hvector_add.cu",
@@ -18,5 +21,6 @@
   ],
   "review_request_path": ".\\production-proof/evidence/kernel-local-cuda-2026-05-25/approvals/kernel.review-request.json",
   "role": "kernel",
-  "schema_version": "refineforge-human-approval-v1"
+  "schema_version": "refineforge-human-approval-draft-v1",
+  "trust_boundary": "draft-only; does not create final approval"
 }

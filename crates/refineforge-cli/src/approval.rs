@@ -9,6 +9,7 @@ use std::path::{Component, Path, PathBuf};
 
 const POLICY_SCHEMA: &str = "refineforge-approval-policy-v1";
 const REVIEW_REQUEST_SCHEMA: &str = "refineforge-human-review-request-v1";
+const HUMAN_APPROVAL_DRAFT_SCHEMA: &str = "refineforge-human-approval-draft-v1";
 const HUMAN_APPROVAL_SCHEMA: &str = "refineforge-human-approval-v1";
 const DEFAULT_POLICY: &str = "approval-policy.yaml";
 
@@ -289,15 +290,16 @@ fn write_approval_artifacts(
             .with_context(|| format!("could not create approval directory {}", parent.display()))?;
     }
     let now = Utc::now().to_rfc3339();
-    let approval = approval_json(ctx, &now);
     if final_approval {
+        let approval = approval_json(ctx, &now);
         write_json(&ctx.final_path, &approval)?;
         write_json(
             &ctx.review_request_path,
             &review_request_json(ctx, &now, "approved", Some(&ctx.final_path))?,
         )?;
     } else {
-        write_json(&ctx.draft_path, &approval)?;
+        let draft = approval_draft_json(ctx, &now);
+        write_json(&ctx.draft_path, &draft)?;
         write_json(
             &ctx.review_request_path,
             &review_request_json(ctx, &now, "draft-ready", None)?,
@@ -322,6 +324,50 @@ fn write_approval_artifacts(
     });
     print_summary(&summary, emit_json);
     Ok(())
+}
+
+fn approval_draft_json(ctx: &ApprovalContext, drafted_at: &str) -> Value {
+    let mut value = json!({
+        "schema_version": HUMAN_APPROVAL_DRAFT_SCHEMA,
+        "draft_operator": ctx.operator,
+        "role": ctx.role.as_str(),
+        "decision": "draft-ready",
+        "drafted_at": drafted_at,
+        "candidate_id": ctx.candidate_id,
+        "required_evidence": ctx.required_evidence,
+        "evidence_dir": display_path(&ctx.evidence_dir),
+        "policy_path": display_path(&ctx.policy_path),
+        "review_request_path": display_path(&ctx.review_request_path),
+        "final_approval_schema": HUMAN_APPROVAL_SCHEMA,
+        "final_approval_path": display_path(&ctx.final_path),
+        "not_approval": true,
+        "trust_boundary": "draft-only; does not create final approval",
+        "evidence_summary": format!(
+            "{} production-proof evidence validated for human review for {}",
+            ctx.role.as_str(),
+            ctx.candidate_id
+        )
+    });
+    match ctx.role {
+        ApprovalRole::Training => {
+            value["candidate_model_id"] = json!(ctx.candidate_id);
+            value["metric_deltas"] = json!(ctx.metric_deltas);
+            value["required_metric_minimums"] = json!(ctx.required_metrics);
+            if let Some(sha) = &ctx.checkpoint_sha256 {
+                value["checkpoint_sha256"] = json!(sha);
+            }
+            if let Some(sha) = &ctx.conversion_manifest_sha256 {
+                value["conversion_manifest_sha256"] = json!(sha);
+            }
+        }
+        ApprovalRole::Kernel => {
+            value["kernel_id"] = json!(ctx.candidate_id);
+        }
+        ApprovalRole::Lean => {
+            value["claim_id"] = json!(ctx.candidate_id);
+        }
+    }
+    value
 }
 
 fn approval_json(ctx: &ApprovalContext, approved_at: &str) -> Value {

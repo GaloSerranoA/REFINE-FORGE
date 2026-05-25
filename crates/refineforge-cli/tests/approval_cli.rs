@@ -336,8 +336,15 @@ fn approval_kernel_draft_infers_role_from_review_request_without_final_approval(
     assert!(evidence_dir.join("approvals/kernel.draft.json").exists());
     assert!(!evidence_dir.join("approvals/kernel.json").exists());
     let draft = read_json(&evidence_dir.join("approvals/kernel.draft.json"));
+    assert_eq!(
+        draft["schema_version"],
+        "refineforge-human-approval-draft-v1"
+    );
     assert_eq!(draft["role"], "kernel");
-    assert_eq!(draft["human_operator"], "Galo Kernel Operator");
+    assert_eq!(draft["decision"], "draft-ready");
+    assert_eq!(draft["draft_operator"], "Galo Kernel Operator");
+    assert!(draft.get("approved_at").is_none());
+    assert!(draft.get("human_operator").is_none());
     let request = read_json(&request);
     assert_eq!(request["status"], "draft-ready");
 }

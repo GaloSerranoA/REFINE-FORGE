@@ -260,8 +260,14 @@ fn training_approval_draft_writes_draft_but_not_final_approval() {
     assert!(!approvals.join("training.json").exists());
 
     let draft = read_json(&approvals.join("training.draft.json"));
-    assert_eq!(draft["decision"], "approved");
-    assert_eq!(draft["human_operator"], "Galo Training Operator");
+    assert_eq!(
+        draft["schema_version"],
+        "refineforge-human-approval-draft-v1"
+    );
+    assert_eq!(draft["decision"], "draft-ready");
+    assert_eq!(draft["draft_operator"], "Galo Training Operator");
+    assert!(draft.get("approved_at").is_none());
+    assert!(draft.get("human_operator").is_none());
     let request = read_json(&approvals.join("training.review-request.json"));
     assert_eq!(request["status"], "pending-human-review");
     assert_eq!(

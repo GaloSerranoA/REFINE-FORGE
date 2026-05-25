@@ -8,6 +8,7 @@ use std::path::{Component, Path, PathBuf};
 
 const POLICY_SCHEMA: &str = "refineforge-training-approval-policy-v1";
 const REVIEW_REQUEST_SCHEMA: &str = "refineforge-training-review-request-v1";
+const HUMAN_APPROVAL_DRAFT_SCHEMA: &str = "refineforge-human-approval-draft-v1";
 const HUMAN_APPROVAL_SCHEMA: &str = "refineforge-human-approval-v1";
 const DEFAULT_POLICY: &str = "training/approval-policy.yaml";
 const DEFAULT_AGENT_REPORT: &str = "train-agent-report.stdout.json";
@@ -97,7 +98,7 @@ pub fn draft(root: &Path, opts: DraftOptions) -> Result<()> {
     let request_path = approvals_dir.join("training.review-request.json");
     let final_path = approvals_dir.join("training.json");
 
-    let approval = approval_json(&ctx, &now, Some(&request_path));
+    let approval = approval_draft_json(&ctx, &now, &request_path, &final_path);
     let request = review_request_json(&ctx, &now, &draft_path, &final_path);
 
     write_json(&draft_path, &approval)?;
@@ -438,6 +439,39 @@ fn metric_deltas(regression: &Value) -> Result<BTreeMap<String, f64>> {
         parsed.insert(metric.clone(), delta);
     }
     Ok(parsed)
+}
+
+fn approval_draft_json(
+    ctx: &ApprovalContext,
+    drafted_at: &str,
+    request_path: &Path,
+    final_path: &Path,
+) -> Value {
+    json!({
+        "schema_version": HUMAN_APPROVAL_DRAFT_SCHEMA,
+        "draft_operator": ctx.operator,
+        "role": "training",
+        "decision": "draft-ready",
+        "drafted_at": drafted_at,
+        "candidate_model_id": ctx.candidate_model_id,
+        "checkpoint_sha256": ctx.checkpoint_sha256,
+        "conversion_manifest_sha256": ctx.conversion_manifest_sha256,
+        "metric_deltas": ctx.metric_deltas,
+        "required_metric_minimums": ctx.required_metrics,
+        "required_evidence": ctx.required_evidence,
+        "evidence_dir": display_path(&ctx.evidence_dir),
+        "agent_report_path": display_path(&ctx.agent_report_path),
+        "policy_path": display_path(&ctx.policy_path),
+        "review_request_path": display_path(request_path),
+        "final_approval_schema": HUMAN_APPROVAL_SCHEMA,
+        "final_approval_path": display_path(final_path),
+        "not_approval": true,
+        "trust_boundary": "draft-only; does not create final approval",
+        "evidence_summary": format!(
+            "Training production-proof evidence validated for human review for candidate model {}",
+            ctx.candidate_model_id
+        )
+    })
 }
 
 fn approval_json(ctx: &ApprovalContext, approved_at: &str, request_path: Option<&Path>) -> Value {

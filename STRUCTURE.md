@@ -308,10 +308,12 @@ manifest, promotion lineage, and non-AI human approval must all exist and pass
 content checks.
 `refine approval draft` and `refine approval approve` automate the shared
 review request and approval JSON flow for Training, Kernel, and Lean evidence
-packs. The draft command writes only staged artifacts; the approve command
-reruns policy/evidence validation and requires `--i-reviewed-this-evidence`
-before writing `approvals/<role>.json`. `refine training-approval` remains as
-the compatibility path for older training-only workflows.
+packs. The draft command writes only staged artifacts with
+`schema_version: refineforge-human-approval-draft-v1` and `not_approval: true`;
+the approve command reruns policy/evidence validation and requires
+`--i-reviewed-this-evidence` before writing `approvals/<role>.json`.
+`refine training-approval` remains as the compatibility path for older
+training-only workflows.
 
 Subcommands: `data audit <jsonl>`, `data pack-sft <jsonl>`,
 `data causal-lm-preprocess <jsonl>`, `run <exp.yaml>` (+ `--dry-run`),

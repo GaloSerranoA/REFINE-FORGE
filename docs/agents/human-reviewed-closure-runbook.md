@@ -4,6 +4,29 @@ This runbook explains how the four Refine-Forge agents reach
 `human-reviewed` without inflating trust. A local passing agent report is not
 enough; each role needs real evidence and a named human approval file.
 
+## Shared Approval Pattern
+
+Training, Kernel, and Lean use one review flow:
+
+1. `refine approval draft` validates the role evidence and writes
+   `approvals/<role>.draft.json`.
+2. The draft has schema `refineforge-human-approval-draft-v1`, decision
+   `draft-ready`, and `not_approval: true`.
+3. `refine approval approve --i-reviewed-this-evidence` reruns validation and
+   writes `approvals/<role>.json` with schema
+   `refineforge-human-approval-v1`.
+
+| Field | Training | Kernel | Lean |
+|---|---|---|---|
+| Role value | `training` | `kernel` | `lean` |
+| Candidate id | `candidate_model_id` / promotion `model_id` | `candidate.kernel_id` or HELYX handoff `kernel_id` | `candidate.claim_id` |
+| Review request | `approvals/training.review-request.json` | `approvals/kernel.review-request.json` | `approvals/lean.review-request.json` |
+| Draft output | `approvals/training.draft.json` | `approvals/kernel.draft.json` | `approvals/lean.draft.json` |
+| Final approval | `approvals/training.json` | `approvals/kernel.json` | `approvals/lean.json` |
+| Required evidence | checkpoint, eval, regression, compute ledger, conversion, promotion, train agent report | CUDA source, reference output, bit-exact report, hardware matrix, compiler metadata, performance baseline, HELYX handoff | refinement doc, Rust symbol scan, Lean proof report, exported bundle hashes |
+| Extra policy checks | metric deltas and smoke-run policy | passed CUDA/hardware/performance/handoff evidence | candidate `claim_file`, `refinement_doc`, and `bundle_path` exist |
+| Trust boundary | approval can unlock Training Agent `human-reviewed` only after all production-proof gates pass | approval can unlock Kernel Agent `human-reviewed` only after real CUDA evidence passes | approval can unlock Lean Agent `human-reviewed` only when claim scope and implementation link already support it |
+
 ## 1. DevOps / Release
 
 Prerequisites:
