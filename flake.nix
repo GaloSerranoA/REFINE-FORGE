@@ -59,12 +59,20 @@
               # Keep cargo sources (crane needs them)
               (craneLib.filterCargoSources path type)
               # AND keep lean/, claims/, templates/, docs/refinement/
-              # for the bundle derivations.
+              # for the bundle derivations. The repo-level support
+              # paths are used by Cargo integration tests that run
+              # inside the Nix source tree.
               || (pkgs.lib.hasPrefix "lean/" relPath
                   && !(pkgs.lib.hasPrefix "lean/.lake" relPath))
               || (pkgs.lib.hasPrefix "claims/" relPath)
               || (pkgs.lib.hasPrefix "templates/" relPath)
-              || (pkgs.lib.hasPrefix "docs/refinement/" relPath);
+              || (pkgs.lib.hasPrefix "docs/refinement/" relPath)
+              || (pkgs.lib.hasPrefix ".github/workflows/" relPath)
+              || (pkgs.lib.hasPrefix "scripts/ci/" relPath)
+              || (pkgs.lib.hasPrefix "release/" relPath)
+              || (pkgs.lib.hasPrefix "kernels/" relPath)
+              || (pkgs.lib.hasPrefix "training/" relPath)
+              || (pkgs.lib.elem relPath [ ".gitignore" "flake.nix" ]);
         };
 
         # Cargo dep artifacts cached separately so source-only changes

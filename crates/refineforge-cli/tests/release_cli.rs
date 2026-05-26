@@ -259,6 +259,30 @@ fn nix_flake_source_includes_cargo_lock() {
 }
 
 #[test]
+fn nix_flake_source_includes_cargo_test_support_files() {
+    let flake = std::fs::read_to_string(workspace_root().join("flake.nix")).unwrap();
+
+    for prefix in [
+        ".github/workflows/",
+        "scripts/ci/",
+        "release/",
+        "kernels/",
+        "training/",
+    ] {
+        assert!(
+            flake.contains(prefix),
+            "Nix cargoTest source filter must keep {prefix} for integration tests"
+        );
+    }
+    for file in [".gitignore", "flake.nix"] {
+        assert!(
+            flake.contains(file),
+            "Nix cargoTest source filter must keep root file {file}"
+        );
+    }
+}
+
+#[test]
 fn nix_flake_does_not_duplicate_cargo_locked_arg() {
     let flake = std::fs::read_to_string(workspace_root().join("flake.nix")).unwrap();
 
@@ -289,7 +313,23 @@ fn ci_workflow_publishes_verifier_container_failure_tail() {
     let workflow =
         std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();
 
+    assert!(workflow.contains("verifier-container-build.log"));
     assert!(workflow.contains("verifier-container-smoke.log"));
     assert!(workflow
         .contains("::error file=containers/Dockerfile.verifier,title=verifier container smoke"));
+}
+
+#[test]
+fn verifier_container_builder_tracks_dependency_msrv() {
+    let dockerfile =
+        std::fs::read_to_string(workspace_root().join("containers/Dockerfile.verifier")).unwrap();
+
+    assert!(
+        dockerfile.contains("FROM rust:1.87-bookworm AS builder"),
+        "verifier container must use a Rust builder new enough for locked dependencies"
+    );
+    assert!(
+        !dockerfile.contains("rust:1.83-bookworm"),
+        "Rust 1.83 cannot build the current locked dependency graph"
+    );
 }

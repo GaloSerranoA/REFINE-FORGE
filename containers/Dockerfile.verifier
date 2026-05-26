@@ -14,9 +14,8 @@
 # specific claim — bind-mount the bundle directory at runtime.
 
 # ─── Stage 1: build refine from source ──────────────────────────────────
-# Pinned rust toolchain via rust-toolchain.toml (TODO: add one — for
-# now we pin the base image tag).
-FROM rust:1.83-bookworm AS builder
+# Pinned to the current locked dependency graph MSRV.
+FROM rust:1.87-bookworm AS builder
 
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
