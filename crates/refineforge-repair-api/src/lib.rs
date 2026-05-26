@@ -8,6 +8,8 @@
 //! This trait surface is one of the two stable cross-section
 //! interfaces (the other is the bundle manifest schema).
 
+pub mod proof_graph;
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 

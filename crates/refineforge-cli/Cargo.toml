@@ -36,5 +36,12 @@ refineforge-strategies  = { path = "../refineforge-strategies" }
 # without per-step human approval).
 refineforge-escalation  = { path = "../refineforge-escalation" }
 
+[features]
+# Enables integration tests that spawn `lake env lean --server`.
+# Disabled by default so CI without a Lean toolchain stays green.
+# Operators with `lake` on PATH run: `cargo test -p refineforge-cli
+# --features lean-integration --test lsp_e2e`.
+lean-integration = []
+
 [dev-dependencies]
 tempfile                = "3"

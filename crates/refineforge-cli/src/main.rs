@@ -114,6 +114,19 @@ enum Cmd {
         /// Don't write changes to disk
         #[arg(long)]
         dry_run: bool,
+        /// Override the strategy's built-in prompt with one of the
+        /// templates from the prompt-template library. Currently
+        /// honoured by `--strategy anthropic`/`anthropic-mock`; other
+        /// strategies ignore it. Must reference a template whose
+        /// `expected_output_format` is `patch_json` (the existing
+        /// patch parser requires it).
+        #[arg(long)]
+        prompt_template: Option<String>,
+        /// Path to the prompt-template library JSON. Defaults to
+        /// `training/prompt_templates/lean_proof_repair_v1.json`
+        /// relative to the project root.
+        #[arg(long)]
+        prompt_template_library: Option<PathBuf>,
     },
     /// MVP autonomous driver: plans + executes a baseline
     /// workflow against the claim, escalating per the
@@ -772,6 +785,8 @@ fn main() -> Result<()> {
             strategy,
             weights_path,
             dry_run,
+            prompt_template,
+            prompt_template_library,
         } => repair::run_cli(
             &cli.root,
             &claim_id,
@@ -779,6 +794,8 @@ fn main() -> Result<()> {
             &strategy,
             weights_path.as_deref(),
             dry_run,
+            prompt_template.as_deref(),
+            prompt_template_library.as_deref(),
         ),
         Cmd::Autonomous {
             claim_id,

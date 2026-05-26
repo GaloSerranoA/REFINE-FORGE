@@ -40,7 +40,8 @@ pub use anthropic::{
     AnthropicTransport, MockTransport, UsageStats,
 };
 pub use local_finetune::{
-    local_finetune_from_path, local_finetune_from_path_with_usage, LocalFinetuneStrategy,
+    local_finetune_from_path, local_finetune_from_path_with_usage,
+    local_finetune_typed_with_template, LocalFinetuneStrategy,
 };
 pub use reqwest_transport::ReqwestTransport;
 

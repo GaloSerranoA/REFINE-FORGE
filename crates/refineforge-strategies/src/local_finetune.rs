@@ -26,6 +26,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 
+use refineforge_repair_api::proof_graph::{
+    self, LeanTextHeuristicExtractor, PromptTemplate, ProofGraphExtractor,
+};
 use refineforge_repair_api::{Diagnostic, Patch, Position, Range, RepairStrategy};
 
 use crate::{anthropic::UsageStats, StrategyWithUsage};
@@ -46,6 +49,23 @@ struct ModelRequest<'a> {
     model_id: Option<&'a str>,
     diagnostic: &'a Diagnostic,
     file_content: &'a str,
+    /// When the operator selected a prompt template, the strategy
+    /// renders it against a ProofState and ships the rendered text
+    /// here. Runtime commands that understand the field use it
+    /// directly; older runtimes that don't can ignore it and fall
+    /// back to constructing their own prompt from `diagnostic` +
+    /// `file_content`. Always serialized (even when `None`) so
+    /// runtime adapters can branch on `prompt === null`.
+    #[serde(default)]
+    prompt: Option<&'a str>,
+    /// The template's expected output format, if any. Lets a runtime
+    /// know whether to emit a Patch JSON object or a single Lean
+    /// tactic. Same null-safe contract as `prompt`.
+    #[serde(default)]
+    expected_output_format: Option<&'a str>,
+    /// Stable id of the chosen template for audit logging.
+    #[serde(default)]
+    template_id: Option<&'a str>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -143,17 +163,42 @@ impl CommandRuntime {
         })
     }
 
-    fn infer(&self, diagnostic: &Diagnostic, file_content: &str) -> Result<ModelOutput> {
+    fn infer(
+        &self,
+        diagnostic: &Diagnostic,
+        file_content: &str,
+        proof_template: Option<&PromptTemplate>,
+    ) -> Result<ModelOutput> {
         let (program, args) = self
             .command
             .split_first()
             .ok_or_else(|| anyhow!("local-finetune command is empty"))?;
 
+        // Render the chosen template against a heuristic ProofState
+        // when set. On render failure (e.g., template needs hypotheses
+        // the heuristic can't supply) the rendered prompt is omitted
+        // and the runtime falls back to its native prompt path.
+        let rendered = proof_template.and_then(|t| {
+            let state = LeanTextHeuristicExtractor::default()
+                .extract(file_content, diagnostic)
+                .ok()?;
+            proof_graph::render(t, &state).ok()
+        });
+        let weights_path_str = self.weights_path.display().to_string();
+        let format_str = proof_template.map(|t| match t.expected_output_format {
+            proof_graph::OutputFormat::PatchJson => "patch_json",
+            proof_graph::OutputFormat::SingleTactic => "single_tactic",
+            proof_graph::OutputFormat::FreeForm => "free_form",
+            proof_graph::OutputFormat::VerifierVerdict => "verifier_verdict",
+        });
         let request = ModelRequest {
-            weights_path: &self.weights_path.display().to_string(),
+            weights_path: &weights_path_str,
             model_id: self.model_id.as_deref(),
             diagnostic,
             file_content,
+            prompt: rendered.as_deref(),
+            expected_output_format: format_str,
+            template_id: proof_template.map(|t| t.id.as_str()),
         };
         let request_json = serde_json::to_vec(&request)?;
 
@@ -196,6 +241,10 @@ impl CommandRuntime {
 pub struct LocalFinetuneStrategy {
     runtime: CommandRuntime,
     usage_stats: Arc<Mutex<UsageStats>>,
+    /// Optional prompt template — renders against a heuristic
+    /// ProofState and ships the result in `ModelRequest.prompt`.
+    /// Default `None` preserves the old runtime-contract behaviour.
+    proof_template: Option<PromptTemplate>,
 }
 
 impl LocalFinetuneStrategy {
@@ -203,13 +252,30 @@ impl LocalFinetuneStrategy {
         Self {
             runtime,
             usage_stats,
+            proof_template: None,
         }
+    }
+
+    /// Configure the strategy to ship a rendered prompt (via
+    /// `proof_graph::render`) alongside the diagnostic on every
+    /// inference. Compatible with any
+    /// [`OutputFormat`](refineforge_repair_api::proof_graph::OutputFormat):
+    /// the runtime command receives the format and emits the
+    /// appropriate output shape (Patch JSON or single tactic — the
+    /// single-tactic case is converted to a Patch by a future
+    /// `SingleTacticPatchAdapter` in this crate; today the runtime
+    /// must emit Patch JSON itself).
+    pub fn with_proof_template(mut self, template: PromptTemplate) -> Self {
+        self.proof_template = Some(template);
+        self
     }
 }
 
 impl RepairStrategy for LocalFinetuneStrategy {
     fn propose_patch(&self, diagnostic: &Diagnostic, file_content: &str) -> Result<Option<Patch>> {
-        let output = self.runtime.infer(diagnostic, file_content)?;
+        let output = self
+            .runtime
+            .infer(diagnostic, file_content, self.proof_template.as_ref())?;
         if let Ok(mut stats) = self.usage_stats.lock() {
             stats.calls += 1;
             if let Some(u) = &output.usage {
@@ -239,6 +305,19 @@ pub fn local_finetune_from_path_with_usage(path: impl AsRef<Path>) -> Result<Str
     let usage = Arc::new(Mutex::new(UsageStats::default()));
     let strategy = LocalFinetuneStrategy::new(runtime, usage.clone());
     Ok((Box::new(strategy), usage))
+}
+
+/// Typed constructor that returns a concrete [`LocalFinetuneStrategy`]
+/// with `proof_template` already applied. The CLI uses this when
+/// `--prompt-template` is set so the builder method is reachable; for
+/// trait-object construction, prefer [`local_finetune_from_path`].
+pub fn local_finetune_typed_with_template(
+    path: impl AsRef<Path>,
+    template: PromptTemplate,
+) -> Result<LocalFinetuneStrategy> {
+    let runtime = CommandRuntime::from_weights_path(path.as_ref())?;
+    let usage = Arc::new(Mutex::new(UsageStats::default()));
+    Ok(LocalFinetuneStrategy::new(runtime, usage).with_proof_template(template))
 }
 
 fn parse_model_output(stdout: &str) -> Result<ModelOutput> {

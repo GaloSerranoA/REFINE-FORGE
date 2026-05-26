@@ -8,6 +8,7 @@ mod experiment;
 mod hash;
 mod lint;
 mod manifest;
+mod mentor;
 mod report;
 mod run_all;
 mod runner;
@@ -71,6 +72,28 @@ enum Cmd {
         #[arg(long)]
         summary_json: Option<PathBuf>,
     },
+    /// Render a CUDA / GPU-kernel mentor prompt for an LLM strategy.
+    ///
+    /// Emits a `(system_prompt, user_prompt)` pair instructing any LLM to
+    /// teach the requested topic using simple language, daily-life analogies,
+    /// code snippets, and a fixed end-of-topic outro. Does NOT call any LLM —
+    /// the operator pipes the rendered prompt into their chosen strategy.
+    Mentor {
+        /// Topic to teach. Matched case-insensitively against canonical
+        /// topic names and aliases. Example: `--topic "shared memory"`.
+        #[arg(long)]
+        topic: Option<String>,
+        /// List the full curriculum (sections + topics + reference books)
+        /// and exit.
+        #[arg(long)]
+        list: bool,
+        /// Print only the system prompt and exit (useful for caching).
+        #[arg(long)]
+        system_only: bool,
+        /// Optional path to write the rendered prompt pair as JSON.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -96,6 +119,12 @@ fn main() -> Result<()> {
             include_examples,
             summary_json.as_deref(),
         ),
+        Cmd::Mentor {
+            topic,
+            list,
+            system_only,
+            output,
+        } => cmd_mentor(topic.as_deref(), list, system_only, output.as_deref()),
     }
 }
 
@@ -196,6 +225,52 @@ fn cmd_lint(exp_path: &Path, json: bool, output: Option<&Path>) -> Result<()> {
         lint::LintStatus::Pass => Ok(()),
         lint::LintStatus::Fail => Err(anyhow::anyhow!("bit-exact lint FAILED")),
     }
+}
+
+fn cmd_mentor(
+    topic: Option<&str>,
+    list: bool,
+    system_only: bool,
+    output: Option<&Path>,
+) -> Result<()> {
+    let curriculum = mentor::default_curriculum();
+
+    if list {
+        let listing = mentor::format_curriculum_listing(&curriculum);
+        if let Some(path) = output {
+            std::fs::write(path, &listing)
+                .with_context(|| format!("writing mentor listing to {}", path.display()))?;
+        }
+        print!("{listing}");
+        return Ok(());
+    }
+
+    if system_only {
+        let rules = mentor::default_teaching_rules();
+        let sys = mentor::build_system_prompt(&rules);
+        if let Some(path) = output {
+            std::fs::write(path, &sys)
+                .with_context(|| format!("writing mentor system prompt to {}", path.display()))?;
+        }
+        println!("{sys}");
+        return Ok(());
+    }
+
+    let topic = topic.ok_or_else(|| {
+        anyhow::anyhow!(
+            "mentor: must pass --topic <name>, --list, or --system-only. \
+             Run `refine-bitexact mentor --list` to see the curriculum."
+        )
+    })?;
+    let prompt =
+        mentor::build_topic_prompt(&curriculum, topic).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let json = serde_json::to_string_pretty(&prompt)?;
+    if let Some(path) = output {
+        std::fs::write(path, &json)
+            .with_context(|| format!("writing mentor prompt to {}", path.display()))?;
+    }
+    println!("{json}");
+    Ok(())
 }
 
 fn cmd_run_all(

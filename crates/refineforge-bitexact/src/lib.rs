@@ -16,6 +16,7 @@ pub mod experiment;
 pub mod hash;
 pub mod lint;
 pub mod manifest;
+pub mod mentor;
 pub mod report;
 pub mod run_all;
 pub mod runner;

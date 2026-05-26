@@ -27,6 +27,9 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use refineforge_repair_api::proof_graph::{
+    self, LeanTextHeuristicExtractor, OutputFormat, PromptTemplate, ProofGraphExtractor,
+};
 use refineforge_repair_api::{Diagnostic, Patch, Position, Range, RepairStrategy};
 
 // ─── Transport ──────────────────────────────────────────────────────────
@@ -206,6 +209,14 @@ pub struct AnthropicStrategy<T: AnthropicTransport> {
     /// so the executor can read it after the boxed strategy has
     /// been moved into `repair::repair`.
     usage_stats: std::sync::Arc<std::sync::Mutex<UsageStats>>,
+    /// Optional prompt template to use instead of the hardcoded
+    /// system + diagnostic prompt. When set, the strategy runs the
+    /// configured extractor to build a `ProofState` and renders the
+    /// template against it. Only templates whose
+    /// `expected_output_format` is `PatchJson` are compatible with
+    /// the existing patch parser; selecting any other format raises
+    /// at runtime. Default: `None` (preserves old behaviour).
+    proof_template: Option<PromptTemplate>,
 }
 
 impl<T: AnthropicTransport> AnthropicStrategy<T> {
@@ -236,6 +247,7 @@ impl<T: AnthropicTransport> AnthropicStrategy<T> {
             enable_caching: true,
             transport,
             usage_stats,
+            proof_template: None,
         }
     }
 
@@ -255,6 +267,36 @@ impl<T: AnthropicTransport> AnthropicStrategy<T> {
         self
     }
 
+    /// Configure the strategy to build its user prompt by rendering
+    /// `template` against a `ProofState` extracted by
+    /// `LeanTextHeuristicExtractor` (no LSP needed).
+    ///
+    /// Supported output formats:
+    ///   - `PatchJson` — the existing JSON-patch parser handles the
+    ///     reply directly.
+    ///   - `SingleTactic` — the reply is a single Lean tactic; the
+    ///     strategy applies
+    ///     [`refineforge_repair_api::proof_graph::single_tactic_to_patch`]
+    ///     to convert it into a Patch anchored at the diagnostic range.
+    ///   - `FreeForm` / `VerifierVerdict` — currently rejected at
+    ///     construction time (no parser path exists for these shapes
+    ///     yet in this strategy).
+    pub fn with_proof_template(mut self, template: PromptTemplate) -> Result<Self> {
+        match template.expected_output_format {
+            OutputFormat::PatchJson | OutputFormat::SingleTactic => {
+                self.proof_template = Some(template);
+                Ok(self)
+            }
+            other => {
+                anyhow::bail!(
+                    "AnthropicStrategy does not yet handle {other:?} templates (template id '{}'); \
+                     supported formats are patch_json and single_tactic.",
+                    template.id,
+                );
+            }
+        }
+    }
+
     pub(crate) fn build_request(&self, d: &Diagnostic, file: &str) -> MessagesRequest {
         let cache = if self.enable_caching {
             Some(CacheControl {
@@ -264,28 +306,53 @@ impl<T: AnthropicTransport> AnthropicStrategy<T> {
             None
         };
         // System prompt is stable across iterations — cache it.
+        // When a proof_template overrides the user-block construction,
+        // we still keep the same Lean/no-sorry system block so the
+        // policy invariants survive any template-side rewording.
+        let system_text = self
+            .proof_template
+            .as_ref()
+            .and_then(|t| t.system_prompt.clone())
+            .unwrap_or_else(|| SYSTEM_PROMPT.to_string());
         let system = vec![SystemBlock {
             kind: "text".into(),
-            text: SYSTEM_PROMPT.to_string(),
+            text: system_text,
             cache_control: cache.clone(),
         }];
         // File content is stable across iterations within a repair
-        // session — cache it. Diagnostic is the only per-request
-        // payload.
+        // session — cache it. Diagnostic (and proof-graph rendering)
+        // are the only per-request payload.
         let file_block = UserBlock {
             kind: "text".into(),
             text: format!("FILE (lean):\n```lean\n{}\n```", file),
             cache_control: cache,
         };
+        let diag_text = if let Some(template) = &self.proof_template {
+            // Heuristic extractor is the no-LSP baseline; future
+            // wiring may swap in an LSP-backed extractor.
+            let state = LeanTextHeuristicExtractor::default()
+                .extract(file, d)
+                .unwrap_or_else(|_| {
+                    // Fall back to anchor-only state on extractor
+                    // failure so the request still goes out.
+                    proof_graph::ProofState {
+                        current_goal: None,
+                        hypotheses: Vec::new(),
+                        tactic_history: Vec::new(),
+                        diagnostic_anchor: d.into(),
+                        lemma_neighborhood: Default::default(),
+                    }
+                });
+            match proof_graph::render(template, &state) {
+                Ok(rendered) => rendered,
+                Err(_) => fallback_diagnostic_text(d),
+            }
+        } else {
+            fallback_diagnostic_text(d)
+        };
         let diag_block = UserBlock {
             kind: "text".into(),
-            text: format!(
-                "DIAGNOSTIC:\n  severity: {:?}\n  range (0-indexed, LSP convention): line {}, col {} -- line {}, col {}\n  message: {}\n\nPropose ONE minimal patch as a single JSON object with keys: start_line, start_char, end_line, end_char (ALL 0-indexed, LSP convention — the FIRST line of the file is line 0), new_text, rationale.\n\nPatch semantics: the substring of the file from start_line:start_char up to (but not including) end_line:end_char is replaced by new_text. To insert without deleting, set end == start. The patch is applied verbatim — extra context in new_text will be duplicated.\n\nDo NOT use sorry/admit/axiom — the policy gate will reject those. Respond with ONLY the JSON object, no prose, no markdown fences.",
-                d.severity,
-                d.range.start.line, d.range.start.character,
-                d.range.end.line, d.range.end.character,
-                d.message,
-            ),
+            text: diag_text,
             cache_control: None,
         };
         MessagesRequest {
@@ -300,6 +367,16 @@ impl<T: AnthropicTransport> AnthropicStrategy<T> {
     }
 }
 
+fn fallback_diagnostic_text(d: &Diagnostic) -> String {
+    format!(
+        "DIAGNOSTIC:\n  severity: {:?}\n  range (0-indexed, LSP convention): line {}, col {} -- line {}, col {}\n  message: {}\n\nPropose ONE minimal patch as a single JSON object with keys: start_line, start_char, end_line, end_char (ALL 0-indexed, LSP convention — the FIRST line of the file is line 0), new_text, rationale.\n\nPatch semantics: the substring of the file from start_line:start_char up to (but not including) end_line:end_char is replaced by new_text. To insert without deleting, set end == start. The patch is applied verbatim — extra context in new_text will be duplicated.\n\nDo NOT use sorry/admit/axiom — the policy gate will reject those. Respond with ONLY the JSON object, no prose, no markdown fences.",
+        d.severity,
+        d.range.start.line, d.range.start.character,
+        d.range.end.line, d.range.end.character,
+        d.message,
+    )
+}
+
 impl<T: AnthropicTransport> RepairStrategy for AnthropicStrategy<T> {
     fn propose_patch(&self, diagnostic: &Diagnostic, file_content: &str) -> Result<Option<Patch>> {
         let request = self.build_request(diagnostic, file_content);
@@ -310,12 +387,39 @@ impl<T: AnthropicTransport> RepairStrategy for AnthropicStrategy<T> {
             }
             stats.record_stop_reason(response.stop_reason.clone());
         }
-        Ok(parse_response_into_patch(&response))
+        // Branch on the template's expected output format. Without a
+        // template the historical patch_json parser runs (unchanged
+        // behaviour). With `single_tactic`, the reply text is fed
+        // through the SingleTacticPatchAdapter.
+        let patch = match self
+            .proof_template
+            .as_ref()
+            .map(|t| t.expected_output_format)
+        {
+            Some(OutputFormat::SingleTactic) => response_text(&response).and_then(|text| {
+                let trimmed = text.trim();
+                if trimmed.is_empty() || trimmed == "{}" {
+                    None
+                } else {
+                    Some(proof_graph::single_tactic_to_patch(
+                        trimmed,
+                        diagnostic,
+                        file_content,
+                    ))
+                }
+            }),
+            _ => parse_response_into_patch(&response),
+        };
+        Ok(patch)
     }
 
     fn name(&self) -> &'static str {
         "anthropic"
     }
+}
+
+fn response_text(response: &MessagesResponse) -> Option<String> {
+    response.content.iter().find_map(|block| block.text.clone())
 }
 
 const SYSTEM_PROMPT: &str = "You are an expert Lean 4 proof engineer assisting refineforge's bounded repair loop. \
@@ -586,6 +690,139 @@ mod tests {
             "one call → one stop_reason entry"
         );
         assert_eq!(stats.stop_reasons[0].as_deref(), Some("end_turn"));
+    }
+
+    #[test]
+    fn with_proof_template_accepts_single_tactic_and_patch_json() {
+        let single = PromptTemplate {
+            id: "goal_focused".into(),
+            variant_name: "Goal-focused".into(),
+            requires: Default::default(),
+            user_template: "Goal: {goal}".into(),
+            system_prompt: None,
+            expected_output_format: OutputFormat::SingleTactic,
+        };
+        let s = AnthropicStrategy::new("k".into(), "claude-opus-4-7", MockTransport::declines());
+        assert!(s.with_proof_template(single).is_ok());
+        let pj = PromptTemplate {
+            id: "fix_proof_direct".into(),
+            variant_name: "Direct".into(),
+            requires: Default::default(),
+            user_template: "...".into(),
+            system_prompt: None,
+            expected_output_format: OutputFormat::PatchJson,
+        };
+        let s = AnthropicStrategy::new("k".into(), "claude-opus-4-7", MockTransport::declines());
+        assert!(s.with_proof_template(pj).is_ok());
+    }
+
+    #[test]
+    fn with_proof_template_rejects_free_form_format() {
+        let t = PromptTemplate {
+            id: "free".into(),
+            variant_name: "Free".into(),
+            requires: Default::default(),
+            user_template: "".into(),
+            system_prompt: None,
+            expected_output_format: OutputFormat::FreeForm,
+        };
+        let s = AnthropicStrategy::new(
+            "fake-key".into(),
+            "claude-opus-4-7",
+            MockTransport::declines(),
+        );
+        let err = s
+            .with_proof_template(t)
+            .err()
+            .expect("should reject free_form");
+        assert!(err.to_string().contains("FreeForm"));
+    }
+
+    #[test]
+    fn propose_patch_via_single_tactic_template_converts_to_patch() {
+        // Mock transport returns a bare tactic; the strategy must use
+        // the SingleTacticPatchAdapter to turn it into a Patch.
+        let t = PromptTemplate {
+            id: "goal_focused".into(),
+            variant_name: "Goal-focused".into(),
+            requires: Default::default(),
+            user_template: "Goal: {goal}".into(),
+            system_prompt: None,
+            expected_output_format: OutputFormat::SingleTactic,
+        };
+        let s = AnthropicStrategy::new(
+            "k".into(),
+            "claude-opus-4-7",
+            MockTransport::returns("exact h2"),
+        )
+        .with_proof_template(t)
+        .unwrap();
+        let d = Diagnostic {
+            range: Range {
+                start: Position {
+                    line: 2,
+                    character: 2,
+                },
+                end: Position {
+                    line: 2,
+                    character: 7,
+                },
+            },
+            severity: refineforge_repair_api::Severity::Error,
+            message: "unsolved".into(),
+            source: None,
+        };
+        let patch = s
+            .propose_patch(&d, "theorem t : P := by\n  intro h\n  sorry\n")
+            .unwrap()
+            .expect("adapter should produce a Patch");
+        assert_eq!(patch.new_text, "exact h2");
+        assert_eq!(patch.range.start.line, 2);
+        assert_eq!(patch.range.end.character, 7);
+    }
+
+    #[test]
+    fn with_proof_template_replaces_diag_block_text() {
+        let t = PromptTemplate {
+            id: "fix_proof_direct".into(),
+            variant_name: "Direct".into(),
+            requires: Default::default(),
+            user_template:
+                "TEMPLATED_PROMPT_MARKER line={diagnostic_line} severity={diagnostic_severity}"
+                    .into(),
+            system_prompt: None,
+            expected_output_format: OutputFormat::PatchJson,
+        };
+        let s = AnthropicStrategy::new(
+            "fake-key".into(),
+            "claude-opus-4-7",
+            MockTransport::declines(),
+        )
+        .with_proof_template(t)
+        .unwrap();
+        let d = Diagnostic {
+            range: Range {
+                start: Position {
+                    line: 7,
+                    character: 2,
+                },
+                end: Position {
+                    line: 7,
+                    character: 10,
+                },
+            },
+            severity: refineforge_repair_api::Severity::Error,
+            message: "unsolved".into(),
+            source: None,
+        };
+        let req = s.build_request(&d, "theorem t : True := by trivial");
+        let diag_block_text = &req.messages[0].content[1].text;
+        assert!(
+            diag_block_text.contains("TEMPLATED_PROMPT_MARKER"),
+            "templated prompt should appear in diag block; got: {diag_block_text}"
+        );
+        assert!(diag_block_text.contains("line=7"));
+        assert!(diag_block_text.contains("severity=error"));
     }
 
     #[test]

@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "templates": [
+    {
+      "id": "fix_proof_direct",
+      "variant_name": "Direct fix (no graph context)",
+      "requires": {
+        "needs_goal": false,
+        "needs_hypotheses": false,
+        "needs_tactic_history": false,
+        "needs_lemma_neighborhood": false
+      },
+      "user_template": "You are repairing a Lean 4 proof.\n\nA {diagnostic_severity} was reported at line {diagnostic_line}:\n{diagnostic_message}\n\nReturn a JSON object describing a single replacement patch: {{\"range\": {{\"start\": {{\"line\": ..., \"character\": ...}}, \"end\": {{\"line\": ..., \"character\": ...}}}}, \"new_text\": \"...\", \"rationale\": \"...\"}}.",
+      "system_prompt": null,
+      "expected_output_format": "patch_json"
+    },
+    {
+      "id": "goal_focused",
+      "variant_name": "Goal-focused tactic selection",
+      "requires": {
+        "needs_goal": true,
+        "needs_hypotheses": false,
+        "needs_tactic_history": false,
+        "needs_lemma_neighborhood": false
+      },
+      "user_template": "You are repairing a Lean 4 proof.\n\nCurrent goal:\n  ⊢ {goal}\n\nDiagnostic at line {diagnostic_line} ({diagnostic_severity}):\n  {diagnostic_message}\n\nReply with exactly one Lean tactic on a single line.",
+      "system_prompt": null,
+      "expected_output_format": "single_tactic"
+    },
+    {
+      "id": "goal_with_hypotheses",
+      "variant_name": "Goal + hypotheses",
+      "requires": {
+        "needs_goal": true,
+        "needs_hypotheses": true,
+        "needs_tactic_history": false,
+        "needs_lemma_neighborhood": false
+      },
+      "user_template": "You are repairing a Lean 4 proof.\n\nHypotheses in scope:\n{hypotheses}\n\nCurrent goal:\n  ⊢ {goal}\n\nDiagnostic at line {diagnostic_line} ({diagnostic_severity}):\n  {diagnostic_message}\n\nReply with exactly one Lean tactic on a single line. Prefer tactics that consume the listed hypotheses.",
+      "system_prompt": null,
+      "expected_output_format": "single_tactic"
+    },
+    {
+      "id": "history_aware",
+      "variant_name": "Goal + hypotheses + tactic history",
+      "requires": {
+        "needs_goal": true,
+        "needs_hypotheses": true,
+        "needs_tactic_history": true,
+        "needs_lemma_neighborhood": false
+      },
+      "user_template": "You are repairing a Lean 4 proof.\n\nHypotheses in scope:\n{hypotheses}\n\nTactics tried so far (most recent last):\n{tactic_history}\n\nCurrent goal:\n  ⊢ {goal}\n\nDiagnostic at line {diagnostic_line} ({diagnostic_severity}):\n  {diagnostic_message}\n\nReply with exactly one Lean tactic on a single line. Do not repeat any tactic from the history that left the goal unchanged.",
+      "system_prompt": null,
+      "expected_output_format": "single_tactic"
+    },
+    {
+      "id": "graph_aware",
+      "variant_name": "Goal + hypotheses + history + lemma neighborhood (InstructGLM-style)",
+      "requires": {
+        "needs_goal": true,
+        "needs_hypotheses": true,
+        "needs_tactic_history": true,
+        "needs_lemma_neighborhood": true
+      },
+      "user_template": "You are repairing a Lean 4 proof. You have access to a curated neighborhood of related Mathlib lemmas.\n\nHypotheses in scope:\n{hypotheses}\n\nTactics tried so far (most recent last):\n{tactic_history}\n\nRelated lemmas (sorted by graph distance from the goal):\n{lemmas}\n\nCurrent goal:\n  ⊢ {goal}\n\nDiagnostic at line {diagnostic_line} ({diagnostic_severity}):\n  {diagnostic_message}\n\nReply with exactly one Lean tactic on a single line. Prefer tactics that invoke one of the listed lemmas when applicable; otherwise prefer tactics that consume the listed hypotheses.",
+      "system_prompt": null,
+      "expected_output_format": "single_tactic"
+    }
+  ]
+}

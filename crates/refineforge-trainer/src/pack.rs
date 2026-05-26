@@ -17,6 +17,18 @@ pub struct PackSftOptions {
     pub max_seq_len: usize,
     pub world_size: usize,
     pub target_only: bool,
+    /// Optional path to a prompt-template library
+    /// (`training/prompt_templates/lean_proof_repair_v1.json` by
+    /// convention). When set, the packer emits a
+    /// `template_attribution.json` sidecar alongside the pack manifest:
+    /// one entry per `(row_id, epoch)` recording which template the
+    /// sampler picked. The pack manifest's
+    /// `template_attribution_path` is populated when this is set.
+    /// The sampler assumes every row's extractor populated all four
+    /// graph fields (goal, hypotheses, tactic_history,
+    /// lemma_neighborhood). Rows whose extraction was weaker may
+    /// later override via per-row metadata; not yet schema-wired.
+    pub template_library: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +78,11 @@ pub struct PackManifest {
     pub tokens_path: String,
     pub loss_mask_path: String,
     pub packing_report_path: String,
+    /// Relative path (within `out_dir`) of the template-attribution
+    /// sidecar produced when [`PackSftOptions::template_library`] is
+    /// set. `None` for runs that did not request templated sampling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_attribution_path: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -252,9 +269,67 @@ pub fn pack_sft(opts: &PackSftOptions) -> Result<PackManifest> {
         tokens_path: "tokens.bin".to_string(),
         loss_mask_path: "loss-mask.bin".to_string(),
         packing_report_path: "packing_report.json".to_string(),
+        template_attribution_path: None,
+    };
+    let manifest = if let Some(lib_path) = opts.template_library.as_ref() {
+        let plan = emit_template_attribution_sidecar(
+            lib_path,
+            &records,
+            opts.epochs as u32,
+            opts.seed,
+            &opts.out_dir.join("template_attribution.json"),
+        )?;
+        let mut m = manifest;
+        m.template_attribution_path = Some("template_attribution.json".to_string());
+        // Track the count so downstream consumers can sanity-check
+        // expected vs emitted; the actual entries live in the
+        // sidecar to keep the manifest compact.
+        let _ = plan;
+        m
+    } else {
+        manifest
     };
     write_json_pretty(&opts.out_dir.join("pack-manifest.json"), &manifest)?;
     Ok(manifest)
+}
+
+fn emit_template_attribution_sidecar(
+    library_path: &Path,
+    records: &[PackedRecord],
+    epochs: u32,
+    seed: u64,
+    sidecar_path: &Path,
+) -> Result<Vec<crate::template_sampler::PlanEntry>> {
+    let library = crate::template_sampler::load_library_from_path(library_path)
+        .with_context(|| format!("loading template library {}", library_path.display()))?;
+    // Deduplicate row IDs (the same row may be repeated across epochs
+    // in the input). `build_plan` itself iterates row * epoch, so we
+    // feed it one entry per distinct id.
+    let mut seen = std::collections::BTreeSet::<String>::new();
+    let mut row_inputs = Vec::with_capacity(records.len());
+    for r in records {
+        if seen.insert(r.id.clone()) {
+            row_inputs.push((
+                r.id.clone(),
+                crate::template_sampler::AvailableState::all_present(),
+            ));
+        }
+    }
+    let plan = crate::template_sampler::build_plan(&library, &row_inputs, epochs, seed);
+    let dist = crate::template_sampler::template_distribution(&plan);
+    let sidecar = serde_json::json!({
+        "schema_version": "refineforge-template-attribution-v1",
+        "library_path": library_path.display().to_string(),
+        "seed": seed,
+        "epochs": epochs,
+        "row_count": row_inputs.len(),
+        "plan": plan,
+        "distribution": dist,
+    });
+    let pretty = serde_json::to_string_pretty(&sidecar)?;
+    std::fs::write(sidecar_path, pretty)
+        .with_context(|| format!("writing {}", sidecar_path.display()))?;
+    Ok(plan)
 }
 
 pub fn causal_lm_preprocess(opts: &CausalPreprocessOptions) -> Result<Value> {
@@ -607,4 +682,112 @@ fn hash_pack_outputs(root: &Path, relative_paths: &[&str]) -> Result<String> {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect())
+}
+
+#[cfg(test)]
+mod template_attribution_tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn pack_sft_emits_template_attribution_sidecar_when_library_set() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input = tmp.path().join("input.jsonl");
+        let out_dir = tmp.path().join("out");
+        let library = tmp.path().join("lib.json");
+
+        // Minimal SFT row schema accepted by parse_sft_rows: prompt
+        // string + response JSON containing patch.new_text.
+        let resp = "{\"patch\":{\"new_text\":\"rfl\",\"rationale\":\"r\"}}";
+        let rows = format!(
+            "{{\"id\":\"row-a\",\"split\":\"train\",\"prompt\":\"p1\",\"response\":{r}}}\n\
+             {{\"id\":\"row-b\",\"split\":\"train\",\"prompt\":\"p2\",\"response\":{r}}}\n\
+             {{\"id\":\"row-c\",\"split\":\"train\",\"prompt\":\"p3\",\"response\":{r}}}\n",
+            r = serde_json::Value::String(resp.to_string()),
+        );
+        fs::write(&input, rows).unwrap();
+
+        // Two templates so the sampler can vary across rows + epochs.
+        let library_json = r#"{
+            "schema_version": 1,
+            "templates": [
+                {
+                    "id": "fix_proof_direct",
+                    "variant_name": "Direct",
+                    "requires": {},
+                    "user_template": "fix me",
+                    "expected_output_format": "patch_json"
+                },
+                {
+                    "id": "goal_focused",
+                    "variant_name": "Goal-focused",
+                    "requires": {"needs_goal": true},
+                    "user_template": "goal: {goal}",
+                    "expected_output_format": "single_tactic"
+                }
+            ]
+        }"#;
+        fs::write(&library, library_json).unwrap();
+
+        let opts = PackSftOptions {
+            input: input.clone(),
+            out_dir: out_dir.clone(),
+            epochs: 2,
+            seed: 7,
+            max_seq_len: 32,
+            world_size: 1,
+            target_only: false,
+            template_library: Some(library.clone()),
+        };
+        let manifest = pack_sft(&opts).expect("pack_sft should succeed");
+        assert_eq!(
+            manifest.template_attribution_path.as_deref(),
+            Some("template_attribution.json"),
+            "manifest should reference the sidecar"
+        );
+
+        let sidecar_path = out_dir.join("template_attribution.json");
+        assert!(sidecar_path.exists(), "sidecar file should exist");
+        let sidecar: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&sidecar_path).unwrap()).unwrap();
+        assert_eq!(
+            sidecar["schema_version"],
+            "refineforge-template-attribution-v1"
+        );
+        assert_eq!(sidecar["seed"], 7);
+        assert_eq!(sidecar["epochs"], 2);
+        assert_eq!(sidecar["row_count"], 3);
+        // 3 rows × 2 epochs = 6 plan entries.
+        let plan = sidecar["plan"].as_array().expect("plan should be array");
+        assert_eq!(plan.len(), 6);
+        // Distribution must reference at least one of the two templates.
+        let dist = sidecar["distribution"].as_object().expect("distribution");
+        assert!(!dist.is_empty(), "distribution must be non-empty");
+    }
+
+    #[test]
+    fn pack_sft_omits_sidecar_when_library_not_set() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input = tmp.path().join("input.jsonl");
+        let out_dir = tmp.path().join("out");
+        let resp = "{\"patch\":{\"new_text\":\"rfl\",\"rationale\":\"r\"}}";
+        let row = format!(
+            "{{\"id\":\"x\",\"split\":\"train\",\"prompt\":\"p\",\"response\":{r}}}\n",
+            r = serde_json::Value::String(resp.to_string()),
+        );
+        fs::write(&input, row).unwrap();
+        let opts = PackSftOptions {
+            input,
+            out_dir: out_dir.clone(),
+            epochs: 1,
+            seed: 0,
+            max_seq_len: 16,
+            world_size: 1,
+            target_only: false,
+            template_library: None,
+        };
+        let manifest = pack_sft(&opts).expect("pack_sft should succeed");
+        assert!(manifest.template_attribution_path.is_none());
+        assert!(!out_dir.join("template_attribution.json").exists());
+    }
 }

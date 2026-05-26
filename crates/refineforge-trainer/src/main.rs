@@ -22,6 +22,7 @@ mod evidence;
 mod experiment;
 mod failure;
 mod hrm_text_runtime;
+mod mentor;
 mod native;
 mod native_causal;
 mod pack;
@@ -30,6 +31,7 @@ mod promotion;
 mod report;
 mod runner;
 mod sweep;
+mod template_sampler;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -141,6 +143,26 @@ enum Cmd {
     },
     /// List all checkpoints in a run dir.
     Checkpoints { run_dir: PathBuf },
+    /// AI/ML training engineer mentor mode: emit a system + user
+    /// prompt that instructs any LLM strategy to teach an LLM
+    /// engineering topic step-by-step in simple language, with the
+    /// canonical end-of-topic outro (summary, mental model, beginner
+    /// mistakes, small exercise).
+    Mentor {
+        /// Topic to teach (canonical name or any registered alias,
+        /// case-insensitive). Required unless `--list` is set.
+        topic: Option<String>,
+        /// List all curriculum sections + topics and exit.
+        #[arg(long)]
+        list: bool,
+        /// Emit only the system prompt (for prompt-caching workflows).
+        #[arg(long)]
+        system_only: bool,
+        /// Write the rendered prompt as JSON to this path instead of
+        /// stdout. Ignored when `--list` is set.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -215,6 +237,13 @@ enum DataCmd {
         /// Mask prompt/context tokens out of the supervised SFT loss.
         #[arg(long)]
         target_only: bool,
+        /// Optional path to a prompt-template library JSON. When set,
+        /// the packer emits a `template_attribution.json` sidecar
+        /// recording which template the sampler assigned to each
+        /// (row, epoch). Same library shape as the one consumed by
+        /// `refine repair --prompt-template-library`.
+        #[arg(long)]
+        template_library: Option<PathBuf>,
     },
     /// Convert JSONL or JSONL.zst text rows into a deterministic causal-LM token stream.
     CausalLmPreprocess {
@@ -272,6 +301,12 @@ fn main() -> Result<()> {
             model_id,
         } => cmd_evidence(run_dir, out_dir, baseline_report, model_id),
         Cmd::Checkpoints { run_dir } => cmd_checkpoints(&run_dir),
+        Cmd::Mentor {
+            topic,
+            list,
+            system_only,
+            output,
+        } => cmd_mentor(topic, list, system_only, output),
     }
 }
 
@@ -318,6 +353,51 @@ fn cmd_hrm_text(cmd: HrmTextCmd) -> Result<()> {
     }
 }
 
+fn cmd_mentor(
+    topic: Option<String>,
+    list: bool,
+    system_only: bool,
+    output: Option<PathBuf>,
+) -> Result<()> {
+    use crate::mentor::{
+        build_system_prompt, build_topic_prompt, default_curriculum, default_teaching_rules,
+        format_curriculum_listing,
+    };
+
+    if list {
+        let c = default_curriculum();
+        println!("{}", format_curriculum_listing(&c));
+        return Ok(());
+    }
+    if system_only {
+        let rules = default_teaching_rules();
+        let s = build_system_prompt(&rules);
+        if let Some(path) = output {
+            std::fs::write(&path, &s)
+                .with_context(|| format!("writing system prompt to {}", path.display()))?;
+        } else {
+            println!("{s}");
+        }
+        return Ok(());
+    }
+    let topic = topic.ok_or_else(|| {
+        anyhow::anyhow!(
+            "topic is required (or pass --list to enumerate or --system-only for system prompt)"
+        )
+    })?;
+    let c = default_curriculum();
+    let prompt = build_topic_prompt(&c, &topic).map_err(|e| anyhow::anyhow!("mentor: {e}"))?;
+    let json =
+        serde_json::to_string_pretty(&prompt).context("serializing mentor prompt to JSON")?;
+    if let Some(path) = output {
+        std::fs::write(&path, &json)
+            .with_context(|| format!("writing mentor prompt to {}", path.display()))?;
+    } else {
+        println!("{json}");
+    }
+    Ok(())
+}
+
 fn cmd_data(cmd: DataCmd) -> Result<()> {
     match cmd {
         DataCmd::Audit {
@@ -357,6 +437,7 @@ fn cmd_data(cmd: DataCmd) -> Result<()> {
             max_seq_len,
             world_size,
             target_only,
+            template_library,
         } => {
             let manifest = pack::pack_sft(&pack::PackSftOptions {
                 input: path,
@@ -366,6 +447,7 @@ fn cmd_data(cmd: DataCmd) -> Result<()> {
                 max_seq_len,
                 world_size,
                 target_only,
+                template_library,
             })?;
             println!(
                 "SFT pack OK: rows={} tokens={} target_tokens={} sha256={}",

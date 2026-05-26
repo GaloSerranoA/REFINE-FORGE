@@ -34,6 +34,7 @@
 
 pub mod diagnostic;
 pub mod lsp;
+pub mod lsp_extractor;
 pub mod strategy;
 
 use anyhow::{Context, Result};
@@ -241,6 +242,7 @@ pub fn repair(root: &Path, claim_id: &str, config: RepairConfig) -> Result<Repai
 }
 
 /// CLI entry point for `refine repair`.
+#[allow(clippy::too_many_arguments)]
 pub fn run_cli(
     root: &Path,
     claim_id: &str,
@@ -248,15 +250,48 @@ pub fn run_cli(
     strategy_name: &str,
     weights_path: Option<&Path>,
     dry_run: bool,
+    prompt_template_id: Option<&str>,
+    prompt_template_library: Option<&Path>,
 ) -> Result<()> {
     let strategy: Box<dyn RepairStrategy> = match strategy_name {
         "mock" => Box::new(MockStrategy),
         // Exercises the AnthropicStrategy prompt + parsing code path
         // with a canned-decline transport. No API key needed.
-        "anthropic-mock" => refineforge_strategies::anthropic_mock_strategy(),
+        "anthropic-mock" => {
+            if prompt_template_id.is_some() {
+                eprintln!(
+                    "note: --prompt-template is honoured by anthropic-mock but the canned \
+                     transport always declines; the templated prompt still affects request \
+                     construction (visible in tests)."
+                );
+            }
+            refineforge_strategies::anthropic_mock_strategy()
+        }
         // Real Anthropic API call via ReqwestTransport with retry +
         // prompt caching. Needs ANTHROPIC_API_KEY in the environment.
-        "anthropic" => refineforge_strategies::anthropic_strategy_from_env()?,
+        "anthropic" => {
+            if let Some(id) = prompt_template_id {
+                let lib_path = resolve_template_library_path(root, prompt_template_library);
+                let template = load_prompt_template(&lib_path, id)?;
+                // The factory returns a Box<dyn RepairStrategy>; we
+                // need the concrete AnthropicStrategy to call
+                // with_proof_template. Use the same env path the
+                // factory uses, but build the typed strategy here.
+                let api_key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| {
+                    anyhow::anyhow!(
+                        "--strategy anthropic requires ANTHROPIC_API_KEY in the environment"
+                    )
+                })?;
+                let model = std::env::var("ANTHROPIC_MODEL")
+                    .unwrap_or_else(|_| "claude-opus-4-7".into());
+                let transport = refineforge_strategies::ReqwestTransport::new(api_key.clone());
+                let typed = refineforge_strategies::AnthropicStrategy::new(api_key, model, transport)
+                    .with_proof_template(template)?;
+                Box::new(typed) as Box<dyn RepairStrategy>
+            } else {
+                refineforge_strategies::anthropic_strategy_from_env()?
+            }
+        }
         // Local fine-tuned model runtime. Needs a weights directory
         // with refineforge-local-finetune.json, or the env fallback.
         "local-finetune" => {
@@ -267,7 +302,15 @@ pub fn run_cli(
                     "local-finetune requires --weights-path <dir> or REFINEFORGE_LOCAL_FINETUNE_WEIGHTS"
                 )
             })?;
-            refineforge_strategies::local_finetune_from_path(path)?
+            if let Some(id) = prompt_template_id {
+                let lib_path = resolve_template_library_path(root, prompt_template_library);
+                let template = load_prompt_template(&lib_path, id)?;
+                let typed =
+                    refineforge_strategies::local_finetune_typed_with_template(path, template)?;
+                Box::new(typed) as Box<dyn RepairStrategy>
+            } else {
+                refineforge_strategies::local_finetune_from_path(path)?
+            }
         }
         other => anyhow::bail!(
             "unknown strategy '{other}'; available: mock, anthropic-mock, anthropic (real, needs ANTHROPIC_API_KEY), local-finetune (needs --weights-path). See crates/refineforge-strategies/README.md."
@@ -286,6 +329,27 @@ pub fn run_cli(
         println!("Review the diff before committing.");
     }
     Ok(())
+}
+
+fn resolve_template_library_path(root: &Path, override_path: Option<&Path>) -> PathBuf {
+    if let Some(p) = override_path {
+        return p.to_path_buf();
+    }
+    root.join("training/prompt_templates/lean_proof_repair_v1.json")
+}
+
+fn load_prompt_template(
+    library_path: &Path,
+    id: &str,
+) -> Result<refineforge_repair_api::proof_graph::PromptTemplate> {
+    use refineforge_repair_api::proof_graph::TemplateLibrary;
+    let text = std::fs::read_to_string(library_path)
+        .with_context(|| format!("reading prompt-template library {}", library_path.display()))?;
+    let lib: TemplateLibrary = serde_json::from_str(&text)
+        .with_context(|| format!("parsing prompt-template library {}", library_path.display()))?;
+    lib.find(id).cloned().ok_or_else(|| {
+        anyhow::anyhow!("template id '{id}' not found in {}", library_path.display())
+    })
 }
 
 fn print_report(r: &RepairReport) {

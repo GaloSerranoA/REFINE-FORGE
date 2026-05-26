@@ -213,6 +213,50 @@ impl LeanLspClient {
         Ok(latest)
     }
 
+    /// Query the Lean 4 LSP extension `$/lean/plainGoal` for the
+    /// rendered proof state at `(line, character)` in `uri`.
+    ///
+    /// Returns `Ok(None)` when Lean has no goal at that position
+    /// (the response's `goals` array is empty or the request returns
+    /// `null`). Returns `Err` on LSP-level errors or timeout.
+    ///
+    /// The rendered text is the same format Lean prints into
+    /// diagnostic messages — `name : type` lines followed by `⊢ goal`,
+    /// optionally prefixed with a `case` clause. The proof_graph
+    /// crate's `parse_goal_text` consumes this directly.
+    pub fn plain_goal(
+        &mut self,
+        uri: &str,
+        line: u32,
+        character: u32,
+        timeout: Duration,
+    ) -> Result<Option<String>> {
+        let params = json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character },
+        });
+        let result = self.send_request("$/lean/plainGoal", params, timeout)?;
+        if result.is_null() {
+            return Ok(None);
+        }
+        // Lean returns { "rendered": "...", "goals": [...] } in
+        // modern versions. We prefer `rendered` (the human-readable
+        // form) when present; fall back to the first goal in the
+        // `goals` array.
+        if let Some(s) = result.get("rendered").and_then(|v| v.as_str()) {
+            if s.is_empty() {
+                return Ok(None);
+            }
+            return Ok(Some(s.to_string()));
+        }
+        if let Some(arr) = result.get("goals").and_then(|v| v.as_array()) {
+            if let Some(first) = arr.first().and_then(|v| v.as_str()) {
+                return Ok(Some(first.to_string()));
+            }
+        }
+        Ok(None)
+    }
+
     pub fn shutdown(mut self) -> Result<()> {
         let _ = self.send_request("shutdown", Value::Null, Duration::from_secs(5));
         let _ = self.send_notification("exit", Value::Null);
