@@ -383,7 +383,7 @@ fn nix_flake_source_includes_cargo_test_support_files() {
             "Nix cargoTest source filter must keep {prefix} for integration tests"
         );
     }
-    for file in [".gitignore", "flake.nix"] {
+    for file in [".gitignore", "flake.nix", "SECURITY.md"] {
         assert!(
             flake.contains(file),
             "Nix cargoTest source filter must keep root file {file}"
@@ -424,6 +424,18 @@ fn ci_workflow_publishes_posix_cargo_test_failure_tail() {
     assert!(workflow.contains("cargo-test-release.log"));
     assert!(workflow.contains("cargo-test-failure-summary.log"));
     assert!(workflow.contains("grep -E -- '---- |panicked at| FAILED"));
+    assert!(workflow.contains("::error file=Cargo.toml,title=cargo test --release"));
+}
+
+#[test]
+fn ci_workflow_publishes_windows_cargo_test_failure_tail() {
+    let workflow =
+        std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();
+
+    assert!(workflow.contains("Run unit tests (Windows)"));
+    assert!(workflow.contains("cargo-test-release.log"));
+    assert!(workflow.contains("cargo-test-failure-summary.log"));
+    assert!(workflow.contains("Select-String -Path cargo-test-release.log"));
     assert!(workflow.contains("::error file=Cargo.toml,title=cargo test --release"));
 }
 

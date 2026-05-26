@@ -156,7 +156,23 @@ jobs:
       - name: Run unit tests (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: cargo test --release
+        run: |
+          & cargo test --release *>&1 | Tee-Object -FilePath cargo-test-release.log
+          $status = $LASTEXITCODE
+          if ($status -ne 0) {
+            $matches = Select-String -Path cargo-test-release.log -Pattern "---- |panicked at| FAILED|failures:|test result: FAILED|error: test failed|Error: |FAIL:"
+            if ($matches) {
+              $matches | ForEach-Object { $_.Line } | Set-Content -Path cargo-test-failure-summary.log
+              $diagnosticLog = "cargo-test-failure-summary.log"
+            } else {
+              $diagnosticLog = "cargo-test-release.log"
+            }
+            Get-Content -Path $diagnosticLog -Tail 80 | ForEach-Object {
+              $safeLine = $_.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error file=Cargo.toml,title=cargo test --release::$safeLine"
+            }
+          }
+          exit $status
 
       # ─── Verify every claim ─────────────────────────────────────────
       - name: Verify all claims
