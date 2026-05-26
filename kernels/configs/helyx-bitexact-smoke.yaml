@@ -13,7 +13,7 @@ description: |
   HELYX-compatible smoke gate for the Section 4 contract. Refine-Forge
   owns the bit-exact evidence; HELYX owns real kernel implementation.
 
-command: "powershell -NoProfile -ExecutionPolicy Bypass -File kernels/scripts/stub-deterministic.ps1"
+command: "python -c \"import sys; sys.stdout.buffer.write(b'deterministic-kernel-output-v1\\n')\""
 runs: 5
 output: stdout
 source:

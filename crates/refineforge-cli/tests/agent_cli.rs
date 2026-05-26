@@ -1432,6 +1432,20 @@ fn agent_kernel_stub_fixture_cannot_claim_cuda_correctness() {
 }
 
 #[test]
+fn helyx_bitexact_smoke_uses_portable_command() {
+    let config =
+        std::fs::read_to_string(workspace_root().join("kernels/configs/helyx-bitexact-smoke.yaml"))
+            .unwrap();
+
+    assert!(
+        !config.contains("powershell"),
+        "HELYX smoke config must run on every hosted CI OS"
+    );
+    assert!(config.contains("deterministic-kernel-output-v1"));
+    assert!(config.contains("expected_sha256"));
+}
+
+#[test]
 fn agent_kernel_rejects_fake_env_presence_as_production_evidence() {
     let td = tempfile::tempdir().unwrap();
     let out = td.path().join("kernel-fake-env");
