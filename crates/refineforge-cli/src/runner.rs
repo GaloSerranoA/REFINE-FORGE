@@ -14,12 +14,105 @@
 //! that's Phase 4 in the build plan).
 
 use anyhow::{anyhow, Context, Result};
-use std::path::Path;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::claim::{self, Claim};
 use crate::report::{ProofReport, ProofStatus};
 use crate::sorry_gate;
+
+struct LakeBuildLock {
+    path: PathBuf,
+}
+
+impl Drop for LakeBuildLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn lake_build_lock_timeout() -> Duration {
+    std::env::var("REFINEFORGE_LAKE_BUILD_LOCK_TIMEOUT_SECS")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .filter(|seconds| *seconds > 0)
+        .map(Duration::from_secs)
+        .unwrap_or_else(|| Duration::from_secs(180))
+}
+
+fn acquire_lake_build_lock(lean_dir: &Path) -> Result<LakeBuildLock> {
+    acquire_lake_build_lock_with_timeout(lean_dir, lake_build_lock_timeout())
+}
+
+fn acquire_lake_check_all_lock(lean_dir: &Path) -> Result<LakeBuildLock> {
+    acquire_lake_lock_file_with_timeout(
+        lean_dir,
+        ".refineforge-lean-check-all.lock",
+        lake_build_lock_timeout(),
+    )
+}
+
+fn acquire_lake_build_lock_with_timeout(
+    lean_dir: &Path,
+    timeout: Duration,
+) -> Result<LakeBuildLock> {
+    acquire_lake_lock_file_with_timeout(lean_dir, ".refineforge-lake-build.lock", timeout)
+}
+
+fn acquire_lake_lock_file_with_timeout(
+    lean_dir: &Path,
+    file_name: &str,
+    timeout: Duration,
+) -> Result<LakeBuildLock> {
+    let path = lean_dir.join(file_name);
+    let started = Instant::now();
+
+    loop {
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                writeln!(
+                    file,
+                    "pid={}\nacquired_at={}",
+                    std::process::id(),
+                    chrono::Utc::now().to_rfc3339()
+                )
+                .with_context(|| format!("writing Lake build lock {}", path.display()))?;
+                return Ok(LakeBuildLock { path });
+            }
+            Err(err) if is_lake_lock_contention(&err) => {
+                if started.elapsed() >= timeout {
+                    let existing = std::fs::read_to_string(&path)
+                        .unwrap_or_else(|read_err| format!("unreadable lock: {read_err}"));
+                    return Err(anyhow!(
+                        "timed out after {:?} waiting for Lake build lock at {}; last error: {}; existing lock: {}",
+                        timeout,
+                        path.display(),
+                        err,
+                        existing.trim()
+                    ));
+                }
+                thread::sleep(Duration::from_millis(25));
+            }
+            Err(err) => {
+                return Err(anyhow!(
+                    "failed to create Lake build lock at {}: {err}",
+                    path.display()
+                ));
+            }
+        }
+    }
+}
+
+fn is_lake_lock_contention(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::PermissionDenied
+    )
+}
 
 pub fn check(root: &Path, claim_id: &str) -> Result<()> {
     let (_, c) = claim::load(root, claim_id)?;
@@ -42,6 +135,12 @@ pub fn check_all(root: &Path) -> Result<()> {
         println!("(no claims found)");
         return Ok(());
     }
+    let lean_dir = root.join("lean");
+    let _check_all_lock = if lean_dir.exists() {
+        Some(acquire_lake_check_all_lock(&lean_dir)?)
+    } else {
+        None
+    };
     for (_, c) in claims {
         match run(root, &c) {
             Ok(r) => {
@@ -99,10 +198,27 @@ pub fn run(root: &Path, c: &Claim) -> Result<ProofReport> {
         });
     }
 
-    let lake = Command::new("lake")
-        .arg("build")
-        .current_dir(&lean_dir)
-        .output();
+    let lake = match acquire_lake_build_lock(&lean_dir) {
+        Ok(_lock) => Command::new("lake")
+            .arg("build")
+            .current_dir(&lean_dir)
+            .output(),
+        Err(err) => {
+            return Ok(ProofReport {
+                claim_id: c.claim_id.clone(),
+                status: ProofStatus::ToolingError,
+                sorry_count: gate.sorry_count,
+                admit_count: gate.admit_count,
+                axiom_count: gate.axiom_count,
+                lean_toolchain: c.lean.toolchain.clone(),
+                lean_module: c.lean.module.clone(),
+                stdout: String::new(),
+                stderr: format!("failed to acquire Lake build lock: {err}"),
+                policy_notes: gate.notes,
+                checked_at: chrono::Utc::now(),
+            });
+        }
+    };
 
     let (status, stdout, stderr) = match lake {
         Ok(o) => {
@@ -137,4 +253,27 @@ pub fn run(root: &Path, c: &Claim) -> Result<ProofReport> {
         policy_notes: gate.notes,
         checked_at: chrono::Utc::now(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn lake_build_lock_serializes_same_lean_dir() {
+        let td = tempfile::tempdir().unwrap();
+        let first = acquire_lake_build_lock_with_timeout(td.path(), Duration::from_millis(10))
+            .expect("first lock");
+
+        let second = acquire_lake_build_lock_with_timeout(td.path(), Duration::from_millis(10));
+        assert!(
+            second.is_err(),
+            "second holder must wait or fail while the first process holds the Lake build lock"
+        );
+
+        drop(first);
+        acquire_lake_build_lock_with_timeout(td.path(), Duration::from_millis(10))
+            .expect("lock should be acquirable after first holder drops");
+    }
 }

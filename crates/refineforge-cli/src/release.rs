@@ -737,6 +737,25 @@ fn fill_git_context(
             message: Some("inside git worktree".into()),
         }),
         Ok(output) => {
+            if opts.dry_run {
+                report.gates.push(GateReport {
+                    name: "git-worktree".into(),
+                    command: vec![
+                        "git".into(),
+                        "rev-parse".into(),
+                        "--is-inside-work-tree".into(),
+                    ],
+                    status: GateStatus::Skipped,
+                    required: true,
+                    duration_ms: 0,
+                    log_path: None,
+                    message: Some(format!(
+                        "dry-run: git worktree unavailable ({})",
+                        String::from_utf8_lossy(&output.stderr).trim()
+                    )),
+                });
+                return Ok(());
+            }
             report.gates.push(GateReport {
                 name: "git-worktree".into(),
                 command: vec![
@@ -753,6 +772,22 @@ fn fill_git_context(
             return Ok(());
         }
         Err(e) => {
+            if opts.dry_run {
+                report.gates.push(GateReport {
+                    name: "git-worktree".into(),
+                    command: vec![
+                        "git".into(),
+                        "rev-parse".into(),
+                        "--is-inside-work-tree".into(),
+                    ],
+                    status: GateStatus::Skipped,
+                    required: true,
+                    duration_ms: 0,
+                    log_path: None,
+                    message: Some(format!("dry-run: could not invoke git ({e})")),
+                });
+                return Ok(());
+            }
             report.gates.push(GateReport {
                 name: "git-worktree".into(),
                 command: vec![
@@ -1391,6 +1426,32 @@ mod tests {
             .iter()
             .filter(|g| g.name.starts_with("cargo-test-"))
             .all(|g| g.status == GateStatus::Skipped));
+    }
+
+    #[test]
+    fn dry_run_ready_allows_source_archive_without_git_worktree() {
+        let td = tempfile::tempdir().unwrap();
+        let root = td.path().join("source");
+        std::fs::create_dir_all(&root).unwrap();
+        let opts = ReleaseReadyOptions {
+            version: "0.2.2".into(),
+            evidence_dir: td.path().join("evidence"),
+            dry_run: true,
+            allow_dirty: true,
+            skip_docker: true,
+            skip_signature: true,
+            ci: false,
+        };
+
+        let report = build_ready_report(&root, &opts).unwrap();
+        let git_worktree = report
+            .gates
+            .iter()
+            .find(|g| g.name == "git-worktree")
+            .unwrap();
+
+        assert_eq!(git_worktree.status, GateStatus::Skipped);
+        assert!(report.required_gates_succeeded());
     }
 
     #[test]
