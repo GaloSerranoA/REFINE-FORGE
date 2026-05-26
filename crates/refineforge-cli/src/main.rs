@@ -369,6 +369,8 @@ struct EnterpriseReadyCliOptions {
 enum InmortalProofCmd {
     /// Prepare deterministic proof-search receipts for a claim.
     Run(InmortalProofRunCliOptions),
+    /// Execute bounded active proof search over declared EVOLVE regions.
+    Search(InmortalProofSearchCliOptions),
 }
 
 #[derive(Clone, clap::Args)]
@@ -384,6 +386,33 @@ struct InmortalProofRunCliOptions {
     /// Maximum proof sketch population capacity for this run.
     #[arg(long, default_value_t = 64)]
     population_limit: usize,
+    /// Emit the JSON report to stdout after writing evidence files.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Clone, clap::Args)]
+struct InmortalProofSearchCliOptions {
+    /// Claim id to search.
+    claim_id: String,
+    /// Evidence output directory.
+    #[arg(long, default_value = "inmortal-proof-runs/latest-search")]
+    out: PathBuf,
+    /// Maximum generated candidates to validate.
+    #[arg(long, default_value_t = 16)]
+    max_candidates: usize,
+    /// Validation backend. `lean` runs Lake through Refine-Forge; `receipt-only` is deterministic development mode and is not a proof claim.
+    #[arg(long, value_enum, default_value_t = nexus::SearchValidationMode::Lean)]
+    validator: nexus::SearchValidationMode,
+    /// Do not export a proof bundle even if Lean verifies a candidate.
+    #[arg(long)]
+    no_export_bundle: bool,
+    /// Override bundle output directory. Defaults to <out>/bundle.
+    #[arg(long)]
+    bundle_out: Option<PathBuf>,
+    /// Leave the verified candidate in the Lean source instead of rolling back.
+    #[arg(long)]
+    retain_verified: bool,
     /// Emit the JSON report to stdout after writing evidence files.
     #[arg(long)]
     json: bool,
@@ -729,6 +758,26 @@ fn main() -> Result<()> {
                         out_dir,
                         episodes: opts.episodes,
                         population_limit: opts.population_limit,
+                        emit_json: opts.json,
+                    },
+                )
+            }
+            InmortalProofCmd::Search(opts) => {
+                let out_dir = nexus::resolve_out_dir(&cli.root, opts.out)?;
+                let bundle_out_dir = opts
+                    .bundle_out
+                    .map(|path| nexus::resolve_out_dir(&cli.root, path))
+                    .transpose()?;
+                nexus::search(
+                    &cli.root,
+                    &opts.claim_id,
+                    nexus::NexusSearchOptions {
+                        out_dir,
+                        max_candidates: opts.max_candidates,
+                        validation_mode: opts.validator,
+                        export_bundle: !opts.no_export_bundle,
+                        bundle_out_dir,
+                        retain_verified: opts.retain_verified,
                         emit_json: opts.json,
                     },
                 )

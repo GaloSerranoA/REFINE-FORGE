@@ -14,6 +14,9 @@ CLI surface is declared stable.
 
 - Added `refine inmortal-proof run <CLAIM-ID>` to produce deterministic proof-search receipt packs for Lean claims.
 - The InmortalProof receipt records EVOLVE-BLOCK / EVOLVE-VALUE editable regions, full-source and protected-source SHA-256 hashes, a proof-sketch population seed, P-UCB selection metadata, deterministic episode JSONL, theorem goal-cache JSONL, no-sorry policy status, and blockers.
+- Added `refine inmortal-proof search <CLAIM-ID>` for bounded active candidate generation over EVOLVE regions. The search loop applies deterministic built-in candidates, ingests Lean or receipt-only validation feedback, rolls back failed source edits, promotes the first accepted candidate, and writes `candidates.jsonl`, `search-episodes.jsonl`, `lean-feedback.jsonl`, `population.jsonl`, plus JSON/Markdown search reports.
+- Bundle export is wired only for Lean-verified accepted candidates. `--validator receipt-only` remains a deterministic development/CI smoke mode with the public claim `inmortalproof_search_receipt_only_not_lean_verified`.
+- Protected-source hashing now redacts EVOLVE bodies instead of hashing body placeholders, so candidate edits inside declared regions keep the protected hash stable while theorem statements, imports, and trusted surrounding source remain guarded.
 - Added `docs/inmortal-proof.md` and README/STRUCTURE wiring with the explicit boundary that this is Refine-Forge's own proof-search substrate, not a claim to copy AlphaProof, Gemini, or proprietary internals.
 
 ### Added - enterprise readiness gate

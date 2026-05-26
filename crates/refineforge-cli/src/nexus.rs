@@ -5,7 +5,8 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::{claim, sorry_gate};
+use crate::report::ProofStatus;
+use crate::{bundle, claim, runner, sorry_gate};
 
 const SYSTEM_NAME: &str = "InmortalProof";
 const REPORT_SCHEMA: &str = "refineforge-inmortalproof-report-v1";
@@ -18,6 +19,34 @@ pub struct NexusRunOptions {
     pub episodes: usize,
     pub population_limit: usize,
     pub emit_json: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct NexusSearchOptions {
+    pub out_dir: PathBuf,
+    pub max_candidates: usize,
+    pub validation_mode: SearchValidationMode,
+    pub export_bundle: bool,
+    pub bundle_out_dir: Option<PathBuf>,
+    pub retain_verified: bool,
+    pub emit_json: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "snake_case")]
+#[value(rename_all = "kebab-case")]
+pub enum SearchValidationMode {
+    Lean,
+    ReceiptOnly,
+}
+
+impl SearchValidationMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            SearchValidationMode::Lean => "lean",
+            SearchValidationMode::ReceiptOnly => "receipt_only",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +145,80 @@ pub struct RaterReceipt {
     pub criteria: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NexusSearchReport {
+    pub schema_version: String,
+    pub generated_at: DateTime<Utc>,
+    pub system_name: String,
+    pub status: String,
+    pub public_claim: String,
+    pub validation_mode: String,
+    pub claim_id: String,
+    pub claim_path: PathBuf,
+    pub lean_file: PathBuf,
+    pub editable_regions: Vec<EditableRegion>,
+    pub seed_integrity: IntegrityReceipt,
+    pub candidates: Vec<SearchCandidate>,
+    pub attempts: Vec<SearchAttempt>,
+    pub accepted_candidate: Option<SearchAttempt>,
+    pub bundle_export: BundleExportReceipt,
+    pub rollback: RollbackReceipt,
+    pub blockers: Vec<String>,
+    pub boundary: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchCandidate {
+    pub id: String,
+    pub parent_id: String,
+    pub region_id: String,
+    pub region_kind: String,
+    pub generator: String,
+    pub body: String,
+    pub body_sha256: String,
+    pub rationale: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchAttempt {
+    pub index: usize,
+    pub candidate: SearchCandidate,
+    pub candidate_source_sha256: String,
+    pub candidate_protected_sha256: String,
+    pub protected_hash_stable: bool,
+    pub validation: CandidateValidation,
+    pub outcome: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CandidateValidation {
+    pub status: String,
+    pub proof_status: Option<ProofStatus>,
+    pub sorry_count: usize,
+    pub admit_count: usize,
+    pub axiom_count: usize,
+    pub stdout_tail: String,
+    pub stderr_tail: String,
+    pub policy_notes: Vec<String>,
+    pub checked_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BundleExportReceipt {
+    pub requested: bool,
+    pub status: String,
+    pub out_dir: Option<PathBuf>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RollbackReceipt {
+    pub original_source_sha256: String,
+    pub final_source_sha256: String,
+    pub failed_candidates_restored: usize,
+    pub retained_verified_candidate: bool,
+}
+
 #[derive(Debug)]
 struct RegionScan {
     regions: Vec<EditableRegion>,
@@ -169,6 +272,218 @@ pub fn run(root: &Path, claim_id: &str, opts: NexusRunOptions) -> Result<()> {
         );
     }
     Ok(())
+}
+
+pub fn search(root: &Path, claim_id: &str, opts: NexusSearchOptions) -> Result<()> {
+    let report = build_search_report(root, claim_id, &opts)?;
+    std::fs::create_dir_all(&opts.out_dir)
+        .with_context(|| format!("creating {}", opts.out_dir.display()))?;
+
+    write_search_artifacts(&opts.out_dir, &report)?;
+
+    if opts.emit_json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!(
+            "InmortalProof active-search report: {} ({})",
+            opts.out_dir
+                .join("inmortal-proof-search-report.md")
+                .display(),
+            report.status
+        );
+    }
+    Ok(())
+}
+
+fn build_search_report(
+    root: &Path,
+    claim_id: &str,
+    opts: &NexusSearchOptions,
+) -> Result<NexusSearchReport> {
+    let (claim_path, loaded_claim) = claim::load(root, claim_id)?;
+    let lean_path = root.join(&loaded_claim.lean.file);
+    let original_source = std::fs::read_to_string(&lean_path)
+        .with_context(|| format!("reading Lean file {}", lean_path.display()))?;
+    let original_source_sha256 = sha256_hex(original_source.as_bytes());
+
+    let scan = scan_evolve_regions(&original_source);
+    let protected_gate = sorry_gate::check(&scan.protected_source, &loaded_claim.policy);
+    let seed_integrity = IntegrityReceipt {
+        source_sha256: original_source_sha256.clone(),
+        protected_sha256: sha256_hex(scan.protected_source.as_bytes()),
+        protected_region_count: scan.regions.len(),
+        policy_ok: protected_gate.ok,
+        sorry_count: protected_gate.sorry_count,
+        admit_count: protected_gate.admit_count,
+        axiom_count: protected_gate.axiom_count,
+        theorem_statement_changed: false,
+        lean_check: "not_run".to_string(),
+    };
+
+    let mut blockers = scan.blockers.clone();
+    if scan.regions.is_empty() {
+        blockers.push("no EVOLVE-BLOCK or EVOLVE-VALUE markers found in Lean source".to_string());
+    }
+    if loaded_claim.lean.theorems.is_empty() {
+        blockers.push("claim has no Lean theorems for active search".to_string());
+    }
+    if opts.max_candidates == 0 {
+        blockers.push("max_candidates must be greater than zero".to_string());
+    }
+    if !protected_gate.ok {
+        blockers.extend(protected_gate.notes.iter().map(|note| {
+            format!("protected-source policy violation outside EVOLVE regions: {note}")
+        }));
+    }
+
+    let candidates = generate_candidates(&original_source, &scan.regions, opts.max_candidates);
+    if candidates.is_empty() && blockers.is_empty() {
+        blockers.push("candidate generator produced no search candidates".to_string());
+    }
+
+    let mut bundle_export = BundleExportReceipt {
+        requested: opts.export_bundle,
+        status: if opts.export_bundle {
+            "pending".to_string()
+        } else {
+            "not_requested".to_string()
+        },
+        out_dir: opts.bundle_out_dir.clone(),
+        error: None,
+    };
+    let mut attempts = Vec::new();
+    let mut accepted_candidate = None;
+    let mut failed_candidates_restored = 0usize;
+
+    if blockers.is_empty() {
+        let mut guard = SourceRestoreGuard::new(&lean_path, original_source.clone());
+        for candidate in &candidates {
+            let candidate_source = replace_region_body(&original_source, &scan.regions, candidate)?;
+            guard.write(&candidate_source)?;
+
+            let candidate_scan = scan_evolve_regions(&candidate_source);
+            let candidate_source_sha256 = sha256_hex(candidate_source.as_bytes());
+            let candidate_protected_sha256 = sha256_hex(candidate_scan.protected_source.as_bytes());
+            let validation = validate_candidate(root, &loaded_claim, opts.validation_mode)?;
+            let accepted = validation_passed(&validation, opts.validation_mode);
+            let attempt = SearchAttempt {
+                index: attempts.len() + 1,
+                candidate: candidate.clone(),
+                candidate_source_sha256,
+                candidate_protected_sha256: candidate_protected_sha256.clone(),
+                protected_hash_stable: candidate_protected_sha256
+                    == seed_integrity.protected_sha256,
+                validation,
+                outcome: if accepted {
+                    "accepted".to_string()
+                } else {
+                    "rejected".to_string()
+                },
+            };
+
+            if accepted {
+                if opts.export_bundle && opts.validation_mode == SearchValidationMode::Lean {
+                    let bundle_dir = opts
+                        .bundle_out_dir
+                        .clone()
+                        .unwrap_or_else(|| opts.out_dir.join("bundle"));
+                    match bundle::export(root, claim_id, Some(bundle_dir.clone())) {
+                        Ok(()) => {
+                            bundle_export.status = "exported".to_string();
+                            bundle_export.out_dir = Some(bundle_dir);
+                        }
+                        Err(err) => {
+                            bundle_export.status = "failed".to_string();
+                            bundle_export.out_dir = Some(bundle_dir);
+                            bundle_export.error = Some(format!("{err:#}"));
+                        }
+                    }
+                } else if opts.export_bundle {
+                    bundle_export.status = "skipped_not_lean_verified".to_string();
+                }
+
+                accepted_candidate = Some(attempt.clone());
+                attempts.push(attempt);
+                if opts.retain_verified {
+                    guard.disarm();
+                }
+                break;
+            }
+
+            failed_candidates_restored += 1;
+            attempts.push(attempt);
+        }
+    }
+
+    let final_source =
+        std::fs::read_to_string(&lean_path).unwrap_or_else(|_| original_source.clone());
+    let final_source_sha256 = sha256_hex(final_source.as_bytes());
+    let retained_verified_candidate = accepted_candidate.is_some()
+        && opts.retain_verified
+        && final_source_sha256 != original_source_sha256;
+    let rollback = RollbackReceipt {
+        original_source_sha256,
+        final_source_sha256,
+        failed_candidates_restored,
+        retained_verified_candidate,
+    };
+
+    let status = if !blockers.is_empty() {
+        "blocked"
+    } else if accepted_candidate.is_some() {
+        match opts.validation_mode {
+            SearchValidationMode::Lean => "lean_verified",
+            SearchValidationMode::ReceiptOnly => "candidate_found_receipt_only",
+        }
+    } else {
+        "exhausted"
+    }
+    .to_string();
+
+    let public_claim = match (status.as_str(), opts.validation_mode) {
+        ("lean_verified", SearchValidationMode::Lean) => {
+            "inmortalproof_lean_verified_candidate_found"
+        }
+        ("candidate_found_receipt_only", SearchValidationMode::ReceiptOnly) => {
+            "inmortalproof_search_receipt_only_not_lean_verified"
+        }
+        ("exhausted", _) => "inmortalproof_search_exhausted_no_verified_candidate",
+        ("blocked", _) => "inmortalproof_search_blocked_until_preflight_passes",
+        _ => "inmortalproof_search_receipt_only_not_lean_verified",
+    }
+    .to_string();
+
+    if bundle_export.requested && bundle_export.status == "pending" && accepted_candidate.is_none()
+    {
+        bundle_export.status = if blockers.is_empty() {
+            "skipped_no_accepted_candidate"
+        } else {
+            "skipped_blocked"
+        }
+        .to_string();
+    }
+
+    Ok(NexusSearchReport {
+        schema_version: "refineforge-inmortalproof-search-v1".to_string(),
+        generated_at: Utc::now(),
+        system_name: SYSTEM_NAME.to_string(),
+        status,
+        public_claim,
+        validation_mode: opts.validation_mode.as_str().to_string(),
+        claim_id: loaded_claim.claim_id,
+        claim_path,
+        lean_file: lean_path,
+        editable_regions: scan.regions,
+        seed_integrity,
+        candidates,
+        attempts,
+        accepted_candidate,
+        bundle_export,
+        rollback,
+        blockers,
+        boundary: "InmortalProof active search mutates only declared EVOLVE regions, records every candidate, and treats Lean verification as the only proof authority. Receipt-only validation is a deterministic development mode and is not a proof claim."
+            .to_string(),
+    })
 }
 
 fn build_report(root: &Path, claim_id: &str, opts: &NexusRunOptions) -> Result<NexusReport> {
@@ -428,8 +743,8 @@ fn build_protected_source(source: &str, lines: &[&str], regions: &[EditableRegio
         if let Some(region) = by_start.get(&line_no) {
             protected.push(lines[line_no - 1].to_string());
             protected.push(format!(
-                "-- REFINEFORGE-INMORTALPROOF-REGION {} {} BODY-SHA256 {}",
-                region.id, region.kind, region.body_sha256
+                "-- REFINEFORGE-INMORTALPROOF-REGION {} {} BODY-REDACTED",
+                region.id, region.kind
             ));
             line_no = region.end_line;
             continue;
@@ -493,6 +808,221 @@ fn build_episodes(count: usize) -> Vec<NexusEpisode> {
         .collect()
 }
 
+fn generate_candidates(
+    source: &str,
+    regions: &[EditableRegion],
+    max_candidates: usize,
+) -> Vec<SearchCandidate> {
+    let mut candidates = Vec::new();
+    let mut seen = BTreeMap::<(String, String), ()>::new();
+
+    for region in regions {
+        for (generator, body, rationale) in candidate_bodies_for_region(source, region) {
+            let body_sha256 = sha256_hex(body.as_bytes());
+            let key = (region.id.clone(), body_sha256.clone());
+            if seen.insert(key, ()).is_some() {
+                continue;
+            }
+            candidates.push(SearchCandidate {
+                id: format!("candidate-{:04}", candidates.len() + 1),
+                parent_id: "sketch-0000".to_string(),
+                region_id: region.id.clone(),
+                region_kind: region.kind.clone(),
+                generator: generator.to_string(),
+                body,
+                body_sha256,
+                rationale: rationale.to_string(),
+            });
+            if candidates.len() >= max_candidates {
+                return candidates;
+            }
+        }
+    }
+
+    candidates
+}
+
+fn candidate_bodies_for_region(
+    source: &str,
+    region: &EditableRegion,
+) -> Vec<(&'static str, String, &'static str)> {
+    let existing = extract_region_body(source, region).unwrap_or_default();
+    let mut out = vec![(
+        "builtin_preserve",
+        existing,
+        "try the current region body first to establish baseline feedback",
+    )];
+
+    if region.kind == "block" {
+        out.extend(
+            [
+                "  trivial",
+                "  exact True.intro",
+                "  rfl",
+                "  simp",
+                "  simp_all",
+                "  decide",
+            ]
+            .into_iter()
+            .map(|body| {
+                (
+                    "builtin_lean_tactic_bank",
+                    body.to_string(),
+                    "deterministic built-in Lean tactic candidate",
+                )
+            }),
+        );
+    } else {
+        out.extend(["true", "false", "0", "1", "()"].into_iter().map(|body| {
+            (
+                "builtin_value_bank",
+                body.to_string(),
+                "deterministic built-in value candidate",
+            )
+        }));
+    }
+
+    out
+}
+
+fn extract_region_body(source: &str, region: &EditableRegion) -> Result<String> {
+    let lines: Vec<&str> = source.lines().collect();
+    if region.end_line == 0 || region.end_line > lines.len() || region.start_line >= region.end_line
+    {
+        return Err(anyhow!("region {} line bounds are invalid", region.id));
+    }
+    let body_start = region.start_line;
+    let body_end = region.end_line - 1;
+    Ok(lines[body_start..body_end].join("\n"))
+}
+
+fn replace_region_body(
+    source: &str,
+    regions: &[EditableRegion],
+    candidate: &SearchCandidate,
+) -> Result<String> {
+    let region = regions
+        .iter()
+        .find(|region| region.id == candidate.region_id)
+        .ok_or_else(|| anyhow!("candidate {} references unknown region", candidate.id))?;
+    let mut lines: Vec<String> = source.lines().map(ToString::to_string).collect();
+    if region.end_line == 0 || region.end_line > lines.len() || region.start_line >= region.end_line
+    {
+        return Err(anyhow!("region {} line bounds are invalid", region.id));
+    }
+    let replacement: Vec<String> = if candidate.body.is_empty() {
+        Vec::new()
+    } else {
+        candidate.body.lines().map(ToString::to_string).collect()
+    };
+    lines.splice(region.start_line..(region.end_line - 1), replacement);
+    let mut out = lines.join("\n");
+    if source.ends_with('\n') {
+        out.push('\n');
+    }
+    Ok(out)
+}
+
+fn validate_candidate(
+    root: &Path,
+    claim: &claim::Claim,
+    mode: SearchValidationMode,
+) -> Result<CandidateValidation> {
+    match mode {
+        SearchValidationMode::ReceiptOnly => {
+            let lean_file = root.join(&claim.lean.file);
+            let src = std::fs::read_to_string(&lean_file)
+                .with_context(|| format!("reading {}", lean_file.display()))?;
+            let gate = sorry_gate::check(&src, &claim.policy);
+            Ok(CandidateValidation {
+                status: if gate.ok {
+                    "receipt_only_passed"
+                } else {
+                    "policy_violation"
+                }
+                .to_string(),
+                proof_status: None,
+                sorry_count: gate.sorry_count,
+                admit_count: gate.admit_count,
+                axiom_count: gate.axiom_count,
+                stdout_tail: String::new(),
+                stderr_tail: String::new(),
+                policy_notes: gate.notes,
+                checked_at: Utc::now(),
+            })
+        }
+        SearchValidationMode::Lean => {
+            let report = runner::run(root, claim)?;
+            let status = match report.status {
+                ProofStatus::Verified => "lean_verified",
+                ProofStatus::BuildFailed => "lean_build_failed",
+                ProofStatus::PolicyViolation => "policy_violation",
+                ProofStatus::ToolingError => "tooling_error",
+            }
+            .to_string();
+            Ok(CandidateValidation {
+                status,
+                proof_status: Some(report.status),
+                sorry_count: report.sorry_count,
+                admit_count: report.admit_count,
+                axiom_count: report.axiom_count,
+                stdout_tail: tail_chars(&report.stdout, 4000),
+                stderr_tail: tail_chars(&report.stderr, 4000),
+                policy_notes: report.policy_notes,
+                checked_at: report.checked_at,
+            })
+        }
+    }
+}
+
+fn validation_passed(validation: &CandidateValidation, mode: SearchValidationMode) -> bool {
+    match mode {
+        SearchValidationMode::Lean => validation.status == "lean_verified",
+        SearchValidationMode::ReceiptOnly => validation.status == "receipt_only_passed",
+    }
+}
+
+fn tail_chars(value: &str, max_chars: usize) -> String {
+    let total = value.chars().count();
+    if total <= max_chars {
+        return value.to_string();
+    }
+    value.chars().skip(total - max_chars).collect()
+}
+
+struct SourceRestoreGuard {
+    path: PathBuf,
+    original: String,
+    restore_on_drop: bool,
+}
+
+impl SourceRestoreGuard {
+    fn new(path: &Path, original: String) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            original,
+            restore_on_drop: true,
+        }
+    }
+
+    fn write(&self, source: &str) -> Result<()> {
+        std::fs::write(&self.path, source)
+            .with_context(|| format!("writing candidate source {}", self.path.display()))
+    }
+
+    fn disarm(&mut self) {
+        self.restore_on_drop = false;
+    }
+}
+
+impl Drop for SourceRestoreGuard {
+    fn drop(&mut self) {
+        if self.restore_on_drop {
+            let _ = std::fs::write(&self.path, &self.original);
+        }
+    }
+}
+
 fn write_report_artifacts(out_dir: &Path, report: &NexusReport) -> Result<()> {
     write_json(out_dir.join("inmortal-proof-report.json"), report)?;
     std::fs::write(
@@ -508,6 +1038,30 @@ fn write_report_artifacts(out_dir: &Path, report: &NexusReport) -> Result<()> {
     write_jsonl(out_dir.join("population.jsonl"), &report.population)?;
     write_jsonl(out_dir.join("episodes.jsonl"), &report.episodes)?;
     write_jsonl(out_dir.join("goal-cache.jsonl"), &report.goal_cache)?;
+    Ok(())
+}
+
+fn write_search_artifacts(out_dir: &Path, report: &NexusSearchReport) -> Result<()> {
+    write_json(out_dir.join("inmortal-proof-search-report.json"), report)?;
+    std::fs::write(
+        out_dir.join("inmortal-proof-search-report.md"),
+        report.to_markdown(),
+    )
+    .with_context(|| {
+        format!(
+            "writing {}",
+            out_dir.join("inmortal-proof-search-report.md").display()
+        )
+    })?;
+    write_jsonl(out_dir.join("candidates.jsonl"), &report.candidates)?;
+    write_jsonl(out_dir.join("search-episodes.jsonl"), &report.attempts)?;
+    let feedback: Vec<&CandidateValidation> = report
+        .attempts
+        .iter()
+        .map(|attempt| &attempt.validation)
+        .collect();
+    write_jsonl(out_dir.join("lean-feedback.jsonl"), &feedback)?;
+    write_jsonl(out_dir.join("population.jsonl"), &report.candidates)?;
     Ok(())
 }
 
@@ -583,6 +1137,77 @@ impl NexusReport {
     }
 }
 
+impl NexusSearchReport {
+    fn to_markdown(&self) -> String {
+        let mut out = String::new();
+        out.push_str("# Refine-Forge InmortalProof Active Search\n\n");
+        out.push_str(&format!("- Status: `{}`\n", self.status));
+        out.push_str(&format!("- System: `{}`\n", self.system_name));
+        out.push_str(&format!("- Public claim: `{}`\n", self.public_claim));
+        out.push_str(&format!("- Validation mode: `{}`\n", self.validation_mode));
+        out.push_str(&format!("- Claim: `{}`\n", self.claim_id));
+        out.push_str(&format!(
+            "- Generated at: `{}`\n",
+            self.generated_at.to_rfc3339()
+        ));
+        out.push_str(&format!("- Lean file: `{}`\n", self.lean_file.display()));
+        out.push_str(&format!(
+            "- Candidates generated: `{}`\n",
+            self.candidates.len()
+        ));
+        out.push_str(&format!("- Attempts executed: `{}`\n", self.attempts.len()));
+        out.push_str(&format!(
+            "- Bundle export: `{}`\n\n",
+            self.bundle_export.status
+        ));
+
+        out.push_str("## Accepted Candidate\n\n");
+        if let Some(attempt) = &self.accepted_candidate {
+            out.push_str(&format!(
+                "- Candidate: `{}`\n- Region: `{}`\n- Validation: `{}`\n- Protected hash stable: `{}`\n",
+                attempt.candidate.id,
+                attempt.candidate.region_id,
+                attempt.validation.status,
+                attempt.protected_hash_stable
+            ));
+        } else {
+            out.push_str("- none\n");
+        }
+
+        out.push_str("\n## Attempts\n\n");
+        if self.attempts.is_empty() {
+            out.push_str("- none\n");
+        } else {
+            out.push_str("| # | Candidate | Region | Validation | Outcome |\n");
+            out.push_str("|---:|---|---|---|---|\n");
+            for attempt in &self.attempts {
+                out.push_str(&format!(
+                    "| {} | {} | {} | {} | {} |\n",
+                    attempt.index,
+                    attempt.candidate.id,
+                    attempt.candidate.region_id,
+                    attempt.validation.status,
+                    attempt.outcome
+                ));
+            }
+        }
+
+        out.push_str("\n## Blockers\n\n");
+        if self.blockers.is_empty() {
+            out.push_str("- none\n");
+        } else {
+            for blocker in &self.blockers {
+                out.push_str(&format!("- {blocker}\n"));
+            }
+        }
+
+        out.push_str("\n## Boundary\n\n");
+        out.push_str(&self.boundary);
+        out.push('\n');
+        out
+    }
+}
+
 pub fn resolve_out_dir(root: &Path, out_dir: PathBuf) -> Result<PathBuf> {
     if out_dir.as_os_str().is_empty() {
         return Err(anyhow!("Nexus output directory cannot be empty"));
@@ -622,5 +1247,29 @@ mod tests {
             .blockers
             .iter()
             .any(|blocker| blocker.contains("unterminated block marker")));
+    }
+
+    #[test]
+    fn protected_hash_is_stable_when_only_region_body_changes() {
+        let src =
+            "theorem target : True := by\n-- EVOLVE-BLOCK-START\n  sorry\n-- EVOLVE-BLOCK-END\n";
+        let scan = scan_evolve_regions(src);
+        let candidate = SearchCandidate {
+            id: "candidate-0001".to_string(),
+            parent_id: "sketch-0000".to_string(),
+            region_id: "region-0001".to_string(),
+            region_kind: "block".to_string(),
+            generator: "test".to_string(),
+            body: "  trivial".to_string(),
+            body_sha256: sha256_hex(b"  trivial"),
+            rationale: "test body replacement".to_string(),
+        };
+        let changed = replace_region_body(src, &scan.regions, &candidate).unwrap();
+        let changed_scan = scan_evolve_regions(&changed);
+
+        assert_eq!(
+            sha256_hex(scan.protected_source.as_bytes()),
+            sha256_hex(changed_scan.protected_source.as_bytes())
+        );
     }
 }
