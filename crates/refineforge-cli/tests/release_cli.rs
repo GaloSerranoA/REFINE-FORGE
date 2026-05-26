@@ -263,12 +263,14 @@ fn nix_flake_source_includes_cargo_test_support_files() {
     let flake = std::fs::read_to_string(workspace_root().join("flake.nix")).unwrap();
 
     for prefix in [
+        "pkgs.lib.hasPrefix \"docs/\" relPath",
         ".github/workflows/",
         "scripts/ci/",
         "release/",
         "kernels/",
         "training/",
         "containers/",
+        "schemas/",
     ] {
         assert!(
             flake.contains(prefix),
