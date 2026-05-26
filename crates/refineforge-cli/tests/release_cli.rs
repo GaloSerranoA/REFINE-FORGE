@@ -212,6 +212,21 @@ fn ci_workflow_emits_devops_production_proof_evidence() {
 }
 
 #[test]
+fn ci_workflow_sigstore_identity_uses_current_repository() {
+    let workflow =
+        std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();
+
+    assert!(
+        workflow.contains("https://github.com/${{ github.repository }}/.github/workflows/ci.yml"),
+        "Sigstore verification must accept the actual repository name and casing"
+    );
+    assert!(
+        !workflow.contains("[^/]+/refineforge/.github/workflows/ci.yml"),
+        "Sigstore verification must not hard-code a different repository slug"
+    );
+}
+
+#[test]
 fn ci_workflow_nix_check_does_not_require_flakehub_or_preexisting_lock() {
     let workflow =
         std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();

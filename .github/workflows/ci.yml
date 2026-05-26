@@ -495,7 +495,7 @@ jobs:
         env:
           # Identity the cert should claim — refs the workflow path on
           # this repo. Adjust if forked.
-          EXPECTED_IDENTITY_REGEX: "https://github.com/[^/]+/refineforge/.github/workflows/ci.yml@refs/(heads|tags)/.*"
+          EXPECTED_IDENTITY_REGEX: "https://github.com/${{ github.repository }}/.github/workflows/ci.yml@refs/(heads|tags)/.*"
           EXPECTED_OIDC_ISSUER: "https://token.actions.githubusercontent.com"
         run: |
           set -euo pipefail
@@ -512,7 +512,7 @@ jobs:
 
       - name: Write Sigstore verification evidence
         env:
-          EXPECTED_IDENTITY_REGEX: "https://github.com/[^/]+/refineforge/.github/workflows/ci.yml@refs/(heads|tags)/.*"
+          EXPECTED_IDENTITY_REGEX: "https://github.com/${{ github.repository }}/.github/workflows/ci.yml@refs/(heads|tags)/.*"
           EXPECTED_OIDC_ISSUER: "https://token.actions.githubusercontent.com"
         run: |
           scripts/ci/write-release-production-evidence.sh cosign-verify production-proof/evidence/devops
