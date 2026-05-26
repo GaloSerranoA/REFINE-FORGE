@@ -404,6 +404,9 @@ struct InmortalProofSearchCliOptions {
     /// Validation backend. `lean` runs Lake through Refine-Forge; `receipt-only` is deterministic development mode and is not a proof claim.
     #[arg(long, value_enum, default_value_t = nexus::SearchValidationMode::Lean)]
     validator: nexus::SearchValidationMode,
+    /// Candidate ranking. `insertion-order` preserves the deterministic generator order; `best-first` sorts by the hand-tuned prior heuristic (NOT a learned value function).
+    #[arg(long, value_enum, default_value_t = nexus::RankingMode::InsertionOrder)]
+    ranking: nexus::RankingMode,
     /// Do not export a proof bundle even if Lean verifies a candidate.
     #[arg(long)]
     no_export_bundle: bool,
@@ -775,6 +778,7 @@ fn main() -> Result<()> {
                         out_dir,
                         max_candidates: opts.max_candidates,
                         validation_mode: opts.validator,
+                        ranking: opts.ranking,
                         export_bundle: !opts.no_export_bundle,
                         bundle_out_dir,
                         retain_verified: opts.retain_verified,

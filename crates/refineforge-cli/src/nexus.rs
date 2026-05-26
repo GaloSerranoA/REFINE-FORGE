@@ -26,6 +26,7 @@ pub struct NexusSearchOptions {
     pub out_dir: PathBuf,
     pub max_candidates: usize,
     pub validation_mode: SearchValidationMode,
+    pub ranking: RankingMode,
     pub export_bundle: bool,
     pub bundle_out_dir: Option<PathBuf>,
     pub retain_verified: bool,
@@ -45,6 +46,27 @@ impl SearchValidationMode {
         match self {
             SearchValidationMode::Lean => "lean",
             SearchValidationMode::ReceiptOnly => "receipt_only",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "snake_case")]
+#[value(rename_all = "kebab-case")]
+pub enum RankingMode {
+    /// Try candidates in the order the deterministic generator emits them.
+    #[default]
+    InsertionOrder,
+    /// Sort candidates by the deterministic prior heuristic before iterating.
+    /// This is a hand-tuned tactic prior, NOT a learned value function.
+    BestFirst,
+}
+
+impl RankingMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            RankingMode::InsertionOrder => "insertion_order",
+            RankingMode::BestFirst => "best_first",
         }
     }
 }
@@ -153,6 +175,7 @@ pub struct NexusSearchReport {
     pub status: String,
     pub public_claim: String,
     pub validation_mode: String,
+    pub ranking_mode: String,
     pub claim_id: String,
     pub claim_path: PathBuf,
     pub lean_file: PathBuf,
@@ -177,6 +200,9 @@ pub struct SearchCandidate {
     pub body: String,
     pub body_sha256: String,
     pub rationale: String,
+    /// Deterministic prior heuristic score in [0, 1]. Higher = tried first under best-first
+    /// ranking. NOT a learned value function: see `score_candidate` for the hand-tuned table.
+    pub heuristic_score: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -336,7 +362,15 @@ fn build_search_report(
         }));
     }
 
-    let candidates = generate_candidates(&original_source, &scan.regions, opts.max_candidates);
+    let mut candidates = generate_candidates(&original_source, &scan.regions, opts.max_candidates);
+    if opts.ranking == RankingMode::BestFirst {
+        // Stable sort so insertion order is preserved on ties.
+        candidates.sort_by(|a, b| {
+            b.heuristic_score
+                .partial_cmp(&a.heuristic_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
     if candidates.is_empty() && blockers.is_empty() {
         blockers.push("candidate generator produced no search candidates".to_string());
     }
@@ -470,6 +504,7 @@ fn build_search_report(
         status,
         public_claim,
         validation_mode: opts.validation_mode.as_str().to_string(),
+        ranking_mode: opts.ranking.as_str().to_string(),
         claim_id: loaded_claim.claim_id,
         claim_path,
         lean_file: lean_path,
@@ -823,6 +858,7 @@ fn generate_candidates(
             if seen.insert(key, ()).is_some() {
                 continue;
             }
+            let heuristic_score = score_candidate(&region.kind, generator, &body);
             candidates.push(SearchCandidate {
                 id: format!("candidate-{:04}", candidates.len() + 1),
                 parent_id: "sketch-0000".to_string(),
@@ -832,6 +868,7 @@ fn generate_candidates(
                 body,
                 body_sha256,
                 rationale: rationale.to_string(),
+                heuristic_score,
             });
             if candidates.len() >= max_candidates {
                 return candidates;
@@ -840,6 +877,42 @@ fn generate_candidates(
     }
 
     candidates
+}
+
+/// Deterministic hand-tuned prior heuristic over Lean tactic and value generators.
+///
+/// Returns a score in `[0.0, 1.0]`; higher scores are tried first when
+/// `RankingMode::BestFirst` is selected. Ordering reflects empirical Lean-tactic
+/// cheapness and failure cost (cheaper, lower-failure tactics rank higher).
+///
+/// This is NOT a learned value function, NOT a policy network, and NOT trained
+/// on prior episodes. It is a hand-tuned static table over the deterministic
+/// candidate generators in this crate.
+fn score_candidate(region_kind: &str, generator: &str, body: &str) -> f64 {
+    if generator == "builtin_preserve" {
+        return 1.00;
+    }
+    let trimmed = body.trim();
+    match region_kind {
+        "block" => match trimmed {
+            "rfl" => 0.95,
+            "exact True.intro" => 0.90,
+            "trivial" => 0.85,
+            "simp" => 0.70,
+            "decide" => 0.60,
+            "simp_all" => 0.55,
+            _ => 0.50,
+        },
+        "value" => match trimmed {
+            "()" => 0.85,
+            "true" => 0.80,
+            "false" => 0.75,
+            "0" => 0.70,
+            "1" => 0.65,
+            _ => 0.50,
+        },
+        _ => 0.50,
+    }
 }
 
 fn candidate_bodies_for_region(
@@ -1263,6 +1336,7 @@ mod tests {
             body: "  trivial".to_string(),
             body_sha256: sha256_hex(b"  trivial"),
             rationale: "test body replacement".to_string(),
+            heuristic_score: 0.0,
         };
         let changed = replace_region_body(src, &scan.regions, &candidate).unwrap();
         let changed_scan = scan_evolve_regions(&changed);
@@ -1271,5 +1345,59 @@ mod tests {
             sha256_hex(scan.protected_source.as_bytes()),
             sha256_hex(changed_scan.protected_source.as_bytes())
         );
+    }
+
+    #[test]
+    fn score_candidate_orders_block_generators_lowest_risk_first() {
+        let preserve = score_candidate("block", "builtin_preserve", "  sorry");
+        let rfl = score_candidate("block", "builtin_lean_tactic_bank", "  rfl");
+        let true_intro = score_candidate("block", "builtin_lean_tactic_bank", "  exact True.intro");
+        let trivial = score_candidate("block", "builtin_lean_tactic_bank", "  trivial");
+        let simp = score_candidate("block", "builtin_lean_tactic_bank", "  simp");
+        let decide = score_candidate("block", "builtin_lean_tactic_bank", "  decide");
+        let simp_all = score_candidate("block", "builtin_lean_tactic_bank", "  simp_all");
+
+        assert_eq!(preserve, 1.00);
+        assert_eq!(rfl, 0.95);
+        assert_eq!(true_intro, 0.90);
+        assert_eq!(trivial, 0.85);
+        assert_eq!(simp, 0.70);
+        assert_eq!(decide, 0.60);
+        assert_eq!(simp_all, 0.55);
+        assert!(preserve > rfl);
+        assert!(rfl > true_intro);
+        assert!(true_intro > trivial);
+        assert!(trivial > simp);
+        assert!(simp > decide);
+        assert!(decide > simp_all);
+    }
+
+    #[test]
+    fn score_candidate_orders_value_generators_with_preserve_first() {
+        let preserve = score_candidate("value", "builtin_preserve", "1234");
+        let unit = score_candidate("value", "builtin_value_bank", "()");
+        let true_v = score_candidate("value", "builtin_value_bank", "true");
+        let false_v = score_candidate("value", "builtin_value_bank", "false");
+        let zero = score_candidate("value", "builtin_value_bank", "0");
+        let one = score_candidate("value", "builtin_value_bank", "1");
+
+        assert_eq!(preserve, 1.00);
+        assert_eq!(unit, 0.85);
+        assert_eq!(true_v, 0.80);
+        assert_eq!(false_v, 0.75);
+        assert_eq!(zero, 0.70);
+        assert_eq!(one, 0.65);
+        assert!(preserve > unit && unit > true_v && true_v > false_v);
+        assert!(false_v > zero && zero > one);
+    }
+
+    #[test]
+    fn score_candidate_falls_back_for_unknown_generator_or_body() {
+        assert_eq!(
+            score_candidate("block", "builtin_lean_tactic_bank", "  omega"),
+            0.50
+        );
+        assert_eq!(score_candidate("value", "builtin_value_bank", "42"), 0.50);
+        assert_eq!(score_candidate("other", "any", "anything"), 0.50);
     }
 }

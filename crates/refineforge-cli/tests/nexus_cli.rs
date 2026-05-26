@@ -269,3 +269,115 @@ end Refineforge.SearchSmoke
     assert!(out.join("lean-feedback.jsonl").exists());
     assert!(out.join("population.jsonl").exists());
 }
+
+fn read_jsonl(path: &Path) -> Vec<Value> {
+    std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+fn run_search(root: &Path, claim_id: &str, out: &Path, ranking: &str) {
+    let output = run_refine(
+        root,
+        &[
+            "inmortal-proof",
+            "search",
+            claim_id,
+            "--validator",
+            "receipt-only",
+            "--max-candidates",
+            "8",
+            "--ranking",
+            ranking,
+            "--out",
+            out.to_str().unwrap(),
+            "--no-export-bundle",
+            "--json",
+        ],
+    );
+    assert_success(&output);
+}
+
+#[test]
+fn inmortal_proof_search_best_first_reorders_candidates() {
+    let td = tempfile::tempdir().unwrap();
+    let root = td.path();
+    write_claim(
+        root,
+        "CLAIM-NEXUS-004",
+        "lean/Refineforge/BestFirstSmoke.lean",
+        "target",
+    );
+    write_lean(
+        root,
+        "lean/Refineforge/BestFirstSmoke.lean",
+        r#"namespace Refineforge.BestFirstSmoke
+
+theorem target : True := by
+-- EVOLVE-BLOCK-START
+  sorry
+-- EVOLVE-BLOCK-END
+
+end Refineforge.BestFirstSmoke
+"#,
+    );
+
+    let out_insertion = root.join("out-insertion");
+    let out_best_first = root.join("out-best-first");
+    run_search(root, "CLAIM-NEXUS-004", &out_insertion, "insertion-order");
+    run_search(root, "CLAIM-NEXUS-004", &out_best_first, "best-first");
+
+    let insertion = read_jsonl(&out_insertion.join("candidates.jsonl"));
+    let best_first = read_jsonl(&out_best_first.join("candidates.jsonl"));
+    assert!(
+        insertion.len() >= 4,
+        "insertion-order produced {} candidates",
+        insertion.len()
+    );
+    assert_eq!(insertion.len(), best_first.len());
+
+    // Every candidate carries a heuristic_score field.
+    for cand in &insertion {
+        assert!(
+            cand.get("heuristic_score").is_some(),
+            "missing heuristic_score on {:?}",
+            cand
+        );
+    }
+
+    // Best-first: scores are monotonically non-increasing.
+    let scores: Vec<f64> = best_first
+        .iter()
+        .map(|c| c["heuristic_score"].as_f64().unwrap())
+        .collect();
+    for window in scores.windows(2) {
+        assert!(
+            window[0] >= window[1],
+            "best-first scores not monotonically non-increasing: {:?}",
+            scores
+        );
+    }
+
+    // First candidate under best-first is the preserve baseline (score 1.00).
+    assert_eq!(
+        best_first[0]["generator"].as_str().unwrap(),
+        "builtin_preserve"
+    );
+    assert_eq!(best_first[0]["heuristic_score"].as_f64().unwrap(), 1.00);
+
+    // Best-first should reorder relative to insertion-order: the second candidate
+    // differs (insertion-order yields "trivial"; best-first yields "rfl").
+    let insertion_second = insertion[1]["body"].as_str().unwrap().trim();
+    let best_first_second = best_first[1]["body"].as_str().unwrap().trim();
+    assert_eq!(insertion_second, "trivial");
+    assert_eq!(best_first_second, "rfl");
+
+    // Report exposes the chosen ranking mode.
+    let insertion_report = read_json(&out_insertion.join("inmortal-proof-search-report.json"));
+    let best_first_report = read_json(&out_best_first.join("inmortal-proof-search-report.json"));
+    assert_eq!(insertion_report["ranking_mode"], "insertion_order");
+    assert_eq!(best_first_report["ranking_mode"], "best_first");
+}
