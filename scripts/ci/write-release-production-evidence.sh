@@ -124,11 +124,15 @@ JSON
     shift || true
     [ "$#" -gt 0 ] || usage
     out_dir="$(release_dir "$evidence_dir")"
-    cp flake.lock "$out_dir/flake.lock"
     set +e
     "$@" 2>&1 | tee "$out_dir/nix-check.log"
     status=${PIPESTATUS[0]}
     set -e
+    if [ -f flake.lock ]; then
+      cp flake.lock "$out_dir/flake.lock"
+    else
+      echo "flake.lock was not present after nix command" >> "$out_dir/nix-check.log"
+    fi
     if [ "$status" -eq 0 ]; then
       echo "nix flake check passed" >> "$out_dir/nix-check.log"
     fi

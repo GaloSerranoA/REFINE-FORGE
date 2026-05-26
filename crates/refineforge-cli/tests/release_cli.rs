@@ -210,3 +210,27 @@ fn ci_workflow_emits_devops_production_proof_evidence() {
     assert!(evidence_surface.contains("verifier-container-digest.txt"));
     assert!(workflow.contains("id-token: write"));
 }
+
+#[test]
+fn ci_workflow_nix_check_does_not_require_flakehub_or_preexisting_lock() {
+    let workflow =
+        std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();
+    let writer = std::fs::read_to_string(
+        workspace_root().join("scripts/ci/write-release-production-evidence.sh"),
+    )
+    .unwrap();
+
+    assert!(workflow.contains("DeterminateSystems/nix-installer-action"));
+    assert!(
+        !workflow.contains("magic-nix-cache-action"),
+        "public CI must not require FlakeHub cache registration"
+    );
+    assert!(
+        !workflow.contains("--no-update-lock-file"),
+        "first public CI run must be able to generate flake.lock evidence"
+    );
+    assert!(
+        writer.find("\"$@\"").unwrap() < writer.find("cp flake.lock").unwrap(),
+        "nix-check evidence must copy flake.lock after nix has had a chance to generate it"
+    );
+}

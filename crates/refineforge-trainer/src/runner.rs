@@ -203,12 +203,58 @@ fn build_hrm_text_command(
     Ok(argv)
 }
 
-/// Naive shell-split: splits on whitespace, no quoting. Adequate for
-/// our tool-launch templates which are simple `tool arg --flag val`.
-/// For more complex needs, the operator can shell out via a wrapper
-/// script and point `command` at the wrapper.
 fn shell_split(s: &str) -> Vec<String> {
-    s.split_whitespace().map(|s| s.to_string()).collect()
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut token_started = false;
+    let mut chars = s.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match quote {
+            Some('\'') => {
+                if ch == '\'' {
+                    quote = None;
+                } else {
+                    current.push(ch);
+                }
+            }
+            Some('"') => {
+                if ch == '"' {
+                    quote = None;
+                } else if ch == '\\' {
+                    if matches!(chars.peek(), Some('"') | Some('\\')) {
+                        let next = chars.next().unwrap();
+                        current.push(next);
+                    } else {
+                        current.push(ch);
+                    }
+                } else {
+                    current.push(ch);
+                }
+            }
+            Some(_) => unreachable!("only single and double quotes are tracked"),
+            None => {
+                if ch.is_whitespace() {
+                    if token_started {
+                        args.push(std::mem::take(&mut current));
+                        token_started = false;
+                    }
+                } else if ch == '\'' || ch == '"' {
+                    quote = Some(ch);
+                    token_started = true;
+                } else {
+                    token_started = true;
+                    current.push(ch);
+                }
+            }
+        }
+    }
+
+    if token_started {
+        args.push(current);
+    }
+    args
 }
 
 /// Run the experiment once (no retry). Streams stdout/stderr to the
@@ -391,6 +437,27 @@ mod tests {
         paths.ensure_created().unwrap();
         let argv = build_command(&exp.backend, &paths, &exp).unwrap();
         assert_eq!(argv, vec!["script", "--seed", "42"]);
+    }
+
+    #[test]
+    fn build_command_preserves_quoted_arguments() {
+        let exp =
+            minimal_exp_with_command("python \"/tmp/refine forge/train.py\" --expr 'loss < 0.1'");
+        let td = tempfile::tempdir().unwrap();
+        let paths = RunPaths::for_experiment(td.path(), &exp);
+        paths.ensure_created().unwrap();
+
+        let argv = build_command(&exp.backend, &paths, &exp).unwrap();
+
+        assert_eq!(
+            argv,
+            vec![
+                "python",
+                "/tmp/refine forge/train.py",
+                "--expr",
+                "loss < 0.1"
+            ]
+        );
     }
 
     #[test]

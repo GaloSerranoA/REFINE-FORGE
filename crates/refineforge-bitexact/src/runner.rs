@@ -136,7 +136,57 @@ pub fn run_once(run_dir: &Path, exp: &KernelExperiment, run_index: usize) -> Run
 }
 
 fn shell_split(s: &str) -> Vec<String> {
-    s.split_whitespace().map(|s| s.to_string()).collect()
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut token_started = false;
+    let mut chars = s.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match quote {
+            Some('\'') => {
+                if ch == '\'' {
+                    quote = None;
+                } else {
+                    current.push(ch);
+                }
+            }
+            Some('"') => {
+                if ch == '"' {
+                    quote = None;
+                } else if ch == '\\' {
+                    if matches!(chars.peek(), Some('"') | Some('\\')) {
+                        let next = chars.next().unwrap();
+                        current.push(next);
+                    } else {
+                        current.push(ch);
+                    }
+                } else {
+                    current.push(ch);
+                }
+            }
+            Some(_) => unreachable!("only single and double quotes are tracked"),
+            None => {
+                if ch.is_whitespace() {
+                    if token_started {
+                        args.push(std::mem::take(&mut current));
+                        token_started = false;
+                    }
+                } else if ch == '\'' || ch == '"' {
+                    quote = Some(ch);
+                    token_started = true;
+                } else {
+                    token_started = true;
+                    current.push(ch);
+                }
+            }
+        }
+    }
+
+    if token_started {
+        args.push(current);
+    }
+    args
 }
 
 fn truncate(s: &str, n: usize) -> String {
@@ -173,6 +223,30 @@ mod tests {
             env: BTreeMap::new(),
             hardware: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn shell_split_preserves_single_quoted_shell_fragment() {
+        assert_eq!(
+            shell_split("bash -c 'echo $RANDOM-$RANDOM'"),
+            vec!["bash", "-c", "echo $RANDOM-$RANDOM"]
+        );
+    }
+
+    #[test]
+    fn shell_split_preserves_double_quoted_path_with_spaces() {
+        assert_eq!(
+            shell_split("python \"/tmp/refine forge/train.py\" --flag \"a b\""),
+            vec!["python", "/tmp/refine forge/train.py", "--flag", "a b"]
+        );
+    }
+
+    #[test]
+    fn shell_split_preserves_windows_path_separators() {
+        assert_eq!(
+            shell_split(r"python C:\tmp\refineforge\data.jsonl"),
+            vec!["python", r"C:\tmp\refineforge\data.jsonl"]
+        );
     }
 
     #[test]
