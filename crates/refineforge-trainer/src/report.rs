@@ -325,6 +325,7 @@ mod tests {
                 config_file: None,
                 command: Some("true".into()),
                 extra_args: vec![],
+                runtime: BTreeMap::new(),
             },
             hyperparameters: BTreeMap::new(),
             checkpoint: CheckpointConfig::default(),

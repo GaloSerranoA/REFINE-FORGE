@@ -81,6 +81,11 @@ pub struct Backend {
     /// Extra args passed verbatim AFTER the substituted command.
     #[serde(default)]
     pub extra_args: Vec<String>,
+    /// Backend-specific runtime metadata. HRM-Text uses this for
+    /// `source_repo`, `python`, `torchrun`, `nproc_per_node`, and cluster
+    /// launch hints without forcing those fields onto every backend.
+    #[serde(default)]
+    pub runtime: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -228,7 +233,10 @@ impl Experiment {
         if matches!(self.backend.kind.as_str(), "custom" | "pytorch_baseline")
             && self.backend.command.is_none()
         {
-            anyhow::bail!("backend.kind=custom requires backend.command template");
+            anyhow::bail!(
+                "backend.kind={} requires backend.command template",
+                self.backend.kind
+            );
         }
         Ok(())
     }

@@ -10,6 +10,21 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added - HRM-Text runtime factory
+
+- Added `refine-train hrm-text probe` to record local HRM-Text runtime
+  readiness for Python, PyTorch, CUDA, FlashAttention importability, and
+  required HRM-Text source files without claiming a checkpoint exists.
+- Added `refine-train hrm-text manifest` to hash HRM-Text checkpoint shards,
+  carry-state files, configs, tokenizer files, and source-repo evidence into a
+  HELYX handoff manifest with an explicit hash-verification policy.
+- Added `backend.runtime` metadata for `hrm_text` experiments. The default
+  HRM-Text command builder now resolves `source_repo`, `torchrun`,
+  `nproc_per_node`, optional cluster arguments, resume checkpoints, and
+  space-safe paths before dry-run or execution.
+- Added `training/configs/hrm-text-sft-runtime-example.yaml` plus training
+  README quick-start commands for probe, dry-run, and manifest generation.
+
 ### Added - offline DevOps release assurance
 
 - Added `release-offline` to the approval CLI. It validates local release

@@ -38,6 +38,10 @@ fn hex_sha256(bytes: &[u8]) -> String {
         .collect()
 }
 
+fn yaml_path(path: &Path) -> String {
+    path.display().to_string().replace('\\', "/")
+}
+
 fn write_proof_repair_sft(path: &Path) {
     let rows = [
         json!({
@@ -404,6 +408,9 @@ fn hrm_text_and_pytorch_baseline_backends_have_explicit_external_command_adapter
     let temp = tempfile::tempdir().unwrap();
     let dataset = temp.path().join("data.jsonl");
     fs::write(&dataset, "{\"text\":\"hello\"}\n").unwrap();
+    let source_repo = temp.path().join("HRM Text Source");
+    fs::create_dir_all(&source_repo).unwrap();
+    fs::write(source_repo.join("pretrain.py"), "print('train')\n").unwrap();
     let hrm_config = temp.path().join("hrm.yaml");
     fs::write(
         &hrm_config,
@@ -414,12 +421,15 @@ base_model:
   name: HRM-Text
   source: external
 dataset:
-  path: {}
+  path: '{}'
 backend:
   kind: hrm_text
   config_file: config/cfg_sft.yaml
+  runtime:
+    source_repo: '{}'
 "#,
-            dataset.display()
+            yaml_path(&dataset),
+            yaml_path(&source_repo)
         ),
     )
     .unwrap();

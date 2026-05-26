@@ -6,8 +6,9 @@ Owned by **Section 2: ML Training Engineer** ([../ARCHITECTURE.md](../ARCHITECTU
 > (`crates/refineforge-trainer`, binary `refine-train`). Dataset audit,
 > deterministic SFT packing, causal-LM preprocessing, built-in
 > `refineforge_native` and `refineforge_native_causal_lm` smoke training,
-> Axolotl/custom/HELYX/HRM/PyTorch command resolution, run reports,
-> production-proof evidence generation, and local-finetune promotion are
+> Axolotl/custom/HELYX/HRM/PyTorch command resolution, HRM-Text runtime
+> probes and checkpoint manifests, run reports, production-proof evidence
+> generation, and local-finetune promotion are
 > implemented. No accepted production proof-repair checkpoint has been
 > human-approved yet.
 
@@ -52,6 +53,22 @@ refine-train run training/configs/example-qwen-1.5b.yaml --dry-run
 
 # 7. Actually run an external trainer (assumes `axolotl`, `helyx-train`, `torchrun`, or your training tool is on PATH):
 refine-train run training/configs/example-qwen-1.5b.yaml
+
+# 7b. Probe HRM-Text runtime readiness without claiming a checkpoint exists:
+refine-train hrm-text probe \
+  --source-repo "D:/AI-PROJECTS-GALO/repositories/AGI RESEARCH/HRM-Text" \
+  --out training/runs/hrm-text-probe.json
+
+# 7c. Dry-run the HRM-Text torchrun command resolution:
+refine-train run training/configs/hrm-text-sft-runtime-example.yaml --dry-run
+
+# 7d. After a real HRM-Text run/export, write the HELYX handoff manifest:
+refine-train hrm-text manifest \
+  --source-repo "D:/AI-PROJECTS-GALO/repositories/AGI RESEARCH/HRM-Text" \
+  --checkpoint-dir training/runs/<experiment-id>/checkpoints/<checkpoint> \
+  --config-file training/runs/<experiment-id>/checkpoints/<checkpoint>/all_config.yaml \
+  --tokenizer-file training/runs/<experiment-id>/tokenizer.json \
+  --out production-proof/evidence/<model-id>/training/hrm-text-runtime-manifest.json
 
 # 8. Tail progress in another shell:
 refine-train monitor training/runs/<experiment-id>

@@ -13,7 +13,7 @@ discipline split (Lean Specialist / ML Engineer / DevOps / CUDA Engineer) read
 |---:|---|---|---|
 | 1 | Lean 4 / verification | `lean/`, `claims/`, `crates/refineforge-cli`, `refine agent lean`, templates, bundle artifacts | Lean proves the model; refinement docs and claim linting carry the human-reviewed Rust link |
 | 2 | Release / infrastructure / DevOps | `.github/workflows/ci.yml`, `release/`, `containers/Dockerfile.verifier`, `refine agent devops`, `refine release offline-proof`, SBOM/provenance evidence, `release-offline` approvals | Local release-readiness works; offline/local assurance is separate; Docker/signature gates require `--allow-expensive` or hosted CI; real hosted OIDC signing still requires a remote CI run |
-| 3 | ML / training engine | `crates/refineforge-trainer`, `training/`, `refine agent train`, local-finetune bridge in `refineforge-strategies` | Refine-Forge now runs native proof-repair smoke training and validates production evidence; HELYX/Axolotl/custom remain production-scale trainer backends |
+| 3 | ML / training engine | `crates/refineforge-trainer`, `training/`, `refine agent train`, local-finetune bridge in `refineforge-strategies` | Refine-Forge now runs native proof-repair smoke training, produces HRM-Text runtime handoff manifests, and validates production evidence; HELYX/Axolotl/custom remain production-scale trainer backends |
 | 4 | GPU / kernel Rust | `crates/refineforge-bitexact`, `kernels/`, `refine agent kernel`, `docs/bit-exact-reproducibility.md` | Refine-Forge owns local CUDA smoke evidence and deterministic gates; `helyx-kernels` owns production kernels |
 
 ## Top-level layout
@@ -297,10 +297,10 @@ trainer, the built-in `refineforge_native_causal_lm` causal smoke trainer, or
 wraps external training backends (HELYX `helyx-train`, HRM-Text/PyTorch
 baseline through `torchrun`, axolotl, HuggingFace Trainer, custom script) with
 run tracking, checkpoint resume, retry-with-backoff failure recovery, JSON
-training reports, production-proof evidence generation, and local-finetune
-promotion. The native backends perform small deterministic gradient-based
-smoke training loops; they are not production LLM training evidence by
-themselves.
+training reports, production-proof evidence generation, HRM-Text runtime
+probes/checkpoint manifests for HELYX handoff, and local-finetune promotion.
+The native backends perform small deterministic gradient-based smoke training
+loops; they are not production LLM training evidence by themselves.
 `refine agent train` validates `REFINEFORGE_TRAINING_EVIDENCE_DIR` or
 individual training evidence paths before any `human-reviewed` trust upgrade:
 checkpoint, eval report, regression report, compute ledger, conversion

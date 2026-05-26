@@ -21,6 +21,7 @@ mod dataset;
 mod evidence;
 mod experiment;
 mod failure;
+mod hrm_text_runtime;
 mod native;
 mod native_causal;
 mod pack;
@@ -119,6 +120,11 @@ enum Cmd {
         #[arg(long)]
         require_success: bool,
     },
+    /// HRM-Text runtime factory utilities.
+    HrmText {
+        #[command(subcommand)]
+        cmd: HrmTextCmd,
+    },
     /// Generate production-proof training evidence from a completed run.
     Evidence {
         /// Run directory containing report.json.
@@ -135,6 +141,40 @@ enum Cmd {
     },
     /// List all checkpoints in a run dir.
     Checkpoints { run_dir: PathBuf },
+}
+
+#[derive(Subcommand)]
+enum HrmTextCmd {
+    /// Probe local Python/CUDA/FlashAttention availability for HRM-Text.
+    Probe {
+        /// Path to the HRM-Text source repository.
+        #[arg(long)]
+        source_repo: PathBuf,
+        /// Python executable to probe.
+        #[arg(long, default_value = "python")]
+        python: String,
+        /// JSON output path.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Write a checkpoint/config/tokenizer manifest for HELYX handoff.
+    Manifest {
+        /// HRM-Text checkpoint directory.
+        #[arg(long)]
+        checkpoint_dir: PathBuf,
+        /// Path to the HRM-Text source repository.
+        #[arg(long)]
+        source_repo: PathBuf,
+        /// Optional HRM-Text all_config.yaml or runtime config file.
+        #[arg(long)]
+        config_file: Option<PathBuf>,
+        /// Optional tokenizer JSON/file.
+        #[arg(long)]
+        tokenizer_file: Option<PathBuf>,
+        /// JSON output path.
+        #[arg(long)]
+        out: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -224,6 +264,7 @@ fn main() -> Result<()> {
             producer,
             require_success,
         ),
+        Cmd::HrmText { cmd } => cmd_hrm_text(cmd),
         Cmd::Evidence {
             run_dir,
             out_dir,
@@ -231,6 +272,49 @@ fn main() -> Result<()> {
             model_id,
         } => cmd_evidence(run_dir, out_dir, baseline_report, model_id),
         Cmd::Checkpoints { run_dir } => cmd_checkpoints(&run_dir),
+    }
+}
+
+fn cmd_hrm_text(cmd: HrmTextCmd) -> Result<()> {
+    match cmd {
+        HrmTextCmd::Probe {
+            source_repo,
+            python,
+            out,
+        } => {
+            let report = hrm_text_runtime::write_probe(&hrm_text_runtime::ProbeOptions {
+                source_repo,
+                python,
+                out: out.clone(),
+            })?;
+            println!(
+                "HRM-Text probe: status={} wrote {}",
+                report["status"].as_str().unwrap_or("unknown"),
+                out.display()
+            );
+            Ok(())
+        }
+        HrmTextCmd::Manifest {
+            checkpoint_dir,
+            source_repo,
+            config_file,
+            tokenizer_file,
+            out,
+        } => {
+            let manifest = hrm_text_runtime::write_manifest(&hrm_text_runtime::ManifestOptions {
+                checkpoint_dir,
+                source_repo,
+                config_file,
+                tokenizer_file,
+                out: out.clone(),
+            })?;
+            println!(
+                "HRM-Text manifest: status={} wrote {}",
+                manifest["status"].as_str().unwrap_or("unknown"),
+                out.display()
+            );
+            Ok(())
+        }
     }
 }
 

@@ -63,6 +63,9 @@ pub fn build_command(backend: &Backend, paths: &RunPaths, exp: &Experiment) -> R
     let resume_from = checkpoint::latest(&paths.checkpoint_dir)?
         .map(|c| c.path.display().to_string())
         .unwrap_or_default();
+    if backend.kind == "hrm_text" && backend.command.is_none() {
+        return build_hrm_text_command(backend, paths, exp, &resume_from);
+    }
     let config_file = backend
         .config_file
         .as_ref()
@@ -141,6 +144,62 @@ pub fn build_command(backend: &Backend, paths: &RunPaths, exp: &Experiment) -> R
     if argv.is_empty() {
         return Err(anyhow!("empty command after substitution"));
     }
+    Ok(argv)
+}
+
+fn build_hrm_text_command(
+    backend: &Backend,
+    paths: &RunPaths,
+    exp: &Experiment,
+    resume_from: &str,
+) -> Result<Vec<String>> {
+    let cfg = backend.config_file.as_ref().ok_or_else(|| {
+        anyhow!("backend.kind=hrm_text with no command requires backend.config_file")
+    })?;
+    let source_repo = backend
+        .runtime
+        .get("source_repo")
+        .cloned()
+        .or_else(|| std::env::var("HRM_TEXT_REPO").ok())
+        .ok_or_else(|| {
+            anyhow!("backend.kind=hrm_text requires backend.runtime.source_repo or HRM_TEXT_REPO")
+        })?;
+    let source_repo = PathBuf::from(source_repo);
+    let pretrain = source_repo.join("pretrain.py");
+    if !pretrain.exists() {
+        return Err(anyhow!(
+            "HRM-Text source repo is missing pretrain.py at {}",
+            pretrain.display()
+        ));
+    }
+    let torchrun = backend
+        .runtime
+        .get("torchrun")
+        .cloned()
+        .unwrap_or_else(|| "torchrun".to_string());
+    let nproc = backend
+        .runtime
+        .get("nproc_per_node")
+        .cloned()
+        .unwrap_or_else(|| "1".to_string());
+    let mut argv = vec![
+        torchrun,
+        format!("--nproc_per_node={nproc}"),
+        pretrain.display().to_string(),
+        "--config-name".to_string(),
+        cfg.display().to_string(),
+        format!("data.path={}", exp.dataset.path.display()),
+        format!("+checkpoint_path={}", paths.checkpoint_dir.display()),
+    ];
+    for key in ["nnodes", "node_rank", "master_addr", "master_port"] {
+        if let Some(value) = backend.runtime.get(key) {
+            argv.push(format!("--{key}={value}"));
+        }
+    }
+    if !resume_from.is_empty() {
+        argv.push(format!("resume_from={resume_from}"));
+    }
+    argv.extend(backend.extra_args.iter().cloned());
     Ok(argv)
 }
 
@@ -300,6 +359,7 @@ mod tests {
                 config_file: None,
                 command: Some(cmd.into()),
                 extra_args: vec![],
+                runtime: BTreeMap::new(),
             },
             hyperparameters: BTreeMap::new(),
             checkpoint: CheckpointConfig::default(),
@@ -341,6 +401,7 @@ mod tests {
                 config_file: None,
                 command: None,
                 extra_args: vec![],
+                runtime: BTreeMap::new(),
             },
             ..minimal_exp_with_command("ignored")
         };
@@ -358,6 +419,7 @@ mod tests {
             config_file: Some("training/configs/helyx-proof-repair.yaml".into()),
             command: None,
             extra_args: vec![],
+            runtime: BTreeMap::new(),
         };
         let td = tempfile::tempdir().unwrap();
         let paths = RunPaths::for_experiment(td.path(), &exp);
@@ -387,6 +449,7 @@ mod tests {
             config_file: None,
             command: None,
             extra_args: vec![],
+            runtime: BTreeMap::new(),
         };
         let td = tempfile::tempdir().unwrap();
         let paths = RunPaths::for_experiment(td.path(), &exp);

@@ -1,0 +1,54 @@
+# HRM-Text runtime factory example.
+#
+# Refine-Forge owns this heavy runtime lane: Python/PyTorch/CUDA probing,
+# torchrun command resolution, checkpoint manifests, and HELYX handoff hashes.
+# HELYX consumes the resulting manifest; it does not embed checkpoint blobs in
+# core.
+
+id: 2026-05-26-hrm-text-sft-runtime-example
+
+description: |
+  HRM-Text SFT runtime lane for producing manifest-verified artifacts that
+  HELYX can consume through its optional HRM-Text adapter.
+
+base_model:
+  name: HRM-Text-XL
+  source: local
+
+dataset:
+  path: training/runs/hrm-text-sft-pack
+  format: sft_pack
+
+backend:
+  kind: hrm_text
+  config_file: config/cfg_sft.yaml
+  runtime:
+    source_repo: D:/AI-PROJECTS-GALO/repositories/AGI RESEARCH/HRM-Text
+    nproc_per_node: "1"
+    torchrun: torchrun
+  extra_args:
+    - arch/size@arch=XL
+    - weights_only_resume_from_ema=true
+
+hyperparameters:
+  learning_rate: 0.0002
+  global_batch_size: 1024
+  epochs: 1
+
+checkpoint:
+  dir: checkpoints
+  save_steps: 1
+  keep_last: 2
+
+monitoring:
+  log_file: train.log
+  progress_format: generic
+  metrics_to_track:
+    - loss
+    - eval_loss
+    - learning_rate
+
+retry:
+  max_attempts: 1
+  backoff_seconds: 0
+  resume_from_checkpoint: true

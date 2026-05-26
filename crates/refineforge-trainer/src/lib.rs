@@ -9,6 +9,7 @@ pub mod dataset;
 pub mod evidence;
 pub mod experiment;
 pub mod failure;
+pub mod hrm_text_runtime;
 pub mod native;
 pub mod native_causal;
 pub mod pack;

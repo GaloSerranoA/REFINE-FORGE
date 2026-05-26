@@ -250,6 +250,7 @@ mod tests {
                     config_file: Some("training/configs/fixture-helyx.yaml".into()),
                     command: None,
                     extra_args: vec![],
+                    runtime: BTreeMap::new(),
                 },
                 hyperparameters: BTreeMap::new(),
                 checkpoint: CheckpointConfig::default(),
