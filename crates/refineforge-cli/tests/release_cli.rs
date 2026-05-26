@@ -244,6 +244,59 @@ fn ci_workflow_nix_check_does_not_require_flakehub_or_preexisting_lock() {
 }
 
 #[test]
+fn ci_workflow_nix_check_keeps_failed_build_directories_for_diagnostics() {
+    let workflow =
+        std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();
+
+    assert!(
+        workflow.contains("nix flake check --print-build-logs --keep-failed"),
+        "Nix CI must keep failed build directories so hidden cargo/test logs can be surfaced"
+    );
+}
+
+#[test]
+fn ci_script_nix_check_captures_kept_build_logs() {
+    let writer = std::fs::read_to_string(
+        workspace_root().join("scripts/ci/write-release-production-evidence.sh"),
+    )
+    .unwrap();
+
+    assert!(
+        writer.contains("nix-kept-build-logs.txt"),
+        "Nix failure diagnostics must persist logs copied from kept build directories"
+    );
+    assert!(
+        writer.contains("/tmp/nix-build-"),
+        "Nix failure diagnostics must detect --keep-failed build directories"
+    );
+    assert!(
+        writer.contains("find \"$kept_dir\""),
+        "Nix failure diagnostics must inspect kept build directories for cargo/test logs"
+    );
+}
+
+#[test]
+fn ci_script_nix_check_annotates_primary_and_builder_logs() {
+    let writer = std::fs::read_to_string(
+        workspace_root().join("scripts/ci/write-release-production-evidence.sh"),
+    )
+    .unwrap();
+
+    assert!(
+        writer.contains("nix-failure-diagnostics.log"),
+        "Nix failure diagnostics must combine useful snippets instead of choosing one opaque log"
+    );
+    assert!(
+        writer.contains("append_nix_diagnostics \"$out_dir/nix-check.log\""),
+        "Nix failure annotations must include the primary nix-check log"
+    );
+    assert!(
+        writer.contains("append_nix_diagnostics \"$out_dir/nix-builder.log\""),
+        "Nix failure annotations must include the builder log when available"
+    );
+}
+
+#[test]
 fn nix_flake_source_includes_cargo_lock() {
     let root = workspace_root();
     let gitignore = std::fs::read_to_string(root.join(".gitignore")).unwrap();

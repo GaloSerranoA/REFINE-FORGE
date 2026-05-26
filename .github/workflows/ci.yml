@@ -310,7 +310,7 @@ jobs:
           chmod +x scripts/ci/write-release-production-evidence.sh
           scripts/ci/write-release-production-evidence.sh nix-check \
             production-proof/evidence/devops \
-            -- nix flake check --print-build-logs
+            -- nix flake check --print-build-logs --keep-failed
 
       - name: Build refine binary via Nix
         run: nix build .#refine --print-build-logs
@@ -337,6 +337,9 @@ jobs:
           path: |
             production-proof/evidence/devops/release/flake.lock
             production-proof/evidence/devops/release/nix-check.log
+            production-proof/evidence/devops/release/nix-builder.log
+            production-proof/evidence/devops/release/nix-kept-build-logs.txt
+            production-proof/evidence/devops/release/nix-failure-diagnostics.log
           retention-days: 90
 
   # ─── Bit-exact gate (CPU stub on every push; real GPU gate when

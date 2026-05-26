@@ -134,24 +134,64 @@ JSON
       echo "flake.lock was not present after nix command" >> "$out_dir/nix-check.log"
     fi
     if [ "$status" -ne 0 ] && command -v nix >/dev/null 2>&1; then
-      drv_path="$(grep -Eo "/nix/store/[^ ']+\\.drv" "$out_dir/nix-check.log" | tail -n 1 || true)"
-      if [ -n "$drv_path" ]; then
-        nix log "$drv_path" > "$out_dir/nix-builder.log" 2>&1 || true
+      drv_paths="$(grep -Eo "/nix/store/[^ ']+\\.drv" "$out_dir/nix-check.log" | awk '!seen[$0]++' || true)"
+      if [ -n "$drv_paths" ]; then
+        : > "$out_dir/nix-builder.log"
+        while IFS= read -r drv_path; do
+          [ -n "$drv_path" ] || continue
+          {
+            echo "===== nix log $drv_path ====="
+            nix log "$drv_path" 2>&1 || true
+            echo
+          } >> "$out_dir/nix-builder.log"
+        done <<< "$drv_paths"
+      fi
+    fi
+    if [ "$status" -ne 0 ]; then
+      : > "$out_dir/nix-kept-build-logs.txt"
+      kept_dirs="$(grep -hEo "/tmp/nix-build-[^ '\"\`]+" "$out_dir/nix-check.log" "$out_dir/nix-builder.log" 2>/dev/null | awk '!seen[$0]++' || true)"
+      if [ -n "$kept_dirs" ]; then
+        while IFS= read -r kept_dir; do
+          [ -n "$kept_dir" ] || continue
+          {
+            echo "===== kept Nix build directory: $kept_dir ====="
+          } >> "$out_dir/nix-kept-build-logs.txt"
+          if [ -d "$kept_dir" ]; then
+            find "$kept_dir" -maxdepth 8 -type f \
+              \( -name "*.log" -o -name "failures.jsonl" -o -name "junit.xml" -o -name "cargo-test*.txt" -o -name "cargo-test*.log" \) \
+              -print | sort | while IFS= read -r kept_file; do
+                {
+                  echo "----- $kept_file -----"
+                  tail -n 200 "$kept_file" || true
+                  echo
+                } >> "$out_dir/nix-kept-build-logs.txt"
+              done
+          else
+            echo "kept build directory was mentioned but is not accessible" >> "$out_dir/nix-kept-build-logs.txt"
+          fi
+        done <<< "$kept_dirs"
       fi
     fi
     if [ "$status" -eq 0 ]; then
       echo "nix flake check passed" >> "$out_dir/nix-check.log"
     elif [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-      diagnostic_source="$out_dir/nix-check.log"
-      if [ -s "$out_dir/nix-builder.log" ]; then
-        diagnostic_source="$out_dir/nix-builder.log"
-      fi
-      grep -E -- '---- |panicked at| FAILED|failures:|test result: FAILED|error: test failed|Error: |FAIL:' \
-        "$diagnostic_source" > "$out_dir/nix-failure-summary.log" || true
-      if [ -s "$out_dir/nix-failure-summary.log" ]; then
-        diagnostic_source="$out_dir/nix-failure-summary.log"
-      fi
-      tail -n 80 "$diagnostic_source" | while IFS= read -r line; do
+      : > "$out_dir/nix-failure-diagnostics.log"
+      append_nix_diagnostics() {
+        local source="$1"
+        [ -s "$source" ] || return 0
+        {
+          echo "===== diagnostics from $source ====="
+          grep -E -- '---- |panicked at| FAILED|failures:|test result: FAILED|error: test failed|error: builder for|error:|Error: |FAIL:|For full logs|note: run with|BuildFailed|ToolingError|No such file|not found|Permission denied|permission denied' \
+            "$source" | tail -n 120 || true
+          echo "----- tail from $source -----"
+          tail -n 120 "$source" || true
+          echo
+        } >> "$out_dir/nix-failure-diagnostics.log"
+      }
+      append_nix_diagnostics "$out_dir/nix-check.log"
+      append_nix_diagnostics "$out_dir/nix-builder.log"
+      append_nix_diagnostics "$out_dir/nix-kept-build-logs.txt"
+      tail -n 120 "$out_dir/nix-failure-diagnostics.log" | while IFS= read -r line; do
         safe_line="${line//'%'/'%25'}"
         safe_line="${safe_line//$'\r'/'%0D'}"
         safe_line="${safe_line//$'\n'/'%0A'}"
