@@ -153,6 +153,7 @@
           inherit src cargoArtifacts;
           pname = "refineforge-tests";
           version = "0.1.0";
+          nativeBuildInputs = [ pkgs.git ];
           cargoTestExtraArgs = "--workspace";
         };
 

@@ -300,6 +300,16 @@ fn nix_flake_does_not_duplicate_cargo_locked_arg() {
 }
 
 #[test]
+fn nix_flake_cargo_test_provides_required_subprocess_tools() {
+    let flake = std::fs::read_to_string(workspace_root().join("flake.nix")).unwrap();
+
+    assert!(
+        flake.contains("nativeBuildInputs = [ pkgs.git ];"),
+        "Nix cargoTest must provide git for Unix subprocess integration tests"
+    );
+}
+
+#[test]
 fn ci_workflow_publishes_posix_cargo_test_failure_tail() {
     let workflow =
         std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();
