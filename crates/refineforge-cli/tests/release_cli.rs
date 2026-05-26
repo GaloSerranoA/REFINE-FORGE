@@ -237,6 +237,10 @@ fn ci_workflow_nix_check_does_not_require_flakehub_or_preexisting_lock() {
         writer.contains("::error file=flake.nix,title=nix flake check"),
         "nix-check failures must publish a public diagnostic annotation"
     );
+    assert!(
+        writer.contains("nix-builder.log"),
+        "nix-check failures must collect the failed builder log"
+    );
 }
 
 #[test]
@@ -278,4 +282,14 @@ fn ci_workflow_publishes_posix_cargo_test_failure_tail() {
     assert!(workflow.contains("cargo-test-failure-summary.log"));
     assert!(workflow.contains("grep -E -- '---- |panicked at| FAILED"));
     assert!(workflow.contains("::error file=Cargo.toml,title=cargo test --release"));
+}
+
+#[test]
+fn ci_workflow_publishes_verifier_container_failure_tail() {
+    let workflow =
+        std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();
+
+    assert!(workflow.contains("verifier-container-smoke.log"));
+    assert!(workflow
+        .contains("::error file=containers/Dockerfile.verifier,title=verifier container smoke"));
 }

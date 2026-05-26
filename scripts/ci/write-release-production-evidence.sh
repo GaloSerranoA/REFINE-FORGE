@@ -133,10 +133,25 @@ JSON
     else
       echo "flake.lock was not present after nix command" >> "$out_dir/nix-check.log"
     fi
+    if [ "$status" -ne 0 ] && command -v nix >/dev/null 2>&1; then
+      drv_path="$(grep -Eo "/nix/store/[^ ']+\\.drv" "$out_dir/nix-check.log" | tail -n 1 || true)"
+      if [ -n "$drv_path" ]; then
+        nix log "$drv_path" > "$out_dir/nix-builder.log" 2>&1 || true
+      fi
+    fi
     if [ "$status" -eq 0 ]; then
       echo "nix flake check passed" >> "$out_dir/nix-check.log"
     elif [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-      tail -n 40 "$out_dir/nix-check.log" | while IFS= read -r line; do
+      diagnostic_source="$out_dir/nix-check.log"
+      if [ -s "$out_dir/nix-builder.log" ]; then
+        diagnostic_source="$out_dir/nix-builder.log"
+      fi
+      grep -E -- '---- |panicked at| FAILED|failures:|test result: FAILED|error: test failed|Error: |FAIL:' \
+        "$diagnostic_source" > "$out_dir/nix-failure-summary.log" || true
+      if [ -s "$out_dir/nix-failure-summary.log" ]; then
+        diagnostic_source="$out_dir/nix-failure-summary.log"
+      fi
+      tail -n 80 "$diagnostic_source" | while IFS= read -r line; do
         safe_line="${line//'%'/'%25'}"
         safe_line="${safe_line//$'\r'/'%0D'}"
         safe_line="${safe_line//$'\n'/'%0A'}"
