@@ -46,6 +46,9 @@
         # ─── Toolchains ────────────────────────────────────────────────
         rustToolchain = pkgs.rust-bin.stable.latest.default;
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
+        pythonForSmoke = pkgs.writeShellScriptBin "python" ''
+          exec ${pkgs.python3}/bin/python3 "$@"
+        '';
 
         # ─── Filtered source: keep cargo workspace + lean for bundle
         #     derivations + claims + docs/refinement for bundle export ─
@@ -153,7 +156,7 @@
           inherit src cargoArtifacts;
           pname = "refineforge-tests";
           version = "0.1.0";
-          nativeBuildInputs = [ pkgs.git pkgs.lean.lean-all ];
+          nativeBuildInputs = [ pkgs.git pkgs.lean.lean-all pythonForSmoke ];
           cargoTestExtraArgs = "--workspace";
         };
 

@@ -411,8 +411,12 @@ fn nix_flake_cargo_test_provides_required_subprocess_tools() {
     let flake = std::fs::read_to_string(workspace_root().join("flake.nix")).unwrap();
 
     assert!(
-        flake.contains("nativeBuildInputs = [ pkgs.git pkgs.lean.lean-all ];"),
-        "Nix cargoTest must provide git plus Lean/Lake for agent subprocess integration tests"
+        flake.contains("nativeBuildInputs = [ pkgs.git pkgs.lean.lean-all pythonForSmoke ];"),
+        "Nix cargoTest must provide git, Lean/Lake, and python for agent subprocess integration tests"
+    );
+    assert!(
+        flake.contains("pythonForSmoke = pkgs.writeShellScriptBin \"python\""),
+        "Nix cargoTest must expose a python command backed by pkgs.python3"
     );
 }
 
