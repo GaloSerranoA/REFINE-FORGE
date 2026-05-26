@@ -7,6 +7,23 @@ A Lean 4 proof engineering + refinement-bundle framework for trust-critical Rust
 
 > **Doctrine:** LLM may propose. Lean must verify. Human operator must approve.
 
+## Primary goal
+
+**Refine-Forge exists to help develop and train HELYX**, the operator's
+LLM substrate at `C:\HELYX`.
+
+HELYX is the product. Refine-Forge is the infrastructure that supports it:
+the training pipeline, the bit-exact reproducibility gate, the proof-repair
+substrate, the signed-bundle release flow, and the formal-methods scaffolding
+around HELYX's Lean-verified core. Every Refine-Forge feature should trace
+back to a concrete HELYX need; surfaces that do not serve HELYX are either
+infrastructure shared by HELYX and its sister projects or candidates for
+deprecation.
+
+The fork-and-template framing below (forking this repo for your own
+verification pipeline) is a secondary positioning. The first-class consumer
+is HELYX.
+
 ## Documentation map
 
 Read in this order — each doc is short and points at the next.
@@ -60,6 +77,14 @@ artifact a third party can independently re-verify.
 
 Fork this repo, replace the example claim with your own, and you have
 a verification pipeline.
+
+The canonical consumer is HELYX (`C:\HELYX`) — see [Primary goal](#primary-goal)
+above. HELYX maintains its own internal `verified/lean/` proof set, its own
+strict `lake build HELYX` gate, and its own `verified/checked/helyx-*-verified/`
+extraction crates. Refine-Forge complements that by owning the training
+pipeline, the bit-exact reproducibility gate, the proof-repair fine-tune flow,
+and the signed-bundle release infrastructure HELYX does not implement
+in-tree.
 
 ## Four enterprise sections
 

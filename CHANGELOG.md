@@ -10,6 +10,17 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Changed - README primary-goal statement
+
+- README now states explicitly that the primary goal of Refine-Forge is to
+  help develop and train HELYX (`C:\HELYX`). HELYX is the product;
+  Refine-Forge is the supporting infrastructure (training pipeline,
+  bit-exact reproducibility, proof-repair, signed-bundle release).
+- Clarified that HELYX maintains its own internal `verified/lean/` proof
+  set, strict `lake build HELYX` gate, and `verified/checked/` extraction
+  crates, so Refine-Forge complements rather than duplicates that surface.
+- The fork-and-template framing is preserved as a secondary positioning.
+
 ### Added - InmortalProof proof-search substrate
 
 - Added `refine inmortal-proof run <CLAIM-ID>` to produce deterministic proof-search receipt packs for Lean claims.
