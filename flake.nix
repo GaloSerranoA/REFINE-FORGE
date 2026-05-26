@@ -142,7 +142,7 @@
           inherit src cargoArtifacts;
           pname = "refineforge-tests";
           version = "0.1.0";
-          cargoTestExtraArgs = "--workspace --locked";
+          cargoTestExtraArgs = "--workspace";
         };
 
         cargoFmt = craneLib.cargoFmt {

@@ -253,3 +253,27 @@ fn nix_flake_source_includes_cargo_lock() {
         "Cargo.lock must be committed for Nix crane builds, not ignored"
     );
 }
+
+#[test]
+fn nix_flake_does_not_duplicate_cargo_locked_arg() {
+    let flake = std::fs::read_to_string(workspace_root().join("flake.nix")).unwrap();
+
+    assert!(
+        flake.contains("cargoTestExtraArgs = \"--workspace\";"),
+        "crane already injects --locked into cargo test"
+    );
+    assert!(
+        !flake.contains("cargoTestExtraArgs = \"--workspace --locked\";"),
+        "duplicating --locked makes cargo test fail under Nix"
+    );
+}
+
+#[test]
+fn ci_workflow_publishes_posix_cargo_test_failure_tail() {
+    let workflow =
+        std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();
+
+    assert!(workflow.contains("Run unit tests (POSIX)"));
+    assert!(workflow.contains("cargo-test-release.log"));
+    assert!(workflow.contains("::error file=Cargo.toml,title=cargo test --release"));
+}

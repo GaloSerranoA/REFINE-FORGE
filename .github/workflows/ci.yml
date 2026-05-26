@@ -128,7 +128,27 @@ jobs:
       - name: Build CLI
         run: cargo build --release --locked || cargo build --release
 
-      - name: Run unit tests
+      - name: Run unit tests (POSIX)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set +e
+          cargo test --release 2>&1 | tee cargo-test-release.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            tail -n 80 cargo-test-release.log | while IFS= read -r line; do
+              safe_line="${line//'%'/'%25'}"
+              safe_line="${safe_line//$'\r'/'%0D'}"
+              safe_line="${safe_line//$'\n'/'%0A'}"
+              echo "::error file=Cargo.toml,title=cargo test --release::$safe_line"
+            done
+          fi
+          exit "$status"
+
+      - name: Run unit tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: cargo test --release
 
       # ─── Verify every claim ─────────────────────────────────────────
