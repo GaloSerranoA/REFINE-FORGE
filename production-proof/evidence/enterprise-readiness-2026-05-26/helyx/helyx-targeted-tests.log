@@ -1,0 +1,259 @@
+﻿    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running unittests src\lib.rs (D:\cargo-target\debug\deps\helyx_conciencia-d989584d0ae2d2e6.exe)
+
+running 9 tests
+test tests::external_action_requires_policy_receipt_and_is_blocked_in_audit_mode ... ok
+test tests::certifies_full_arc_agi2_only_with_exact_training_eval_and_gate_evidence ... ok
+test tests::live_external_action_can_pass_with_policy_receipt ... ok
+test tests::certifies_non_hallucination_claim_only_inside_measured_scope ... ok
+test tests::rejects_non_hallucination_claim_when_truthlogits_coverage_is_below_threshold ... ok
+test tests::refuses_non_hallucination_claim_without_scope_coverage_and_falsification ... ok
+test tests::refuses_uncertified_full_arc_agi2_claim ... ok
+test tests::replay_hash_is_deterministic_for_same_request ... ok
+test tests::fused_facade_runs_real_conciencia_runtime_tick ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\canonical_fusion.rs (D:\cargo-target\debug\deps\canonical_fusion-617fff40626ddeef.exe)
+
+running 1 test
+test canonical_fusion_matrix_names_single_owner_for_duplicate_substrates ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (D:\cargo-target\debug\deps\helyx_inference-a3ae2e42f8f2f7a1.exe)
+
+running 2 tests
+test verbalized_sampling::tests::config_rejects_zero_variants ... ok
+test verbalized_sampling::tests::raw_calibration_preserves_probabilities ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cognition_frame.rs (D:\cargo-target\debug\deps\cognition_frame-80de16c0ec9eb5c0.exe)
+
+running 6 tests
+test cloned_audit_handle_observes_records_and_flush_drains_buffer ... ok
+test refusal_policy_blocks_preflight_and_still_records_audit_marker ... ok
+test audit_fanout_preserves_order_in_chain_and_event_store ... ok
+test mode_attention_priorities_are_deterministic_and_bounded ... ok
+test frame_builder_requires_audit_sink ... ok
+test route_records_ordered_deterministic_tier_events ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\hrm_text.rs (D:\cargo-target\debug\deps\hrm_text-e304858017c7c792.exe)
+
+running 6 tests
+test hrm_config_computes_swiglu_intermediate_size_like_upstream ... ok
+test prefixlm_aux_matches_hrm_text_sequence_scalars ... ok
+test multipack_planner_is_stable_and_capacity_bounded ... ok
+test prefixlm_packer_preserves_instruction_completion_masks ... ok
+test hrm_text_receipt_records_scope_boundary_and_replay_hash ... ok
+test hrm_schedule_splits_layers_and_replays_backprop_window ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\mcts.rs (D:\cargo-target\debug\deps\mcts-0788d775018e665a.exe)
+
+running 1 test
+test mcts_backup_uses_nal_revision_not_scalar_averaging ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\mcts_and_ttt.rs (D:\cargo-target\debug\deps\mcts_and_ttt-69d37673b52c6317.exe)
+
+running 24 tests
+test matrix_ttt_rejects_invalid_config_or_shapes ... ok
+test matrix_ttt_forward_and_reset_are_reversible ... ok
+test matrix_ttt_fit_is_deterministic ... ok
+test model_integrated_ttt_rejects_invalid_shapes_or_config ... ok
+test nim_legal_moves_bounded_by_pile ... ok
+test nim_state_terminal_recognition ... ok
+test mcts_search_runs_to_completion ... ok
+test matrix_ttt_fit_reduces_multi_sample_auxiliary_loss ... ok
+test prm_policy_prior_scores_candidate_steps_via_local_prm ... ok
+test model_integrated_ttt_is_deterministic ... ok
+test mcts_is_deterministic_in_seed ... ok
+test puct_prior_finds_optimal_move_on_narrow_five_stone_position ... ok
+test model_integrated_ttt_fits_auxiliary_logits_without_mutating_base ... ok
+test ttt_base_weights_are_not_modified ... ok
+test prm_policy_prior_guides_puct_without_oracle_prior ... ok
+test ttt_fit_zero_steps_returns_input_unchanged ... ok
+test ttt_fit_loss_decreases_monotonically ... ok
+test ttt_gradient_clip_caps_step_size ... ok
+test ttt_gradient_step_moves_toward_target ... ok
+test mcts_visits_distribute_unevenly_across_actions ... ok
+test prm_policy_prior_replays_deterministically ... ok
+test puct_search_is_deterministic_and_accumulates_truth_confidence ... ok
+test mcts_root_truth_confidence_grows_with_visits ... ok
+test mcts_finds_optimal_first_move_for_winning_position ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\orchestrator_pipeline.rs (D:\cargo-target\debug\deps\orchestrator_pipeline-eff78e1d27122823.exe)
+
+running 3 tests
+test tier_order_is_available_without_running_pipeline ... ok
+test eight_tier_pipeline_runs_canonical_cogn8ty_order ... ok
+test pipeline_output_is_content_addressed_and_repeatable ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\orchestrator_swarm.rs (D:\cargo-target\debug\deps\orchestrator_swarm-9e40f3dd14736f17.exe)
+
+running 3 tests
+test registry_replaces_existing_proposer_id ... ok
+test swarm_registry_iterates_in_canonical_proposer_order ... ok
+test consensus_selects_strict_majority_and_tracks_outliers ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\pipeline.rs (D:\cargo-target\debug\deps\pipeline-9acee6b524ff327a.exe)
+
+running 3 tests
+test toy_inference_pipeline_exposes_content_addressable_deep_evidence ... ok
+test toy_inference_pipeline_integrates_deepened_w4_substrates ... ok
+test toy_inference_pipeline_combines_w4_scaffolds ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\planner.rs (D:\cargo-target\debug\deps\planner-230ef1b5324b9d24.exe)
+
+running 1 test
+test planner_builds_deterministic_multistep_plan ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\proving.rs (D:\cargo-target\debug\deps\proving-305be60f400472e9.exe)
+
+running 1 test
+test prover_discharges_obligation_with_matching_evidence ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\truthlogits_token_gate.rs (D:\cargo-target\debug\deps\truthlogits_token_gate-9ca507e52a964ec6.exe)
+
+running 2 tests
+test truthlogits_token_gate_fails_closed_when_all_tokens_are_ungrounded ... ok
+test truthlogits_token_gate_masks_weak_tokens_before_decode_selection ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\ttt.rs (D:\cargo-target\debug\deps\ttt-122c378b065a4773.exe)
+
+running 1 test
+test ttt_update_is_seeded_and_bounded ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\verbalized_sampling.rs (D:\cargo-target\debug\deps\verbalized_sampling-c568c6ac7e6b3997.exe)
+
+running 8 tests
+test prompts_preserve_schema_directives ... ok
+test duplicate_variants_fail_closed_when_distinct_required ... ok
+test truthlogits_gate_filters_weak_candidates_before_selection ... ok
+test top_p_calibration_truncates_tail_and_renormalizes ... ok
+test truthlogits_gate_requires_one_evidence_item_per_variant ... ok
+test truthlogits_gate_refuses_when_no_candidate_is_grounded ... ok
+test seeded_sampling_is_reproducible ... ok
+test strict_and_lenient_parsers_match_cogn8ty_behavior ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (D:\cargo-target\debug\deps\helyx_research-1e98ab45dc7c7aee.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\experiment.rs (D:\cargo-target\debug\deps\experiment-d42e4e95bc4dc696.exe)
+
+running 4 tests
+test experiment_spec_digest_changes_with_seed ... ok
+test toy_experiment_records_deep_inference_evidence ... ok
+test toy_experiment_manifest_tracks_all_artifacts ... ok
+test toy_experiment_run_is_content_addressed_and_signed ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (D:\cargo-target\debug\deps\helyx_serve-6241af6877951812.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\answer_cache.rs (D:\cargo-target\debug\deps\answer_cache-83d7c9b0b8048643.exe)
+
+running 3 tests
+test state_and_request_options_change_cache_key ... ok
+test answer_cache_tracks_lru_evictions ... ok
+test answer_cache_returns_byte_identical_serving_response_on_hit ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\conversation_engine.rs (D:\cargo-target\debug\deps\conversation_engine-0df3aea0a439bd08.exe)
+
+running 3 tests
+test intent_detection_covers_core_chat_shapes ... ok
+test same_input_sequence_produces_same_output_sequence ... ok
+test multi_turn_conversation_is_deterministic_and_evidence_bound ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\dialogue_port.rs (D:\cargo-target\debug\deps\dialogue_port-0d4a48eaf7a0cd08.exe)
+
+running 6 tests
+test nlg_templates_fill_slots_and_smooth_register_output ... ok
+test planner_extracts_relational_facts_without_external_runtime_dependencies ... ok
+test polarity_modality_and_causal_ordering_are_preserved ... ok
+test conversation_manager_tracks_state_turns_topics_and_register ... ok
+test lexicon_and_surface_realizer_keep_register_specific_choices_stable ... ok
+test content_discourse_aggregation_and_realization_are_deterministic ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\framework_port.rs (D:\cargo-target\debug\deps\framework_port-b3049439a1702de8.exe)
+
+running 5 tests
+test cogn8ty_framework_config_validates_local_invariants ... ok
+test local_engine_worker_tracks_restart_health_without_async_runtime ... ok
+test mcp_disabled_is_explicit ... ok
+test framework_tool_bridge_and_mcp_adapter_are_local_and_deterministic ... ok
+test helyx_framework_start_serves_and_stops ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\local_serving.rs (D:\cargo-target\debug\deps\local_serving-b38e489149520de2.exe)
+
+running 5 tests
+test local_serving_runtime_enforces_quota_and_backpressure ... ok
+test local_serving_request_validation_is_fail_closed ... ok
+test local_serving_runtime_refuses_policy_blocked_prompt_without_pipeline_success ... ok
+test local_serving_runtime_completes_toy_request_with_audited_event ... ok
+test local_serving_audit_and_telemetry_include_deep_inference_evidence ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests helyx_conciencia
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests helyx_inference
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests helyx_research
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests helyx_serve
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

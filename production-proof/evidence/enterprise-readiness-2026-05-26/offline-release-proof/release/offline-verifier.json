@@ -1,0 +1,13 @@
+{
+  "schema_version": "refineforge-offline-verifier-evidence-v1",
+  "status": "passed",
+  "verified_artifacts": [
+    "release/release-report.json",
+    "release/sbom.cyclonedx.json",
+    "release/provenance.intoto.json",
+    "release/offline-signature.json"
+  ],
+  "verifier": "offline verifier log",
+  "verifier_log": ".\\production-proof/evidence/enterprise-readiness-2026-05-26/release-signing/offline-verify.log",
+  "verifier_log_sha256": "8d2e70788784a8ecd941b2e679ac27058fb83368287f9a92034ca2d13263602a"
+}

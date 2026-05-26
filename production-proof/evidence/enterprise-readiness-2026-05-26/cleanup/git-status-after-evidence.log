@@ -1,0 +1,40 @@
+ M artifacts/EXAMPLE-001/manifest.json
+ M artifacts/EXAMPLE-001/report.json
+ M artifacts/EXAMPLE-002/manifest.json
+ M artifacts/EXAMPLE-002/report.json
+ M artifacts/EXAMPLE-003/manifest.json
+ M artifacts/EXAMPLE-003/report.json
+?? production-proof/evidence/enterprise-readiness-2026-05-26/cleanup/enterprise-readiness-test.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/cleanup/refineforge-cli-clippy.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/helyx/helyx-targeted-tests.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/helyx/helyx-xtask-gates.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/offline-release-proof/release/local-environment.json
+?? production-proof/evidence/enterprise-readiness-2026-05-26/offline-release-proof/release/offline-release-proof.json
+?? production-proof/evidence/enterprise-readiness-2026-05-26/offline-release-proof/release/offline-signature.json
+?? production-proof/evidence/enterprise-readiness-2026-05-26/offline-release-proof/release/offline-verifier.json
+?? production-proof/evidence/enterprise-readiness-2026-05-26/offline-release-proof/release/provenance.intoto.json
+?? production-proof/evidence/enterprise-readiness-2026-05-26/offline-release-proof/release/release-report.json
+?? production-proof/evidence/enterprise-readiness-2026-05-26/offline-release-proof/release/release-report.md
+?? production-proof/evidence/enterprise-readiness-2026-05-26/offline-release-proof/release/sbom.cyclonedx.json
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/bundle-export-example-001.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/bundle-export-example-002.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/bundle-export-example-003.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/bundle-verify-example-001.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/bundle-verify-example-002.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/bundle-verify-example-003.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/cargo-metadata-locked.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/cargo-test-example-capability.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/cargo-test-example-counter.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/cargo-test-refineforge-cli.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/cargo-test-refineforge-derive.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/docs-truth-audit.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/lean-check-all.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/lint-check-all.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/logs/scan-check-all.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/provenance.intoto.json
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/release-report.json
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/release-report.md
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/sbom.cyclonedx.json
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-signing/offline-verify.log
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-signing/release-report.json.sig
+?? production-proof/evidence/enterprise-readiness-2026-05-26/release-signing/release-signing-public-key.xml

@@ -1,0 +1,8 @@
+{
+  "arch": "x86_64",
+  "generated_at": "2026-05-26T11:39:04.334336300+00:00",
+  "os": "windows",
+  "rustc_verbose_version": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: x86_64-pc-windows-msvc\nrelease: 1.95.0\nLLVM version: 22.1.2",
+  "schema_version": "refineforge-local-release-environment-v1",
+  "status": "passed"
+}

@@ -1,0 +1,9 @@
+﻿    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.27s
+     Running tests\enterprise_readiness_cli.rs (D:\cargo-target\debug\deps\enterprise_readiness_cli-6471f71d558c3179.exe)
+
+running 3 tests
+test enterprise_ready_blocks_without_external_evidence ... ok
+test enterprise_ready_passes_with_complete_evidence_pack ... ok
+test enterprise_ready_rejects_checkpoint_manifest_without_sha256 ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s

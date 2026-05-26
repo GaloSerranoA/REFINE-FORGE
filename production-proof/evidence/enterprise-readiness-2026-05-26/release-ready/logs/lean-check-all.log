@@ -1,0 +1,18 @@
+$ cargo run -p refineforge-cli --bin refine -- lean check-all
+[env]
+CARGO_TARGET_DIR=\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready
+
+[stdout]
+CLAIM-CRS-001          Verified           sorries=0 admits=0 axioms=0
+CLAIM-CRS-002          Verified           sorries=0 admits=0 axioms=0
+CLAIM-CRS-003          Verified           sorries=0 admits=0 axioms=0
+CLAIM-CRS-004          Verified           sorries=0 admits=0 axioms=0
+CLAIM-CRS-005          Verified           sorries=0 admits=0 axioms=0
+EXAMPLE-003            Verified           sorries=0 admits=0 axioms=0
+EXAMPLE-002            Verified           sorries=0 admits=0 axioms=0
+EXAMPLE-001            Verified           sorries=0 admits=0 axioms=0
+HELYX-AUDIT-001        Verified           sorries=0 admits=0 axioms=0
+
+[stderr]
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running `\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\refine.exe lean check-all`

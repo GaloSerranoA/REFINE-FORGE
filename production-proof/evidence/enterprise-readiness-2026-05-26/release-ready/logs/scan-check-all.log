@@ -1,0 +1,18 @@
+$ cargo run -p refineforge-cli --bin refine -- scan check-all
+[env]
+CARGO_TARGET_DIR=\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready
+
+[stdout]
+CLAIM-CRS-001          NoRustSource   types=0/0  fns=0/0  hash=38c50aeb4ebe
+CLAIM-CRS-002          NoRustSource   types=0/0  fns=0/0  hash=1ccc239ef5d1
+CLAIM-CRS-003          NoRustSource   types=0/0  fns=0/0  hash=5c5ff31f45c8
+CLAIM-CRS-004          NoRustSource   types=0/0  fns=0/0  hash=e5511079e05d
+CLAIM-CRS-005          NoRustSource   types=0/0  fns=0/0  hash=e2f0b47d481c
+EXAMPLE-003            Verified       types=1/1  fns=2/2  hash=2675af5476f3
+EXAMPLE-002            Verified       types=1/1  fns=1/1  hash=bc03580c7a13
+EXAMPLE-001            NoRustSource   types=0/0  fns=0/0  hash=fbe5ee9014a0
+HELYX-AUDIT-001        NoRustSource   types=0/0  fns=0/0  hash=44af15ca5e73
+
+[stderr]
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running `\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\refine.exe scan check-all`

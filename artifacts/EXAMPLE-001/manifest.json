@@ -1,6 +1,6 @@
 {
   "claim_id": "EXAMPLE-001",
-  "created_at": "2026-05-24T23:59:25.546104800Z",
+  "created_at": "2026-05-26T11:38:47.225328Z",
   "lean_toolchain": "leanprover/lean4:v4.29.1",
   "files": {
     "claims/example.yaml": "9e21019e127f54e72da759b4cecc7087335d6da630d2ca08c39107f4d1ce7632",
@@ -15,6 +15,6 @@
     "lean/lakefile.toml": "7cb8ca5099c850288731f77eee6ae594e58c576b34b59f7d5bebc3598c5ea3b5",
     "lean/lean-toolchain": "7dc000621e0046d1aada809e2b7177e64454645cf4c741e9daaf79c99ec2e7a2"
   },
-  "report_sha256": "184e64a1bc236bf24a6c8b9b29742431dd7999022192adfe588d25117a561fca",
+  "report_sha256": "9801ac17d6c0bf2083fac8eb339395b0d074bdbd7584d0a9f2394995fc8a3b13",
   "bundle_schema": 1
 }

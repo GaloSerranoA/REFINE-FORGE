@@ -1,0 +1,9 @@
+{
+  "generated_at": "2026-05-26T11:39:04.297918300+00:00",
+  "profile": "offline-local-release-proof",
+  "release_version": "0.2.2",
+  "schema_version": "refineforge-offline-release-proof-v1",
+  "source_release_ready_dir": ".\\production-proof/evidence/enterprise-readiness-2026-05-26/release-ready",
+  "status": "passed",
+  "trust_boundary": "local/offline proof; does not satisfy hosted CI or GitHub OIDC"
+}

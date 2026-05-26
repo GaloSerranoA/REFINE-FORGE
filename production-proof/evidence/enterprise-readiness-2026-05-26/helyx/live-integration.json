@@ -1,0 +1,44 @@
+{
+  "schema_version": "refineforge-enterprise-helyx-live-integration-evidence-v1",
+  "status": "passed",
+  "target": "HELYX",
+  "captured_at": "2026-05-26T11:40:35Z",
+  "helyx_root": "C:\\HELYX",
+  "helyx_branch": "main",
+  "helyx_commit": "422f2a362dba672e8e2aa7bb97d62fe86fdca73b",
+  "commands": [
+    {
+      "command": "cargo test -p helyx-conciencia -p helyx-inference -p helyx-serve -p helyx-research",
+      "status": "passed",
+      "log": "production-proof/evidence/enterprise-readiness-2026-05-26/helyx/helyx-targeted-tests.log"
+    },
+    {
+      "command": "cargo run -p xtask -- check-inference-substrate",
+      "status": "passed",
+      "log": "production-proof/evidence/enterprise-readiness-2026-05-26/helyx/helyx-xtask-gates.log"
+    },
+    {
+      "command": "cargo run -p xtask -- check-local-serving",
+      "status": "passed",
+      "log": "production-proof/evidence/enterprise-readiness-2026-05-26/helyx/helyx-xtask-gates.log"
+    },
+    {
+      "command": "cargo run -p xtask -- check-research-framework",
+      "status": "passed",
+      "log": "production-proof/evidence/enterprise-readiness-2026-05-26/helyx/helyx-xtask-gates.log"
+    },
+    {
+      "command": "cargo run -p xtask -- check-content-address-coverage",
+      "status": "passed",
+      "log": "production-proof/evidence/enterprise-readiness-2026-05-26/helyx/helyx-xtask-gates.log"
+    },
+    {
+      "command": "cargo run -p xtask -- check-roadmap-closure",
+      "status": "passed_with_recorded_violations",
+      "log": "production-proof/evidence/enterprise-readiness-2026-05-26/helyx/helyx-xtask-gates.log"
+    }
+  ],
+  "warnings": [
+    "check-roadmap-closure records determinism violations in older CONCIENCIA crates; this evidence proves live targeted integration, not full HELYX roadmap closure."
+  ]
+}

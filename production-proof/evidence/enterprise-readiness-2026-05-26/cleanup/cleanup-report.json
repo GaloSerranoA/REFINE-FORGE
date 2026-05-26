@@ -1,0 +1,36 @@
+{
+  "schema_version": "refineforge-enterprise-cleanup-report-v1",
+  "status": "passed",
+  "captured_at": "2026-05-26T11:40:35Z",
+  "scope": "enterprise readiness evidence and accumulated complexity hygiene pass",
+  "commands": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "status": "passed",
+      "log": "production-proof/evidence/enterprise-readiness-2026-05-26/cleanup/cargo-fmt-check.log"
+    },
+    {
+      "command": "cargo test -p refineforge-cli --test enterprise_readiness_cli",
+      "status": "passed",
+      "log": "production-proof/evidence/enterprise-readiness-2026-05-26/cleanup/enterprise-readiness-test.log"
+    },
+    {
+      "command": "cargo clippy -p refineforge-cli --all-targets -- -D warnings",
+      "status": "passed",
+      "log": "production-proof/evidence/enterprise-readiness-2026-05-26/cleanup/refineforge-cli-clippy.log"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "log": "production-proof/evidence/enterprise-readiness-2026-05-26/cleanup/git-diff-check.log"
+    },
+    {
+      "command": "git branch --no-merged master",
+      "status": "passed",
+      "log": "production-proof/evidence/enterprise-readiness-2026-05-26/cleanup/git-branches-no-merged.log"
+    }
+  ],
+  "notes": [
+    "Generated release-ready evidence updates example bundle timestamps; review before committing whether to keep those regenerated artifacts or restore them."
+  ]
+}

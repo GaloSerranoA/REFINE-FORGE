@@ -1,0 +1,21 @@
+$ cargo test -p refineforge-derive
+[env]
+CARGO_TARGET_DIR=\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready
+
+[stdout]
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test crates\refineforge-derive\src\lib.rs - (line 6) ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+[stderr]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src\lib.rs (\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\deps\refineforge_derive-5baf911fb133e126.exe)
+   Doc-tests refineforge_derive

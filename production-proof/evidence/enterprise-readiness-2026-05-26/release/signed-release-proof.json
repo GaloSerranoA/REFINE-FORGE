@@ -1,0 +1,16 @@
+{
+  "schema_version": "refineforge-enterprise-signed-release-evidence-v1",
+  "status": "passed",
+  "signature": "offline-local-rsa-3072-sha256-pkcs1",
+  "signature_mode": "offline-local-key",
+  "bundle_sha256": "3271b483b172522bde1365f66f27f385c09b051f20a5a5b540a570ec87a9ca2b",
+  "signed_artifact": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready/release-report.json",
+  "signature_file": "production-proof/evidence/enterprise-readiness-2026-05-26/release-signing/release-report.json.sig",
+  "signature_sha256": "8f79a66bf13d417f7dfb9049b79ecffac385d11215285ed3b4285c926cba7595",
+  "public_key": "production-proof/evidence/enterprise-readiness-2026-05-26/release-signing/release-signing-public-key.xml",
+  "key_fingerprint": "8f958f747e01f289a44578908f1926b2c5671258fead3ac633f7d2430fb8536e",
+  "offline_proof": "production-proof/evidence/enterprise-readiness-2026-05-26/offline-release-proof/release/offline-release-proof.json",
+  "offline_signature": "production-proof/evidence/enterprise-readiness-2026-05-26/offline-release-proof/release/offline-signature.json",
+  "offline_verifier": "production-proof/evidence/enterprise-readiness-2026-05-26/offline-release-proof/release/offline-verifier.json",
+  "trust_effect": "Supports local/offline signed release evidence only. Does not replace hosted GitHub OIDC Sigstore proof."
+}

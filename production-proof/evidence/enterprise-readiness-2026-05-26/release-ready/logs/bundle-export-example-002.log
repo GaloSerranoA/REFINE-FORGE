@@ -1,0 +1,12 @@
+$ cargo run -p refineforge-cli --bin refine -- bundle export EXAMPLE-002
+[env]
+CARGO_TARGET_DIR=\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready
+
+[stdout]
+Bundle exported to .\artifacts\EXAMPLE-002
+  report status: Verified
+  files in manifest: 12
+
+[stderr]
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running `\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\refine.exe bundle export EXAMPLE-002`

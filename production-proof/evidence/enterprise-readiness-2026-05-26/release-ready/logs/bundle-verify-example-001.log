@@ -1,0 +1,11 @@
+$ cargo run -p refineforge-cli --bin refine -- bundle verify artifacts/EXAMPLE-001
+[env]
+CARGO_TARGET_DIR=\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready
+
+[stdout]
+Bundle artifacts/EXAMPLE-001 verified OK
+  claim: EXAMPLE-001, lean toolchain: leanprover/lean4:v4.29.1, files: 11
+
+[stderr]
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running `\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\refine.exe bundle verify artifacts/EXAMPLE-001`

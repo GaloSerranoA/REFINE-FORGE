@@ -1,0 +1,240 @@
+$ cargo test -p refineforge-cli
+[env]
+CARGO_TARGET_DIR=\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready
+
+[stdout]
+
+running 93 tests
+test agent::devops::tests::release_ready_success_is_capped_below_ci_readiness ... ok
+test agent::devops::tests::explicit_semver_target_is_preserved ... ok
+test agent::devops::tests::helyx_target_uses_non_release_probe_version ... ok
+test autonomous::cost::tests::charge_accumulates_total ... ok
+test autonomous::cost::tests::charge_at_exactly_budget_succeeds ... ok
+test autonomous::cost::tests::fresh_gate_remaining_equals_budget ... ok
+test autonomous::cost::tests::zero_budget_rejects_any_positive_charge ... ok
+test autonomous::cost::tests::zero_charge_on_zero_budget_succeeds_trivially ... ok
+test autonomous::executor::tests::dry_run_run_training_experiment_records_proceeded ... ok
+test autonomous::executor::tests::dry_run_repair_step_reports_proceeded_without_invoking_loop ... ok
+test autonomous::cost::tests::charge_over_budget_fails_closed ... ok
+test autonomous::executor::tests::dry_run_escalation_does_not_write_to_git ... ok
+test autonomous::cost::tests::negative_charge_rejected ... ok
+test autonomous::executor::tests::anthropic_constant_matches_eval_baseline ... ok
+test autonomous::executor::tests::dry_run_run_bitexact_gate_records_proceeded ... ok
+test autonomous::executor::tests::dry_run_baseline_plan_all_steps_proceed ... ok
+test autonomous::executor::tests::engine_action_that_escalates_records_escalated ... ok
+test autonomous::executor::tests::engine_action_that_proceeds_records_proceeded ... ok
+test autonomous::executor::tests::engine_refusal_on_criteria_mismatch_records_failed ... ok
+test autonomous::executor::tests::non_dry_run_anthropic_repair_charges_cost_gate_before_invoking ... ok
+test autonomous::executor::tests::packet_path_is_stable_and_zero_padded ... ok
+test autonomous::executor::tests::non_dry_run_escalation_commits_a_packet ... ok
+test autonomous::executor::tests::phase_3_8_preexisting_approved_packet_is_not_overwritten ... ok
+test autonomous::executor::tests::resolve_strategy_recognises_anthropic_mock ... ok
+test autonomous::executor::tests::phase_3_8_preexisting_pending_packet_is_still_rewritten ... ok
+test autonomous::executor::tests::resolve_strategy_recognises_mock ... ok
+test autonomous::executor::tests::resolve_strategy_rejects_unknown ... ok
+test autonomous::executor::tests::resolve_strategy_requires_weights_for_local_finetune ... ok
+test autonomous::planner::tests::baseline_plan_is_three_steps ... ok
+test autonomous::planner::tests::baseline_plan_sequence_numbers_are_dense_one_based ... ok
+test autonomous::planner::tests::baseline_plan_steps_are_lean_then_scan_then_bundle ... ok
+test autonomous::executor::tests::non_dry_run_subprocess_step_fails_helpfully_when_binary_missing ... ok
+test autonomous::planner::tests::engine_action_is_inserted_between_lean_and_scan ... ok
+test autonomous::planner::tests::multiple_engine_actions_run_in_insertion_order ... ok
+test autonomous::planner::tests::rationale_mentions_the_claim_id ... ok
+test autonomous::planner::tests::with_bitexact_step_appends_after_training ... ok
+test autonomous::planner::tests::with_training_step_appends_after_bundle ... ok
+test autonomous::report::tests::summary_all_proceeded_is_success ... ok
+test autonomous::report::tests::summary_counts_each_outcome_kind ... ok
+test autonomous::report::tests::summary_escalated_alone_is_success ... ok
+test autonomous::tests::public_api_compiles ... ok
+test autonomous::planner::tests::repair_step_kind_serializes_with_strategy_field ... ok
+test autonomous::planner::tests::run_training_experiment_step_kind_serializes ... ok
+test autonomous::planner::tests::run_bitexact_gate_step_kind_serializes ... ok
+test autonomous::report::tests::report_with_anthropic_usage_round_trips ... ok
+test bundle::signature_tests::extracts_signer_identity_from_cosign_json_fixture ... ok
+test autonomous::report::tests::report_round_trips_via_json ... ok
+test bundle::signature_tests::signer_identity_fallback_is_documented_as_reporting_gap ... ok
+test release::tests::cargo_gate_commands_use_isolated_target_dir ... ok
+test release::tests::blocked_required_gate_fails_release_report ... ok
+test memory::tests::record_ids_ignore_created_at ... ok
+test bundle::signature_tests::missing_sigbundle_returns_helpful_error ... ok
+test lint::tests::lint_flags_missing_rust_source_file ... ok
+test release::tests::docs_audit_accepts_ci_pending_signature_language ... ok
+test lint::tests::lint_rejects_crs_claim_without_model_only_scope ... ok
+test lint::tests::lint_flags_refined_claim_without_refinement_doc ... ok
+test lint::tests::lint_flags_missing_explicit_human_operator_field ... ok
+test release::tests::markdown_report_contains_gate_table_and_bundle_hashes ... ok
+test release::tests::provenance_records_bundle_subjects_and_materials ... ok
+test lint::tests::lint_rejects_ai_placeholder_human_operator ... ok
+test release::tests::docs_audit_allows_unrelated_shipped_claims_near_nix_pending ... ok
+test release::tests::release_report_is_success_only_when_required_gates_pass_or_skip ... ok
+test release::tests::sbom_from_cargo_metadata_includes_workspace_and_dependency_components ... ok
+test autonomous::executor::tests::resolve_strategy_recognises_local_finetune_with_manifest ... ok
+test repair::lsp::tests::path_to_uri_uses_forward_slashes ... ok
+test repair::lsp::tests::read_message_ignores_extra_headers ... ok
+test repair::lsp::tests::roundtrip_message_with_simple_payload ... ok
+test repair::lsp_extractor::tests::parse_goal_text_handles_plain_goal_rendered_field ... ok
+test repair::lsp_extractor::tests::parse_goal_text_returns_none_when_no_goal_marker ... ok
+test release::tests::gate_log_file_names_are_stable_and_windows_safe ... ok
+test release::tests::docs_audit_rejects_empty_kernel_src_without_architecture_boundary ... ok
+test release::tests::docs_audit_rejects_unbounded_sigstore_release_claim ... ok
+test release::tests::docs_audit_rejects_three_section_language ... ok
+test release::tests::writes_json_markdown_sbom_and_provenance_files ... ok
+test lint::tests::lint_flags_refinement_doc_missing_required_sections ... ok
+test lint::tests::lint_passes_example_counter_shape ... ok
+test sorry_gate::tests::nested_block_comment_passes ... ok
+test sorry_gate::tests::clean_source_passes ... ok
+test sorry_gate::tests::sorry_in_block_comment_passes ... ok
+test sorry_gate::tests::sorry_in_line_comment_passes ... ok
+test sorry_gate::tests::axiom_declaration_fails ... ok
+test sorry_gate::tests::sorry_in_proof_fails ... ok
+test sorry_gate::tests::word_boundary_excludes_substrings ... ok
+test scan::tests::scan_hash_is_stable_when_source_order_changes ... ok
+test scan::tests::structured_scan_finds_impl_methods_and_free_functions ... ok
+test scan::tests::structured_scan_ignores_comments_and_strings ... ok
+test scaffold::tests::create_writes_refinement_doc_and_template_provenance ... ok
+test bundle::signature_tests::identity_regex_override_via_options ... ok
+test bundle::signature_tests::missing_cosign_binary_returns_install_hint ... ok
+test bundle::signature_tests::stub_cosign_success_path_returns_status ... ok
+test bundle::signature_tests::stub_cosign_verify_failure_propagates ... ok
+test release::tests::invalid_semver_is_a_failed_required_gate ... ok
+test release::tests::dry_run_ready_marks_expensive_gates_skipped ... ok
+
+test result: ok. 93 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 27 tests
+test agent_docs_and_schema_exist ... ok
+test agent_devops_local_report_cannot_claim_release_ready_ci ... ok
+test agent_devops_default_report_cannot_claim_ci_or_live_signing ... ok
+test agent_devops_rejects_fake_env_presence_as_production_evidence ... ok
+test agent_devops_offline_release_proof_does_not_claim_hosted_ci_or_human_reviewed ... ok
+test agent_kernel_check_creates_output_dir_before_lint_command ... ok
+test agent_kernel_rejects_fake_env_presence_as_production_evidence ... ok
+test agent_kernel_execute_runs_lint_and_bitexact_gate ... ok
+test agent_lean_inspect_writes_report ... ok
+test agent_kernel_complete_evidence_with_human_approval_reaches_human_reviewed ... ok
+test agent_kernel_complete_evidence_without_approval_only_blocks_human_review ... ok
+test agent_runtime_hashes_artifact_receipts_deterministically ... ok
+test agent_devops_train_and_kernel_inspect_reports_are_truth_bounded ... ok
+test agent_run_all_inspect_writes_dashboard_and_role_reports ... ok
+test agent_train_allow_expensive_still_cannot_claim_model_quality ... ok
+test agent_train_complete_evidence_without_approval_names_human_review_blocker ... ok
+test agent_train_execute_runs_data_audit_and_dry_run_training ... ok
+test agent_train_complete_production_evidence_reaches_human_reviewed ... ok
+test agent_train_rejects_fake_production_evidence_env_paths ... ok
+test agent_train_rejects_promotion_manifest_with_checkpoint_hash_mismatch ... ok
+test agent_train_rejects_loss_only_eval_evidence ... ok
+test agent_train_check_records_pass_fail_and_blocked_statuses ... ok
+test agent_lean_check_keeps_model_only_scope_as_trust_floor ... ok
+test agent_lean_model_only_claims_block_production_proof ... ok
+test agent_lean_evidence_dir_consumes_bundle_evidence_without_overriding_model_only_scope ... ok
+test agent_train_live_run_without_eval_cannot_claim_model_quality ... ok
+test agent_kernel_stub_fixture_cannot_claim_cuda_correctness ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 23.55s
+
+
+running 12 tests
+test approval_kernel_approve_requires_explicit_human_review_flag ... ok
+test approval_release_draft_verifies_hosted_release_evidence ... ok
+test approval_release_offline_approve_validates_local_evidence_without_hosted_ci ... ok
+test approval_kernel_draft_infers_role_from_review_request_without_final_approval ... ok
+test approval_training_approve_writes_final_approval_and_resolves_request ... ok
+test approval_training_draft_uses_unified_role_policy ... ok
+test approval_kernel_approve_writes_final_approval_and_resolves_request ... ok
+test approval_release_approve_writes_final_approval_and_resolves_request ... ok
+test approval_draft_resets_stale_approved_review_request_to_pending ... ok
+test approval_lean_draft_verifies_candidate_files_from_review_request ... ok
+test approval_approve_can_infer_role_from_draft_file ... ok
+test approval_lean_approve_writes_final_approval_and_resolves_request ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+
+running 5 tests
+test loader_parses_real_example_002_yaml ... ok
+test loader_parses_real_example_001_yaml ... ok
+test dry_run_plans_and_loads_real_claim ... ok
+test example_002_counter_idealisation_dogfood_with_await_approval ... ok
+test live_lean_check_on_example_001 ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 3 tests
+test enterprise_ready_blocks_without_external_evidence ... ok
+test enterprise_ready_passes_with_complete_evidence_pack ... ok
+test enterprise_ready_rejects_checkpoint_manifest_without_sha256 ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 2 tests
+test memory_add_hashes_source_and_lists_non_authoritative_record ... ok
+test memory_import_deduplicates_and_rejects_trust_upgrades ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 6 tests
+test production_proof_missing_manifest_writes_blocked_report ... ok
+test production_proof_complete_fixture_reaches_human_reviewed ... ok
+test production_proof_rejects_conversion_manifest_checkpoint_hash_mismatch ... ok
+test production_proof_stub_kernel_source_cannot_pass ... ok
+test production_proof_rejects_ai_or_placeholder_approvals ... ok
+test production_proof_rejects_loss_only_training_eval ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+
+running 5 tests
+test ci_workflow_runs_release_evidence_and_container_smoke ... ok
+test ci_workflow_emits_devops_production_proof_evidence ... ok
+test release_scripts_delegate_to_refine_release_ready ... ok
+test release_offline_proof_records_local_signature_and_verifier_evidence ... ok
+test release_ready_dry_run_writes_evidence_files ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+
+running 4 tests
+test training_approval_approve_requires_explicit_review_flag ... ok
+test training_approval_rejects_policy_regression_failure ... ok
+test training_approval_draft_writes_draft_but_not_final_approval ... ok
+test training_approval_approve_writes_final_approval_and_resolves_request ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+[stderr]
+   Compiling refineforge-repair-api v0.2.2 (D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\crates\refineforge-repair-api)
+   Compiling refineforge-strategies v0.2.2 (D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\crates\refineforge-strategies)
+   Compiling refineforge-cli v0.2.2 (D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\crates\refineforge-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.98s
+     Running unittests src\lib.rs (\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\deps\refineforge_cli-a3ddbd7c43853f79.exe)
+     Running unittests src\main.rs (\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\deps\refine-4d3ffe55e19cdbd4.exe)
+     Running tests\agent_cli.rs (\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\deps\agent_cli-e420512d8b1337bb.exe)
+     Running tests\approval_cli.rs (\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\deps\approval_cli-bf74d7d77f57cc9a.exe)
+     Running tests\autonomous_e2e.rs (\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\deps\autonomous_e2e-c7e91cafcc54e5e2.exe)
+     Running tests\enterprise_readiness_cli.rs (\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\deps\enterprise_readiness_cli-6471f71d558c3179.exe)
+     Running tests\lsp_e2e.rs (\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\deps\lsp_e2e-22822be58e3e6560.exe)
+     Running tests\memory_cli.rs (\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\deps\memory_cli-6b90f9dd30c3eaab.exe)
+     Running tests\production_proof_cli.rs (\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\deps\production_proof_cli-59ee9e6fbcd6e996.exe)
+     Running tests\release_cli.rs (\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\deps\release_cli-5eec3ed083e8ee72.exe)
+     Running tests\training_approval_cli.rs (\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\deps\training_approval_cli-6b0fde1206a252b4.exe)
+   Doc-tests refineforge_cli

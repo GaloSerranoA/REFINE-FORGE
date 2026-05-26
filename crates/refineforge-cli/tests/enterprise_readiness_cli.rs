@@ -222,3 +222,40 @@ fn enterprise_ready_rejects_checkpoint_manifest_without_sha256() {
         .unwrap()
         .contains("checkpoint sha256"));
 }
+
+#[test]
+fn enterprise_ready_surfaces_blocked_evidence_details() {
+    let td = tempfile::tempdir().unwrap();
+    let evidence = td.path().join("evidence");
+    let out = td.path().join("enterprise-ready");
+    write_json(
+        &evidence.join("hosted-ci.json"),
+        json!({
+            "status": "blocked",
+            "blockers": [{
+                "id": "remote.git_remote_absent",
+                "impact": "Cannot push this repository to hosted CI."
+            }]
+        }),
+    );
+
+    let output = run_enterprise_ready(&[
+        "--out",
+        out.to_str().unwrap(),
+        "--hosted-ci-evidence",
+        evidence.join("hosted-ci.json").to_str().unwrap(),
+        "--json",
+    ]);
+    assert_success(&output);
+
+    let report = read_json(&out.join("enterprise-readiness.json"));
+    assert_eq!(report["status"], "blocked");
+    assert!(report["blockers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|blocker| blocker
+            .as_str()
+            .unwrap()
+            .contains("remote.git_remote_absent")));
+}

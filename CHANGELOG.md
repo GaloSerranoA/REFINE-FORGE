@@ -19,6 +19,11 @@ CLI surface is declared stable.
   and complexity-cleanup evidence are present.
 - Added `docs/enterprise-readiness.md` and wired README/STRUCTURE guidance so
   production hardening is tracked as evidence instead of marketing language.
+- Added `production-proof/evidence/enterprise-readiness-2026-05-26/` with
+  local/offline signed-release evidence, accepted local checkpoint evidence,
+  live HELYX integration logs, cleanup logs, and a final readiness report.
+- Blocked evidence files now surface their recorded blocker details in the
+  readiness report instead of collapsing to a generic status error.
 
 ### Added - HRM-Text runtime factory
 

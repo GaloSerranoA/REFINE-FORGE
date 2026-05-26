@@ -216,13 +216,16 @@ fn status_json_gate(
         }
     };
     if !status_is_accepted(&json) {
+        let blocker = blocked_evidence_summary(id, &json);
         return blocked_gate(
             id,
             name,
             Some(path.to_path_buf()),
-            format!(
-                "{id} evidence status must be passed, success, ready, approved, or human-reviewed"
-            ),
+            blocker.unwrap_or_else(|| {
+                format!(
+                    "{id} evidence status must be passed, success, ready, approved, or human-reviewed"
+                )
+            }),
         );
     }
     if let Err(err) = validate(&json) {
@@ -332,6 +335,38 @@ fn status_is_accepted(json: &Value) -> bool {
             )
         })
         .unwrap_or(false)
+}
+
+fn blocked_evidence_summary(id: &str, json: &Value) -> Option<String> {
+    if let Some(blocker) = json.get("blocker").and_then(Value::as_str) {
+        return Some(format!("{id} evidence blocked: {blocker}"));
+    }
+
+    let blockers = json.get("blockers")?.as_array()?;
+    let mut parts = Vec::new();
+    for blocker in blockers {
+        if let Some(text) = blocker.as_str() {
+            parts.push(text.to_string());
+            continue;
+        }
+        if let Some(object) = blocker.as_object() {
+            let blocker_id = object
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("unnamed_blocker");
+            let detail = object
+                .get("impact")
+                .or_else(|| object.get("observed"))
+                .and_then(Value::as_str)
+                .unwrap_or("blocked");
+            parts.push(format!("{blocker_id}: {detail}"));
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(format!("{id} evidence blocked: {}", parts.join("; ")))
+    }
 }
 
 fn is_hex_sha256(value: &str) -> bool {

@@ -1,0 +1,22 @@
+{
+  "schema_version": "refineforge-enterprise-remote-ci-evidence-v1",
+  "status": "blocked",
+  "captured_at": "2026-05-26T11:40:35Z",
+  "target_branch": "master",
+  "local_commit": "b438ababfd46162dd4c594e686f1462356b3ede2",
+  "blockers": [
+    {
+      "id": "remote.git_remote_absent",
+      "command": "git remote -v",
+      "observed": "",
+      "impact": "Cannot push this repository or associate a hosted GitHub Actions run from the current checkout."
+    },
+    {
+      "id": "remote.gh_auth_absent",
+      "command": "gh auth status",
+      "observed": "You are not logged into any GitHub hosts. To log in, run: gh auth login",
+      "impact": "Cannot inspect or download GitHub Actions artifacts from this machine."
+    }
+  ],
+  "non_claim": "This is blocker evidence, not hosted CI proof."
+}

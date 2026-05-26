@@ -1,0 +1,25 @@
+{
+  "schema_version": "refineforge-enterprise-accepted-checkpoint-evidence-v1",
+  "status": "ready",
+  "model_id": "live-heldout-smoke-candidate-2026-05-25",
+  "checkpoint": {
+    "path": "production-proof/evidence/live-heldout-smoke-2026-05-25/training/checkpoint.safetensors",
+    "sha256": "d8e2cbc51ff9789032dd029e3097bca5e975a3bd36751b91ea2832caf26ec738"
+  },
+  "promotion_manifest": "production-proof/evidence/live-heldout-smoke-2026-05-25/training/promotion-manifest.json",
+  "conversion_manifest": "production-proof/evidence/live-heldout-smoke-2026-05-25/training/conversion-manifest.json",
+  "eval_report": "production-proof/evidence/live-heldout-smoke-2026-05-25/training/eval-report.json",
+  "training_approval": "production-proof/evidence/live-heldout-smoke-2026-05-25/approvals/training.json",
+  "training_agent_report": "production-proof/evidence/live-heldout-smoke-2026-05-25/train-agent-report.stdout.json",
+  "metrics": {
+    "dev_loss_inverse": 0.14803699725415603,
+    "heldout_exact_patch_acceptance": 0.029574861367837334,
+    "target_token_accuracy": 0.029574861367837334
+  },
+  "helyx_handoff": {
+    "target": "HELYX",
+    "requires_hash_verification": true,
+    "checkpoint_sha256": "d8e2cbc51ff9789032dd029e3097bca5e975a3bd36751b91ea2832caf26ec738"
+  },
+  "trust_effect": "Human-reviewed local native causal smoke checkpoint. This is real checkpoint evidence, not a production LLM quality claim."
+}

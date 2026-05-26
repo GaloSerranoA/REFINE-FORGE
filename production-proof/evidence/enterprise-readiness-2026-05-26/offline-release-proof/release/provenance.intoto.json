@@ -1,0 +1,60 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "predicate": {
+    "buildType": "https://github.com/galo/refineforge/release-ready",
+    "builder": {
+      "id": "refineforge-local-release-ready"
+    },
+    "invocation": {
+      "environment": {
+        "host_os": "windows"
+      },
+      "parameters": {
+        "requested_version": "0.2.2"
+      }
+    },
+    "materials": [
+      {
+        "digest": {
+          "sha1": "b438ababfd46162dd4c594e686f1462356b3ede2"
+        },
+        "uri": "git+HEAD"
+      },
+      {
+        "uri": "file:Cargo.lock"
+      },
+      {
+        "uri": "file:lean/lean-toolchain"
+      }
+    ],
+    "metadata": {
+      "buildStartedOn": "2026-05-26T11:38:00.812409500+00:00",
+      "completeness": {
+        "environment": false,
+        "materials": true,
+        "parameters": true
+      }
+    }
+  },
+  "predicateType": "https://slsa.dev/provenance/v1",
+  "subject": [
+    {
+      "digest": {
+        "sha256": "e267d5484782388fa66889d63288acd0c47e70ef928ecb13047c0ca9e9ab9030"
+      },
+      "name": "EXAMPLE-001/manifest.json"
+    },
+    {
+      "digest": {
+        "sha256": "fefe69ae4f139cedf2c34852cd1e227881bb382b9ff85f0e104b430e8799c284"
+      },
+      "name": "EXAMPLE-002/manifest.json"
+    },
+    {
+      "digest": {
+        "sha256": "6f40a1253958b45c35191fa7f2caf7a34b3e968c2fdfa1518a4c93e1372374ed"
+      },
+      "name": "EXAMPLE-003/manifest.json"
+    }
+  ]
+}

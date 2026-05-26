@@ -1,0 +1,18 @@
+$ cargo run -p refineforge-cli --bin refine -- lint check-all
+[env]
+CARGO_TARGET_DIR=\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready
+
+[stdout]
+CLAIM-CRS-001          errors=0 warnings=6
+CLAIM-CRS-002          errors=0 warnings=6
+CLAIM-CRS-003          errors=0 warnings=6
+CLAIM-CRS-004          errors=0 warnings=6
+CLAIM-CRS-005          errors=0 warnings=6
+EXAMPLE-003            errors=0 warnings=0
+EXAMPLE-002            errors=0 warnings=0
+EXAMPLE-001            errors=0 warnings=0
+HELYX-AUDIT-001        errors=0 warnings=6
+
+[stderr]
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running `\\?\D:\AI-PROJECTS-GALO\PROJECTS\Refine-Forge\target\release-ready\debug\refine.exe lint check-all`

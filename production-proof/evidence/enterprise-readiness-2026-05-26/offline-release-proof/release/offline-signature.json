@@ -1,0 +1,8 @@
+{
+  "key_fingerprint": "8f958f747e01f289a44578908f1926b2c5671258fead3ac633f7d2430fb8536e",
+  "schema_version": "refineforge-offline-signature-evidence-v1",
+  "signature_file": ".\\production-proof/evidence/enterprise-readiness-2026-05-26/release-signing/release-report.json.sig",
+  "signature_mode": "offline-local-key",
+  "signature_sha256": "8f79a66bf13d417f7dfb9049b79ecffac385d11215285ed3b4285c926cba7595",
+  "status": "passed"
+}

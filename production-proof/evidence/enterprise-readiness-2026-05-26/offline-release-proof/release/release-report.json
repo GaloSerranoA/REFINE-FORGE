@@ -1,0 +1,383 @@
+{
+  "requested_version": "0.2.2",
+  "generated_at": "2026-05-26T11:38:00.812409500Z",
+  "git_commit": "b438ababfd46162dd4c594e686f1462356b3ede2",
+  "git_branch": "master",
+  "dirty_tree": false,
+  "host_os": "windows",
+  "environment": {
+    "runner_os": "windows",
+    "runner_arch": "x86_64",
+    "rustc_verbose_version": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: x86_64-pc-windows-msvc\nrelease: 1.95.0\nLLVM version: 22.1.2"
+  },
+  "artifacts": {
+    "sbom_sha256": "5370d949bb279d92b97b16db290aeb8aa3c452498ecadda3892fdd2568d55f1d",
+    "provenance_sha256": "ad1c337a90056d9f787d82d88d40b0a347bdf990ece8bb3ba7384a209bf7aba9",
+    "verifier_container_digest": null
+  },
+  "evidence_dir": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready",
+  "gates": [
+    {
+      "name": "git-worktree",
+      "command": [
+        "git",
+        "rev-parse",
+        "--is-inside-work-tree"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 0,
+      "log_path": null,
+      "message": "inside git worktree"
+    },
+    {
+      "name": "git-clean",
+      "command": [
+        "git",
+        "status",
+        "--porcelain"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 0,
+      "log_path": null,
+      "message": "working tree is clean"
+    },
+    {
+      "name": "version-semver",
+      "command": [
+        "semver",
+        "0.2.2"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 0,
+      "log_path": null,
+      "message": "valid semver"
+    },
+    {
+      "name": "tag-available",
+      "command": [
+        "git",
+        "rev-parse",
+        "v0.2.2"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 27,
+      "log_path": null,
+      "message": "tag is available"
+    },
+    {
+      "name": "cargo-metadata-locked",
+      "command": [
+        "cargo",
+        "metadata",
+        "--locked",
+        "--format-version",
+        "1"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 877,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\cargo-metadata-locked.log",
+      "message": "command exited 0"
+    },
+    {
+      "name": "cargo-test-refineforge-cli",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "refineforge-cli"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 41621,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\cargo-test-refineforge-cli.log",
+      "message": "command exited 0"
+    },
+    {
+      "name": "cargo-test-refineforge-derive",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "refineforge-derive"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 224,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\cargo-test-refineforge-derive.log",
+      "message": "command exited 0"
+    },
+    {
+      "name": "cargo-test-example-counter",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "example-counter"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 386,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\cargo-test-example-counter.log",
+      "message": "command exited 0"
+    },
+    {
+      "name": "cargo-test-example-capability",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "example-capability"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 278,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\cargo-test-example-capability.log",
+      "message": "command exited 0"
+    },
+    {
+      "name": "lean-check-all",
+      "command": [
+        "cargo",
+        "run",
+        "-p",
+        "refineforge-cli",
+        "--bin",
+        "refine",
+        "--",
+        "lean",
+        "check-all"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 1934,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\lean-check-all.log",
+      "message": "command exited 0"
+    },
+    {
+      "name": "scan-check-all",
+      "command": [
+        "cargo",
+        "run",
+        "-p",
+        "refineforge-cli",
+        "--bin",
+        "refine",
+        "--",
+        "scan",
+        "check-all"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 225,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\scan-check-all.log",
+      "message": "command exited 0"
+    },
+    {
+      "name": "lint-check-all",
+      "command": [
+        "cargo",
+        "run",
+        "-p",
+        "refineforge-cli",
+        "--bin",
+        "refine",
+        "--",
+        "lint",
+        "check-all"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 230,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\lint-check-all.log",
+      "message": "command exited 0"
+    },
+    {
+      "name": "bundle-export-EXAMPLE-001",
+      "command": [
+        "cargo",
+        "run",
+        "-p",
+        "refineforge-cli",
+        "--bin",
+        "refine",
+        "--",
+        "bundle",
+        "export",
+        "EXAMPLE-001"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 421,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\bundle-export-example-001.log",
+      "message": "command exited 0"
+    },
+    {
+      "name": "bundle-verify-EXAMPLE-001",
+      "command": [
+        "cargo",
+        "run",
+        "-p",
+        "refineforge-cli",
+        "--bin",
+        "refine",
+        "--",
+        "bundle",
+        "verify",
+        "artifacts/EXAMPLE-001"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 233,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\bundle-verify-example-001.log",
+      "message": "command exited 0"
+    },
+    {
+      "name": "bundle-export-EXAMPLE-002",
+      "command": [
+        "cargo",
+        "run",
+        "-p",
+        "refineforge-cli",
+        "--bin",
+        "refine",
+        "--",
+        "bundle",
+        "export",
+        "EXAMPLE-002"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 415,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\bundle-export-example-002.log",
+      "message": "command exited 0"
+    },
+    {
+      "name": "bundle-verify-EXAMPLE-002",
+      "command": [
+        "cargo",
+        "run",
+        "-p",
+        "refineforge-cli",
+        "--bin",
+        "refine",
+        "--",
+        "bundle",
+        "verify",
+        "artifacts/EXAMPLE-002"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 228,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\bundle-verify-example-002.log",
+      "message": "command exited 0"
+    },
+    {
+      "name": "bundle-export-EXAMPLE-003",
+      "command": [
+        "cargo",
+        "run",
+        "-p",
+        "refineforge-cli",
+        "--bin",
+        "refine",
+        "--",
+        "bundle",
+        "export",
+        "EXAMPLE-003"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 422,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\bundle-export-example-003.log",
+      "message": "command exited 0"
+    },
+    {
+      "name": "bundle-verify-EXAMPLE-003",
+      "command": [
+        "cargo",
+        "run",
+        "-p",
+        "refineforge-cli",
+        "--bin",
+        "refine",
+        "--",
+        "bundle",
+        "verify",
+        "artifacts/EXAMPLE-003"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 237,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\bundle-verify-example-003.log",
+      "message": "command exited 0"
+    },
+    {
+      "name": "docs-truth-audit",
+      "command": [
+        "refine",
+        "release",
+        "ready"
+      ],
+      "status": "passed",
+      "required": true,
+      "duration_ms": 3,
+      "log_path": "production-proof/evidence/enterprise-readiness-2026-05-26/release-ready\\logs\\docs-truth-audit.log",
+      "message": "docs truth audit passed"
+    },
+    {
+      "name": "docker-verifier-smoke",
+      "command": [
+        "docker",
+        "build"
+      ],
+      "status": "skipped",
+      "required": true,
+      "duration_ms": 0,
+      "log_path": null,
+      "message": "skipped by --skip-docker"
+    },
+    {
+      "name": "signature-verification",
+      "command": [
+        "cosign",
+        "verify-blob"
+      ],
+      "status": "skipped",
+      "required": true,
+      "duration_ms": 0,
+      "log_path": null,
+      "message": "skipped by --skip-signature"
+    }
+  ],
+  "bundles": [
+    {
+      "claim_id": "EXAMPLE-001",
+      "bundle_dir": "artifacts\\EXAMPLE-001",
+      "manifest_sha256": "e267d5484782388fa66889d63288acd0c47e70ef928ecb13047c0ca9e9ab9030",
+      "signature": {
+        "state": "unsigned"
+      }
+    },
+    {
+      "claim_id": "EXAMPLE-002",
+      "bundle_dir": "artifacts\\EXAMPLE-002",
+      "manifest_sha256": "fefe69ae4f139cedf2c34852cd1e227881bb382b9ff85f0e104b430e8799c284",
+      "signature": {
+        "state": "unsigned"
+      }
+    },
+    {
+      "claim_id": "EXAMPLE-003",
+      "bundle_dir": "artifacts\\EXAMPLE-003",
+      "manifest_sha256": "6f40a1253958b45c35191fa7f2caf7a34b3e968c2fdfa1518a4c93e1372374ed",
+      "signature": {
+        "state": "unsigned"
+      }
+    }
+  ]
+}
