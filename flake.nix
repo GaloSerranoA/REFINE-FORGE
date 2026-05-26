@@ -36,7 +36,7 @@
           overlays = [
             rust-overlay.overlays.default
             # readToolchainFile reads `lean/lean-toolchain` and gives
-            # us pkgs.lean-all, pkgs.lean, pkgs.lake at the pinned
+            # us pkgs.lean.lean-all plus Lean/Lake at the pinned
             # version. The toolchain file format must be
             # `leanprover/lean4:vX.Y.Z`, which ours is.
             (lean4-nix.readToolchainFile ./lean/lean-toolchain)
@@ -128,7 +128,7 @@
         bundleFor = claim_id: pkgs.stdenv.mkDerivation {
           name = "refineforge-bundle-${claim_id}";
           inherit src;
-          nativeBuildInputs = [ refine pkgs.lean-all ];
+          nativeBuildInputs = [ refine pkgs.lean.lean-all ];
 
           # Lake writes its build cache into lean/.lake/ ; needs HOME.
           buildPhase = ''
@@ -153,7 +153,7 @@
           inherit src cargoArtifacts;
           pname = "refineforge-tests";
           version = "0.1.0";
-          nativeBuildInputs = [ pkgs.git pkgs.lean-all ];
+          nativeBuildInputs = [ pkgs.git pkgs.lean.lean-all ];
           cargoTestExtraArgs = "--workspace";
         };
 
@@ -194,7 +194,7 @@
           packages = with pkgs; [
             rustToolchain
             cargo-nextest
-            lean-all                  # lake + lean at the pinned version
+            lean.lean-all             # lake + lean at the pinned version
             cosign                    # for signing / verifying bundles
             git
             jq                        # for poking at bundle manifests

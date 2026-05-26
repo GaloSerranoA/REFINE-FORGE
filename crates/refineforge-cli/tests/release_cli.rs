@@ -411,7 +411,7 @@ fn nix_flake_cargo_test_provides_required_subprocess_tools() {
     let flake = std::fs::read_to_string(workspace_root().join("flake.nix")).unwrap();
 
     assert!(
-        flake.contains("nativeBuildInputs = [ pkgs.git pkgs.lean-all ];"),
+        flake.contains("nativeBuildInputs = [ pkgs.git pkgs.lean.lean-all ];"),
         "Nix cargoTest must provide git plus Lean/Lake for agent subprocess integration tests"
     );
 }
