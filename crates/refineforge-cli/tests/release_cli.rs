@@ -297,6 +297,59 @@ fn ci_script_nix_check_annotates_primary_and_builder_logs() {
 }
 
 #[test]
+fn ci_workflow_uploads_nix_evidence_even_when_nix_fails() {
+    let workflow =
+        std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();
+
+    assert!(
+        workflow.contains("Upload Nix evidence\n        if: always()"),
+        "Nix evidence artifacts must upload even when nix flake check fails"
+    );
+}
+
+#[test]
+fn ci_script_nix_check_prefers_failed_derivations_for_builder_logs() {
+    let writer = std::fs::read_to_string(
+        workspace_root().join("scripts/ci/write-release-production-evidence.sh"),
+    )
+    .unwrap();
+
+    assert!(
+        writer.contains("failed_drvs"),
+        "Nix builder log collection must parse explicitly failed derivations"
+    );
+    assert!(
+        writer.contains("error: builder for '/nix/store/"),
+        "Nix builder log collection must read the canonical failed-builder error line"
+    );
+    assert!(
+        writer.contains("drv_paths=\"${failed_drvs:-$all_drvs}\""),
+        "Nix builder log collection must prefer failed derivations before falling back to all derivations"
+    );
+}
+
+#[test]
+fn ci_script_nix_check_prioritizes_failure_summary_annotations() {
+    let writer = std::fs::read_to_string(
+        workspace_root().join("scripts/ci/write-release-production-evidence.sh"),
+    )
+    .unwrap();
+
+    assert!(
+        writer.contains("nix-failure-summary.log"),
+        "Nix failure diagnostics must produce a compact summary file"
+    );
+    assert!(
+        writer.contains("append_nix_summary"),
+        "Nix failure diagnostics must build summary lines separately from long tails"
+    );
+    assert!(
+        writer.contains("tail -n 80 \"$out_dir/nix-failure-summary.log\""),
+        "GitHub annotations must prefer the compact summary over a broad builder tail"
+    );
+}
+
+#[test]
 fn nix_flake_source_includes_cargo_lock() {
     let root = workspace_root();
     let gitignore = std::fs::read_to_string(root.join(".gitignore")).unwrap();

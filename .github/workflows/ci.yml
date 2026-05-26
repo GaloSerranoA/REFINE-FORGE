@@ -331,6 +331,7 @@ jobs:
           fi
 
       - name: Upload Nix evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: refineforge-nix-evidence

@@ -134,7 +134,9 @@ JSON
       echo "flake.lock was not present after nix command" >> "$out_dir/nix-check.log"
     fi
     if [ "$status" -ne 0 ] && command -v nix >/dev/null 2>&1; then
-      drv_paths="$(grep -Eo "/nix/store/[^ ']+\\.drv" "$out_dir/nix-check.log" | awk '!seen[$0]++' || true)"
+      all_drvs="$(grep -Eo "/nix/store/[^ ']+\\.drv" "$out_dir/nix-check.log" | awk '!seen[$0]++' || true)"
+      failed_drvs="$(grep -Eo "error: builder for '/nix/store/[^']+\\.drv' failed" "$out_dir/nix-check.log" | sed -E "s/error: builder for '([^']+)' failed/\\1/" | awk '!seen[$0]++' || true)"
+      drv_paths="${failed_drvs:-$all_drvs}"
       if [ -n "$drv_paths" ]; then
         : > "$out_dir/nix-builder.log"
         while IFS= read -r drv_path; do
@@ -176,6 +178,13 @@ JSON
       echo "nix flake check passed" >> "$out_dir/nix-check.log"
     elif [ "${GITHUB_ACTIONS:-}" = "true" ]; then
       : > "$out_dir/nix-failure-diagnostics.log"
+      : > "$out_dir/nix-failure-summary.log"
+      append_nix_summary() {
+        local source="$1"
+        [ -s "$source" ] || return 0
+        grep -E -- '---- |panicked at| FAILED|failures:|test result: FAILED|error: test failed|error: builder for|error:|Error: |FAIL:|For full logs|note: run with|BuildFailed|ToolingError|No such file|not found|Permission denied|permission denied' \
+          "$source" | sed "s|^|$(basename "$source"): |" >> "$out_dir/nix-failure-summary.log" || true
+      }
       append_nix_diagnostics() {
         local source="$1"
         [ -s "$source" ] || return 0
@@ -191,12 +200,22 @@ JSON
       append_nix_diagnostics "$out_dir/nix-check.log"
       append_nix_diagnostics "$out_dir/nix-builder.log"
       append_nix_diagnostics "$out_dir/nix-kept-build-logs.txt"
-      tail -n 120 "$out_dir/nix-failure-diagnostics.log" | while IFS= read -r line; do
-        safe_line="${line//'%'/'%25'}"
-        safe_line="${safe_line//$'\r'/'%0D'}"
-        safe_line="${safe_line//$'\n'/'%0A'}"
-        echo "::error file=flake.nix,title=nix flake check::$safe_line"
-      done
+      append_nix_summary "$out_dir/nix-check.log"
+      append_nix_summary "$out_dir/nix-builder.log"
+      append_nix_summary "$out_dir/nix-kept-build-logs.txt"
+      emit_nix_annotations() {
+        while IFS= read -r line; do
+          safe_line="${line//'%'/'%25'}"
+          safe_line="${safe_line//$'\r'/'%0D'}"
+          safe_line="${safe_line//$'\n'/'%0A'}"
+          echo "::error file=flake.nix,title=nix flake check::$safe_line"
+        done
+      }
+      if [ -s "$out_dir/nix-failure-summary.log" ]; then
+        tail -n 80 "$out_dir/nix-failure-summary.log" | emit_nix_annotations
+      else
+        tail -n 120 "$out_dir/nix-failure-diagnostics.log" | emit_nix_annotations
+      fi
     fi
     exit "$status"
     ;;
