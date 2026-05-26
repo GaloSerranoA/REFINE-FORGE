@@ -300,6 +300,7 @@ fn ci_script_nix_check_annotates_primary_and_builder_logs() {
 fn ci_workflow_uploads_nix_evidence_even_when_nix_fails() {
     let workflow =
         std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).unwrap();
+    let workflow = workflow.replace("\r\n", "\n");
 
     assert!(
         workflow.contains("Upload Nix evidence\n        if: always()"),
@@ -410,8 +411,8 @@ fn nix_flake_cargo_test_provides_required_subprocess_tools() {
     let flake = std::fs::read_to_string(workspace_root().join("flake.nix")).unwrap();
 
     assert!(
-        flake.contains("nativeBuildInputs = [ pkgs.git ];"),
-        "Nix cargoTest must provide git for Unix subprocess integration tests"
+        flake.contains("nativeBuildInputs = [ pkgs.git pkgs.lean-all ];"),
+        "Nix cargoTest must provide git plus Lean/Lake for agent subprocess integration tests"
     );
 }
 
@@ -436,6 +437,7 @@ fn ci_workflow_publishes_windows_cargo_test_failure_tail() {
     assert!(workflow.contains("cargo-test-release.log"));
     assert!(workflow.contains("cargo-test-failure-summary.log"));
     assert!(workflow.contains("Select-String -Path cargo-test-release.log"));
+    assert!(workflow.contains("-CaseSensitive"));
     assert!(workflow.contains("::error file=Cargo.toml,title=cargo test --release"));
 }
 

@@ -160,7 +160,7 @@ jobs:
           & cargo test --release *>&1 | Tee-Object -FilePath cargo-test-release.log
           $status = $LASTEXITCODE
           if ($status -ne 0) {
-            $matches = Select-String -Path cargo-test-release.log -Pattern "---- |panicked at| FAILED|failures:|test result: FAILED|error: test failed|Error: |FAIL:"
+            $matches = Select-String -Path cargo-test-release.log -CaseSensitive -Pattern "---- |panicked at| FAILED|failures:|test result: FAILED|error: test failed|Error: |FAIL:"
             if ($matches) {
               $matches | ForEach-Object { $_.Line } | Set-Content -Path cargo-test-failure-summary.log
               $diagnosticLog = "cargo-test-failure-summary.log"
