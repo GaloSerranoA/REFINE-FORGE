@@ -135,6 +135,13 @@ JSON
     fi
     if [ "$status" -eq 0 ]; then
       echo "nix flake check passed" >> "$out_dir/nix-check.log"
+    elif [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+      tail -n 40 "$out_dir/nix-check.log" | while IFS= read -r line; do
+        safe_line="${line//'%'/'%25'}"
+        safe_line="${safe_line//$'\r'/'%0D'}"
+        safe_line="${safe_line//$'\n'/'%0A'}"
+        echo "::error file=flake.nix,title=nix flake check::$safe_line"
+      done
     fi
     exit "$status"
     ;;

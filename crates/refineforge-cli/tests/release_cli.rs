@@ -233,4 +233,8 @@ fn ci_workflow_nix_check_does_not_require_flakehub_or_preexisting_lock() {
         writer.find("\"$@\"").unwrap() < writer.find("cp flake.lock").unwrap(),
         "nix-check evidence must copy flake.lock after nix has had a chance to generate it"
     );
+    assert!(
+        writer.contains("::error file=flake.nix,title=nix flake check"),
+        "nix-check failures must publish a public diagnostic annotation"
+    );
 }
