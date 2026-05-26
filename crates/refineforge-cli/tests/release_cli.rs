@@ -238,3 +238,18 @@ fn ci_workflow_nix_check_does_not_require_flakehub_or_preexisting_lock() {
         "nix-check failures must publish a public diagnostic annotation"
     );
 }
+
+#[test]
+fn nix_flake_source_includes_cargo_lock() {
+    let root = workspace_root();
+    let gitignore = std::fs::read_to_string(root.join(".gitignore")).unwrap();
+
+    assert!(
+        root.join("Cargo.lock").exists(),
+        "Nix crane builds require a workspace Cargo.lock"
+    );
+    assert!(
+        !gitignore.lines().any(|line| line.trim() == "Cargo.lock"),
+        "Cargo.lock must be committed for Nix crane builds, not ignored"
+    );
+}
