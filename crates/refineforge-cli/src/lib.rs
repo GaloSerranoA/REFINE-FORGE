@@ -13,6 +13,7 @@ pub mod claim;
 pub mod enterprise_ready;
 pub mod lint;
 pub mod memory;
+pub mod nexus;
 pub mod production_proof;
 pub mod release;
 pub mod repair;

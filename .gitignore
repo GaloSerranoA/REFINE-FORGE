@@ -33,6 +33,9 @@ __pycache__/
 # Enterprise readiness report outputs
 /enterprise-readiness/
 
+# InmortalProof proof-search run outputs
+/inmortal-proof-runs/
+
 # Nix
 result
 result-*

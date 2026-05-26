@@ -65,6 +65,7 @@ refineforge/
 │   └── agent-report.schema.json # shared JSON contract for liveness, capabilities, tools, commands, and trust
 ├── escalations/                # `refine autonomous` decision packets, one dir per CLAIM-ID
 ├── autonomous/                 # `refine autonomous` per-run RunReport JSONs (gitignored)
+├── inmortal-proof-runs/        # `refine inmortal-proof run` receipt packs (gitignored)
 ├── containers/                 # Section 3: Dockerfile.verifier and friends
 ├── release/                    # Section 3: release.sh / release.ps1 + signed-tag artifacts
 ├── enterprise-readiness/        # local `refine enterprise ready` outputs (gitignored)
@@ -473,6 +474,7 @@ crates/refineforge-cli/
     ├── sorry_gate.rs       # comment-stripper + word-boundary scan for sorry/admit/axiom; unit-tested
     ├── report.rs           # ProofReport + ProofStatus enum (Verified / BuildFailed / PolicyViolation / ToolingError)
     ├── bundle.rs           # `refine bundle export/verify` — SHA-256 manifest + report.json + VERIFY.txt; cross-platform paths
+    ├── nexus.rs            # `refine inmortal-proof run` — protected EVOLVE regions + proof-search receipts
     ├── scaffold.rs         # `refine new` + `refine templates` — template substitution + auto-import; reads lakefile defaultTargets
     ├── scan.rs             # `refine scan check[-all]` — regex name-presence check for rust_source entities
     └── repair/             # `refine repair` — LLM repair driver
@@ -495,6 +497,7 @@ crates/refineforge-cli/
 | `sorry_gate.rs` | ~180 | 7 |
 | `report.rs` | ~30 | — |
 | `bundle.rs` | ~230 | — |
+| `nexus.rs` | ~650 | 2 + integration |
 | `scaffold.rs` | ~210 | — |
 | `scan.rs` | ~225 | — |
 | `repair/mod.rs` | ~210 | — |
@@ -568,6 +571,7 @@ the bundle exporter once had is documented in `CHANGELOG.md`).
 | `refinement-template.md` | claim authors | Empty skeleton to copy into `docs/refinement/<CLAIM-ID>.md` |
 | `refinement/EXAMPLE-002.md` | claim authors | Answer-key showing a filled-in refinement argument with a real idealisation |
 | `verification/proof-inventory.md` | reviewers, maintainers | Current Lean-backed claim inventory: theorem shape, scope, and implementation-link status |
+| `inmortal-proof.md` | Lean/ML maintainers | InmortalProof proof-search substrate, EVOLVE region contract, deterministic receipts, goal cache, and AlphaProof boundary |
 | `release/release-readiness-inventory.md` | DevOps (Section 3) | Release infrastructure truth table: shipped-local, stub-tested, CI-pending, blocked, and planned surfaces |
 | `release/ci-audit-report.md` | DevOps (Section 3) | CI/release audit report template and current local blocker record |
 | `agents/README.md` | operator, AI agents | CLI-first HELYX specialist agents and the rule that JSON reports are the source of truth |

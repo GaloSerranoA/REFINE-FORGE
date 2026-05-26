@@ -12,8 +12,8 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use refineforge_cli::{
-    agent, approval, autonomous, bundle, claim, enterprise_ready, lint, memory, production_proof,
-    release, repair, runner, scaffold, scan, training_approval,
+    agent, approval, autonomous, bundle, claim, enterprise_ready, lint, memory, nexus,
+    production_proof, release, repair, runner, scaffold, scan, training_approval,
 };
 
 #[derive(Parser)]
@@ -73,6 +73,11 @@ enum Cmd {
     Enterprise {
         #[command(subcommand)]
         cmd: EnterpriseCmd,
+    },
+    /// InmortalProof proof-search receipts and protected Lean evolution regions.
+    InmortalProof {
+        #[command(subcommand)]
+        cmd: InmortalProofCmd,
     },
     /// Central non-authoritative memory records for Refine-Forge agents.
     Memory {
@@ -355,6 +360,30 @@ struct EnterpriseReadyCliOptions {
     /// Cleanup/complexity review evidence JSON.
     #[arg(long)]
     cleanup_report: Option<PathBuf>,
+    /// Emit the JSON report to stdout after writing evidence files.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Subcommand)]
+enum InmortalProofCmd {
+    /// Prepare deterministic proof-search receipts for a claim.
+    Run(InmortalProofRunCliOptions),
+}
+
+#[derive(Clone, clap::Args)]
+struct InmortalProofRunCliOptions {
+    /// Claim id to prepare for proof search.
+    claim_id: String,
+    /// Evidence output directory.
+    #[arg(long, default_value = "inmortal-proof-runs/latest")]
+    out: PathBuf,
+    /// Number of deterministic receipt episodes to record.
+    #[arg(long, default_value_t = 1)]
+    episodes: usize,
+    /// Maximum proof sketch population capacity for this run.
+    #[arg(long, default_value_t = 64)]
+    population_limit: usize,
     /// Emit the JSON report to stdout after writing evidence files.
     #[arg(long)]
     json: bool,
@@ -689,6 +718,21 @@ fn main() -> Result<()> {
                     emit_json: opts.json,
                 },
             ),
+        },
+        Cmd::InmortalProof { cmd } => match cmd {
+            InmortalProofCmd::Run(opts) => {
+                let out_dir = nexus::resolve_out_dir(&cli.root, opts.out)?;
+                nexus::run(
+                    &cli.root,
+                    &opts.claim_id,
+                    nexus::NexusRunOptions {
+                        out_dir,
+                        episodes: opts.episodes,
+                        population_limit: opts.population_limit,
+                        emit_json: opts.json,
+                    },
+                )
+            }
         },
         Cmd::Memory { cmd } => match cmd {
             MemoryCmd::Add {

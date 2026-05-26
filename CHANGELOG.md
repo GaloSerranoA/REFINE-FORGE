@@ -10,6 +10,12 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added - InmortalProof proof-search substrate
+
+- Added `refine inmortal-proof run <CLAIM-ID>` to produce deterministic proof-search receipt packs for Lean claims.
+- The InmortalProof receipt records EVOLVE-BLOCK / EVOLVE-VALUE editable regions, full-source and protected-source SHA-256 hashes, a proof-sketch population seed, P-UCB selection metadata, deterministic episode JSONL, theorem goal-cache JSONL, no-sorry policy status, and blockers.
+- Added `docs/inmortal-proof.md` and README/STRUCTURE wiring with the explicit boundary that this is Refine-Forge's own proof-search substrate, not a claim to copy AlphaProof, Gemini, or proprietary internals.
+
 ### Added - enterprise readiness gate
 
 - Added `refine enterprise ready` to produce deterministic JSON and Markdown
