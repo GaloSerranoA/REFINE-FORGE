@@ -10,6 +10,7 @@ pub mod approval;
 pub mod autonomous;
 pub mod bundle;
 pub mod claim;
+pub mod enterprise_ready;
 pub mod lint;
 pub mod memory;
 pub mod production_proof;

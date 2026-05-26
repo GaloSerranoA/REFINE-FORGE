@@ -10,6 +10,16 @@ CLI surface is declared stable.
 
 ## [Unreleased]
 
+### Added - enterprise readiness gate
+
+- Added `refine enterprise ready` to produce deterministic JSON and Markdown
+  enterprise readiness reports.
+- The gate remains blocked until remote CI proof, signed release proof,
+  accepted checkpoint evidence, live HELYX integration evidence, docs polish,
+  and complexity-cleanup evidence are present.
+- Added `docs/enterprise-readiness.md` and wired README/STRUCTURE guidance so
+  production hardening is tracked as evidence instead of marketing language.
+
 ### Added - HRM-Text runtime factory
 
 - Added `refine-train hrm-text probe` to record local HRM-Text runtime

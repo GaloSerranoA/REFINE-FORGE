@@ -30,6 +30,7 @@ Read in this order — each doc is short and points at the next.
 | [docs/verification/proof-inventory.md](docs/verification/proof-inventory.md) | Current Lean-backed claim inventory: theorem shape, scope, and implementation-link status |
 | [docs/release/release-readiness-inventory.md](docs/release/release-readiness-inventory.md) | Release infrastructure inventory: shipped-local, stub-tested, CI-pending, blocked, and planned surfaces |
 | [docs/release/ci-audit-report.md](docs/release/ci-audit-report.md) | CI/release audit report template and current local blocker record |
+| [docs/enterprise-readiness.md](docs/enterprise-readiness.md) | Enterprise readiness gate: remote CI, signed releases, checkpoints, HELYX integration, docs polish, and cleanup evidence |
 | [docs/agents/README.md](docs/agents/README.md) | CLI-first HELYX specialist agents: Lean, DevOps, training, and kernel evidence reports |
 | [training/README.md](training/README.md) | Training control plane quick start, including HRM-Text probe/manifest handoff commands |
 | [docs/training/hrm-text-analysis.md](docs/training/hrm-text-analysis.md) | Analysis of HRM-Text and which production-training ideas can inform Refine-Forge |
@@ -81,6 +82,13 @@ mode runs the local role execution surface: Lean gates, release readiness,
 trainer dry-run by default, and the bit-exact kernel gate. Pass
 `--allow-expensive` only when live trainer backends or Docker/signature release
 gates should run.
+
+The final enterprise readiness surface is `refine enterprise ready`. It writes a
+JSON and Markdown report and stays blocked until remote CI proof, signed release
+proof, accepted real checkpoint evidence, live HELYX integration evidence, docs
+polish, and complexity-cleanup evidence are present. This is a hard truth gate:
+it records missing production hardening as blockers instead of upgrading the
+repository to an enterprise-product claim.
 
 The Training agent accepts `REFINEFORGE_TRAINING_EVIDENCE_DIR` only as a
 pointer to real files. It validates checkpoint, eval, regression, compute

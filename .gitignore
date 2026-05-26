@@ -31,6 +31,9 @@ __pycache__/
 # Agent control-plane run outputs
 /agent-reports/
 
+# Enterprise readiness report outputs
+/enterprise-readiness/
+
 # Nix
 result
 result-*

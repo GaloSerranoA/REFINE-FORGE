@@ -12,8 +12,8 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use refineforge_cli::{
-    agent, approval, autonomous, bundle, claim, lint, memory, production_proof, release, repair,
-    runner, scaffold, scan, training_approval,
+    agent, approval, autonomous, bundle, claim, enterprise_ready, lint, memory, production_proof,
+    release, repair, runner, scaffold, scan, training_approval,
 };
 
 #[derive(Parser)]
@@ -68,6 +68,11 @@ enum Cmd {
     Release {
         #[command(subcommand)]
         cmd: ReleaseCmd,
+    },
+    /// Final enterprise readiness evidence gate for release hardening.
+    Enterprise {
+        #[command(subcommand)]
+        cmd: EnterpriseCmd,
     },
     /// Central non-authoritative memory records for Refine-Forge agents.
     Memory {
@@ -322,6 +327,37 @@ enum ReleaseCmd {
         #[arg(long)]
         verifier_log: PathBuf,
     },
+}
+
+#[derive(Subcommand)]
+enum EnterpriseCmd {
+    /// Check whether external and local evidence supports enterprise-ready claims.
+    Ready(EnterpriseReadyCliOptions),
+}
+
+#[derive(Clone, clap::Args)]
+struct EnterpriseReadyCliOptions {
+    /// Evidence output directory.
+    #[arg(long, default_value = "enterprise-readiness/latest")]
+    out: PathBuf,
+    /// Hosted remote CI evidence JSON.
+    #[arg(long)]
+    hosted_ci_evidence: Option<PathBuf>,
+    /// Signed release verification evidence JSON.
+    #[arg(long)]
+    signed_release_evidence: Option<PathBuf>,
+    /// Accepted checkpoint manifest JSON with SHA-256 and HELYX hash policy.
+    #[arg(long)]
+    checkpoint_manifest: Option<PathBuf>,
+    /// Live HELYX integration evidence JSON.
+    #[arg(long)]
+    helyx_integration_evidence: Option<PathBuf>,
+    /// Cleanup/complexity review evidence JSON.
+    #[arg(long)]
+    cleanup_report: Option<PathBuf>,
+    /// Emit the JSON report to stdout after writing evidence files.
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Subcommand)]
@@ -637,6 +673,20 @@ fn main() -> Result<()> {
                     signature_file,
                     key_fingerprint,
                     verifier_log,
+                },
+            ),
+        },
+        Cmd::Enterprise { cmd } => match cmd {
+            EnterpriseCmd::Ready(opts) => enterprise_ready::ready(
+                &cli.root,
+                enterprise_ready::EnterpriseReadyOptions {
+                    out_dir: opts.out,
+                    hosted_ci_evidence: opts.hosted_ci_evidence,
+                    signed_release_evidence: opts.signed_release_evidence,
+                    checkpoint_manifest: opts.checkpoint_manifest,
+                    helyx_integration_evidence: opts.helyx_integration_evidence,
+                    cleanup_report: opts.cleanup_report,
+                    emit_json: opts.json,
                 },
             ),
         },

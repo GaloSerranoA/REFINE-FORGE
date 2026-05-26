@@ -12,7 +12,7 @@ discipline split (Lean Specialist / ML Engineer / DevOps / CUDA Engineer) read
 | Part | Role | Primary local surface | Boundary |
 |---:|---|---|---|
 | 1 | Lean 4 / verification | `lean/`, `claims/`, `crates/refineforge-cli`, `refine agent lean`, templates, bundle artifacts | Lean proves the model; refinement docs and claim linting carry the human-reviewed Rust link |
-| 2 | Release / infrastructure / DevOps | `.github/workflows/ci.yml`, `release/`, `containers/Dockerfile.verifier`, `refine agent devops`, `refine release offline-proof`, SBOM/provenance evidence, `release-offline` approvals | Local release-readiness works; offline/local assurance is separate; Docker/signature gates require `--allow-expensive` or hosted CI; real hosted OIDC signing still requires a remote CI run |
+| 2 | Release / infrastructure / DevOps | `.github/workflows/ci.yml`, `release/`, `containers/Dockerfile.verifier`, `refine agent devops`, `refine release offline-proof`, `refine enterprise ready`, SBOM/provenance evidence, `release-offline` approvals | Local release-readiness works; enterprise readiness stays blocked until remote CI, signed release, checkpoint, HELYX, docs, and cleanup evidence exist; real hosted OIDC signing still requires a remote CI run |
 | 3 | ML / training engine | `crates/refineforge-trainer`, `training/`, `refine agent train`, local-finetune bridge in `refineforge-strategies` | Refine-Forge now runs native proof-repair smoke training, produces HRM-Text runtime handoff manifests, and validates production evidence; HELYX/Axolotl/custom remain production-scale trainer backends |
 | 4 | GPU / kernel Rust | `crates/refineforge-bitexact`, `kernels/`, `refine agent kernel`, `docs/bit-exact-reproducibility.md` | Refine-Forge owns local CUDA smoke evidence and deterministic gates; `helyx-kernels` owns production kernels |
 
@@ -67,6 +67,7 @@ refineforge/
 ├── autonomous/                 # `refine autonomous` per-run RunReport JSONs (gitignored)
 ├── containers/                 # Section 3: Dockerfile.verifier and friends
 ├── release/                    # Section 3: release.sh / release.ps1 + signed-tag artifacts
+├── enterprise-readiness/        # local `refine enterprise ready` outputs (gitignored)
 └── docs/                       # methodology, policies, refinement, release, verification, agent docs
 ```
 
