@@ -72,6 +72,7 @@
               || (pkgs.lib.hasPrefix "release/" relPath)
               || (pkgs.lib.hasPrefix "kernels/" relPath)
               || (pkgs.lib.hasPrefix "training/" relPath)
+              || (pkgs.lib.hasPrefix "containers/" relPath)
               || (pkgs.lib.elem relPath [ ".gitignore" "flake.nix" ]);
         };
 

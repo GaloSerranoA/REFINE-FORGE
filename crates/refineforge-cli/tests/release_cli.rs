@@ -268,6 +268,7 @@ fn nix_flake_source_includes_cargo_test_support_files() {
         "release/",
         "kernels/",
         "training/",
+        "containers/",
     ] {
         assert!(
             flake.contains(prefix),
