@@ -78,7 +78,14 @@
               || (pkgs.lib.hasPrefix "training/" relPath)
               || (pkgs.lib.hasPrefix "containers/" relPath)
               || (pkgs.lib.hasPrefix "schemas/" relPath)
-              || (pkgs.lib.elem relPath [ ".gitignore" "flake.nix" "SECURITY.md" ]);
+              || (pkgs.lib.elem relPath [
+                ".gitignore"
+                "flake.nix"
+                "SECURITY.md"
+                "README.md"
+                "STRUCTURE.md"
+                "CHANGELOG.md"
+              ]);
         };
 
         # Cargo dep artifacts cached separately so source-only changes

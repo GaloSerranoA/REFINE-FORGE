@@ -384,7 +384,14 @@ fn nix_flake_source_includes_cargo_test_support_files() {
             "Nix cargoTest source filter must keep {prefix} for integration tests"
         );
     }
-    for file in [".gitignore", "flake.nix", "SECURITY.md"] {
+    for file in [
+        ".gitignore",
+        "flake.nix",
+        "SECURITY.md",
+        "README.md",
+        "STRUCTURE.md",
+        "CHANGELOG.md",
+    ] {
         assert!(
             flake.contains(file),
             "Nix cargoTest source filter must keep root file {file}"
