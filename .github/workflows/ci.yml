@@ -137,7 +137,14 @@ jobs:
           status=${PIPESTATUS[0]}
           set -e
           if [ "$status" -ne 0 ]; then
-            tail -n 80 cargo-test-release.log | while IFS= read -r line; do
+            grep -E -- '---- |panicked at| FAILED|failures:|test result: FAILED|error: test failed' \
+              cargo-test-release.log > cargo-test-failure-summary.log || true
+            if [ -s cargo-test-failure-summary.log ]; then
+              diagnostic_log=cargo-test-failure-summary.log
+            else
+              diagnostic_log=cargo-test-release.log
+            fi
+            tail -n 80 "$diagnostic_log" | while IFS= read -r line; do
               safe_line="${line//'%'/'%25'}"
               safe_line="${safe_line//$'\r'/'%0D'}"
               safe_line="${safe_line//$'\n'/'%0A'}"

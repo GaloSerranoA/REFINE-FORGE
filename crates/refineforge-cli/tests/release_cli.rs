@@ -275,5 +275,7 @@ fn ci_workflow_publishes_posix_cargo_test_failure_tail() {
 
     assert!(workflow.contains("Run unit tests (POSIX)"));
     assert!(workflow.contains("cargo-test-release.log"));
+    assert!(workflow.contains("cargo-test-failure-summary.log"));
+    assert!(workflow.contains("grep -E -- '---- |panicked at| FAILED"));
     assert!(workflow.contains("::error file=Cargo.toml,title=cargo test --release"));
 }
