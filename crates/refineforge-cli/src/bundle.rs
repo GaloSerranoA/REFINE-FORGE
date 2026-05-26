@@ -200,7 +200,8 @@ pub struct VerifyOptions {
     /// `manifest.json.sigbundle` (or .sig/.cert pair).
     pub verify_signature: bool,
     /// Override the regex the signer's cert identity must match.
-    /// Defaults to the canonical refineforge CI workflow identity.
+    /// Defaults to any GitHub Actions `ci.yml` workflow identity.
+    /// Production callers should override this to pin an exact owner/repo.
     pub identity_regex: Option<String>,
     /// Override the OIDC issuer the signer's cert must come from.
     /// Defaults to GitHub Actions.
@@ -304,11 +305,12 @@ pub struct SignatureStatus {
     pub cosign_version: String,
 }
 
-/// Default identity regex: the canonical refineforge CI workflow.
+/// Default identity regex: a GitHub Actions `ci.yml` workflow identity.
+/// Production callers should override this to pin an exact owner/repo.
 /// Override via `REFINEFORGE_EXPECTED_IDENTITY_REGEX` env var or
 /// `VerifyOptions::identity_regex`.
 pub const DEFAULT_IDENTITY_REGEX: &str =
-    "https://github.com/[^/]+/refineforge/.github/workflows/ci.yml@refs/(heads|tags)/.*";
+    r"^https://github\.com/[^/]+/[^/]+/\.github/workflows/ci\.yml@refs/(heads|tags)/.*$";
 
 /// Default OIDC issuer for keyless cosign signatures from GitHub Actions.
 pub const DEFAULT_OIDC_ISSUER: &str = "https://token.actions.githubusercontent.com";
@@ -597,6 +599,21 @@ mod signature_tests {
             security.contains("a reporting gap, not a signature-validation bypass"),
             "SECURITY.md must keep the signer-identity fallback boundary explicit"
         );
+    }
+
+    #[test]
+    fn default_identity_regex_accepts_renamed_repository_workflow_identity() {
+        let regex = regex::Regex::new(DEFAULT_IDENTITY_REGEX).unwrap();
+
+        assert!(regex.is_match(
+            "https://github.com/GaloSerranoA/REFINE-FORGE/.github/workflows/ci.yml@refs/heads/main"
+        ));
+        assert!(regex.is_match(
+            "https://github.com/example/refineforge/.github/workflows/ci.yml@refs/tags/v0.2.2"
+        ));
+        assert!(!regex.is_match(
+            "https://github.com/GaloSerranoA/REFINE-FORGE/.github/workflows/release.yml@refs/heads/main"
+        ));
     }
 
     #[test]
