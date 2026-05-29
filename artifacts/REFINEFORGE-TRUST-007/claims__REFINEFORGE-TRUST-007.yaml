@@ -1,0 +1,51 @@
+claim_id: REFINEFORGE-TRUST-007
+title: "No-sorry policy gate rejects forbidden tokens under policy"
+description: |
+  Dogfood model+refined claim about the FOUNDATIONAL gate of the framework: the
+  no-sorry policy gate that gives every status: proven claim its meaning. The
+  Lean model mirrors the ok computation in sorry_gate::check
+  (crates/refineforge-cli/src/sorry_gate.rs): the gate accepts iff no enabled
+  policy flag has a positive forbidden-token count. It proves a present
+  sorry/admit/axiom under its policy is rejected (T1-T3), a clean source passes
+  under any policy (T4), and concretely a single sorry under the default policy
+  is rejected (T5).
+
+  Honest scope: the Lean proves the gate's boolean DECISION, taking the
+  post-comment-strip occurrence counts as given. The word-boundary regexes and
+  the comment-stripping that produce those counts are the idealisation boundary
+  and are NOT modelled. Not yet human-reviewed, so the agent trust ceiling for
+  it is model-linked.
+
+scope: model-linked
+status: proven
+authors:
+  - refineforge
+
+rust_source:
+  - path: crates/refineforge-cli/src/sorry_gate.rs
+    types:
+      - GateResult
+    functions:
+      - check
+      - strip_comments
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.PolicyGate
+  file: lean/Refineforge/PolicyGate.lean
+  theorems:
+    - present_sorry_rejected
+    - present_admit_rejected
+    - present_axiom_rejected
+    - clean_source_accepted
+    - default_policy_rejects_one_sorry
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: "Dogfood model+refined claim, Rust-linked to sorry_gate::check + strip_comments + GateResult, not yet human-reviewed (agent trust = model-linked). The Lean proves the boolean decision (ok iff no enabled policy flag has a positive count); the word-boundary regexes and comment-stripping that produce the counts are the idealisation boundary, NOT modelled. See refinement doc sections 3 and 5."
