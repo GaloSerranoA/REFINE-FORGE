@@ -1,0 +1,42 @@
+claim_id: REFINEFORGE-TRUST-004
+title: "Run-all aggregate trust never exceeds any member's trust"
+description: |
+  Dogfood model+refined claim about Refine-Forge's OWN run-all trust
+  aggregation. The Lean model mirrors lowest_trust / lowest_trust_ceiling in
+  crates/refineforge-cli/src/agent/mod.rs: the run_all summary takes the LOWEST
+  trust across the four agents, so the aggregate can never claim more trust than
+  its weakest member (T1). A concrete case (T2) shows a measured-only agent
+  drags the summary down even alongside human-reviewed agents.
+
+  Honest scope: Lean proves a property of the model; the refinement doc bridges
+  it to the Rust. It reuses the TRUST-001 TrustLevel/rank model. Not yet
+  human-reviewed, so the agent trust ceiling for it is model-linked.
+
+scope: model-linked
+status: proven
+authors:
+  - refineforge
+
+rust_source:
+  - path: crates/refineforge-cli/src/agent/mod.rs
+    functions:
+      - lowest_trust
+      - lowest_trust_ceiling
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.AggregateTrust
+  file: lean/Refineforge/AggregateTrust.lean
+  theorems:
+    - lowest_le_member
+    - aggregate_picks_weakest
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: "Dogfood model+refined claim, Rust-linked to lowest_trust/lowest_trust_ceiling in mod.rs, not yet human-reviewed (agent trust = model-linked). Reuses the TRUST-001 TrustLevel/rank model. Idealisation: the empty-list case returns humanReviewed, matching the Rust else-branch; the run_all status field (separate from trust) is out of scope. See refinement doc."

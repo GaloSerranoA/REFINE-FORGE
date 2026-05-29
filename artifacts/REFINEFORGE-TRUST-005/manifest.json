@@ -1,0 +1,27 @@
+{
+  "claim_id": "REFINEFORGE-TRUST-005",
+  "created_at": "2026-05-29T21:12:21.193674800Z",
+  "lean_toolchain": "leanprover/lean4:v4.29.1",
+  "files": {
+    "claims/REFINEFORGE-TRUST-005.yaml": "15e10bd48683ed3e913d258cdf978f5225fde9ae63347cd56189b0bfb0001986",
+    "docs/refinement/REFINEFORGE-TRUST-005.md": "9afc43d583904f0eb7edf14bfd86a5ad3e0a8cce964618da642bfa02276b063f",
+    "lean/Refineforge.lean": "54c383c01eb67bf07bbcf0c6205ec44e9121a2b9c61d7a542cfec203e61b5d5e",
+    "lean/Refineforge/AgentTrust.lean": "d0cb51841e0aed40dcde0250d95273867792b9036bec16ea4ca71bccc822da2b",
+    "lean/Refineforge/AggregateTrust.lean": "cf9fbdaa949607cab69f3ca08b839012121ce0535271c0ea2874bda2ed41a50a",
+    "lean/Refineforge/ApprovalGate.lean": "1de054a5d586bfaa1933df06b9e13627bfc369f0f5ac53f78f76581f11583b00",
+    "lean/Refineforge/BundleVerify.lean": "3914465a285759e2b07af865ca62da83f72d58448a730b07f98a30e6fe68646d",
+    "lean/Refineforge/CapabilityRevocation.lean": "2607e7f2e7750f80029c97200d07036d1c8bde6aa90956c20579b6fe8c011e06",
+    "lean/Refineforge/Consciousness/Claims.lean": "ce9c48fc7e31eafc8a41341f044c9788c47e9b1f6863b4112fcd7e1dbd18fc8d",
+    "lean/Refineforge/Counter.lean": "e8f2e8097d1b47434a5146cd219741b0119ca513f99b6b945179cde1a72d5a7e",
+    "lean/Refineforge/EscalationGate.lean": "4e8262dd9a34da9911cfe84875922f8f29961da7ef0b15eaf91c45292ac26de7",
+    "lean/Refineforge/Example.lean": "5c1ea46029bc96b8f6edc97313a4f1f15f47c30ce558abe1e56b890e3ca95b17",
+    "lean/Refineforge/Helyx.lean": "df18dd8f14b96b4f2ca96a066771828b87df14abbc363186d3589a40f6fbf8f5",
+    "lean/Refineforge/Helyx/Audit.lean": "e8669b97c8bf818dc4aa721ca1a8129e22cb21ce4cc78f3b60e7b0a442a7c0e0",
+    "lean/Refineforge/OperatorGate.lean": "80aad48542c3203c8e997230b5e446e593ae00325f035c8d0ed7070fd54227ad",
+    "lean/lake-manifest.json": "a6ca02c28984491153b391f57f9bba9ee7b8b8ecd9466b39258177ad6e9edc6c",
+    "lean/lakefile.toml": "7cb8ca5099c850288731f77eee6ae594e58c576b34b59f7d5bebc3598c5ea3b5",
+    "lean/lean-toolchain": "7dc000621e0046d1aada809e2b7177e64454645cf4c741e9daaf79c99ec2e7a2"
+  },
+  "report_sha256": "a0944f0c5c80ec4865e121021b2876a18286d1f2df7a87bba1ed166827d6c928",
+  "bundle_schema": 1
+}
