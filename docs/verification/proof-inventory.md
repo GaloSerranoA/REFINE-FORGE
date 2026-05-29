@@ -34,6 +34,7 @@ proven in Lean; the grade says whether the statement carries information.
 | EXAMPLE-003 | `CapabilityRevocation.lean` | `revoked_authorizes_nothing`, `fresh_capability_authorizes_held_right`, `revoke_is_idempotent` | structural model proof | **A**, **B**, **A** | `tutorial-production-shaped` | repo-local example refinement doc | first human-review candidate; review remains pending because `human_operator` is null |
 | REFINEFORGE-TRUST-001 | `AgentTrust.lean` | `enforce_never_exceeds_ceiling`, `enforce_keeps_when_within_ceiling`, `enforce_idempotent` | `by_cases`/`rw`/T1∘T2 composition | **A**, **B**, **A** | `model+refined` | **real (dogfood)**: `crates/refineforge-cli/src/agent/common.rs` — `TrustLevel`, `trust_rank`, `enforce_trust_ceiling` | **First human-reviewed claim** (Galo Serrano Abad, 2026-05-29). `refine agent lean --target REFINEFORGE-TRUST-001` reports **human-reviewed**; all six production-proof requirements pass |
 | REFINEFORGE-TRUST-002 | `OperatorGate.lean` | `blocked_token_is_rejected`, `clean_operator_is_accepted`, `ai_name_is_rejected` | `List.any_eq_true`/`cases`/`decide` | **A**, **A**, **B** | `model+refined` | **real (dogfood)**: `crates/refineforge-cli/src/agent/common.rs` — `is_automated_operator` | **Human-reviewed** (Galo Serrano Abad, 2026-05-29). Anti-spoofing gate; `refine agent lean --target REFINEFORGE-TRUST-002` reports **human-reviewed**. Denylist, not an exhaustive AI detector (refinement §5) |
+| REFINEFORGE-TRUST-003 | `ApprovalGate.lean` | `accepts_implies_human`, `automated_operator_rejected`, `all_checks_accept`, `claude_cannot_approve` | `Bool.and_eq_true`/`simp`/TRUST-002 composition | **A**, **A**, **B**, **B** | `model-linked` | **real (dogfood)**: `crates/refineforge-cli/src/agent/common.rs` — `validate_human_approval`, `is_automated_operator` | Human-approval gate; **composes TRUST-002** so an automated operator (e.g. "claude") can never produce an accepted approval. `refine agent lean --target REFINEFORGE-TRUST-003` reports **model-linked**; blocked only on `human_review` |
 
 ## Remediation note (2026-05-29)
 
@@ -79,3 +80,9 @@ theorem proving the relevant predicate is falsifiable. Verification:
   now **`human-reviewed`** (Galo Serrano Abad, 2026-05-29). It is a denylist (15
   known automated/placeholder tokens), **not** an exhaustive AI detector — see
   `docs/refinement/REFINEFORGE-TRUST-002.md` §5.
+- **REFINEFORGE-TRUST-003 (dogfood, 2026-05-29):** a third implementation-linked
+  claim — the human-approval acceptance gate (`validate_human_approval`), which
+  **composes with TRUST-002**: an automated operator name can never produce an
+  accepted approval (the formal "an AI cannot record itself as a human
+  approver"). Reaches `model-linked`; pending human review of §6 → `human-reviewed`.
+  See `docs/refinement/REFINEFORGE-TRUST-003.md`.

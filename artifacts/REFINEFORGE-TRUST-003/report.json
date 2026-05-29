@@ -1,0 +1,13 @@
+{
+  "claim_id": "REFINEFORGE-TRUST-003",
+  "status": "verified",
+  "sorry_count": 0,
+  "admit_count": 0,
+  "axiom_count": 0,
+  "lean_toolchain": "leanprover/lean4:v4.29.1",
+  "lean_module": "Refineforge.ApprovalGate",
+  "stdout": "Build completed successfully (12 jobs).\n",
+  "stderr": "",
+  "policy_notes": [],
+  "checked_at": "2026-05-29T20:52:56.807321900Z"
+}
