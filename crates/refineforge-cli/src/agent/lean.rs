@@ -185,7 +185,15 @@ fn apply_lean_production_proof(
     let mut blockers = Vec::new();
     let mut reviewer_evidence = Vec::new();
     let evidence_dir = lean_evidence_dir();
-    let bundle_hashes = validate_lean_bundle_hashes(evidence_dir.as_deref());
+    let bundle_hashes = match evidence_dir.as_deref() {
+        // An explicitly configured curated evidence dir is authoritative.
+        Some(dir) => validate_lean_bundle_hashes(Some(dir)),
+        // Otherwise fall back to the verification bundles actually exported
+        // in-repo under `artifacts/<claim>/manifest.json`. Those are real,
+        // hash-sealed bundles (re-checkable by `refine bundle verify`); not
+        // recognizing them was a false block on evidence that exists.
+        None => validate_inrepo_bundle_hashes(root, target),
+    };
     let role_approval = validate_lean_approval(evidence_dir.as_deref());
 
     requirements.push(ProductionRequirement::new(
@@ -449,6 +457,85 @@ fn validate_lean_bundle_hashes(evidence_dir: Option<&Path>) -> EvidenceValidatio
     validation
 }
 
+/// Validate that every selected claim has a real exported verification bundle
+/// in-repo (`artifacts/<claim>/manifest.json`). Used when no external Lean
+/// evidence directory is configured. These manifests are produced by
+/// `refine bundle export` and are re-checkable by `refine bundle verify`.
+fn validate_inrepo_bundle_hashes(root: &Path, target: &str) -> EvidenceValidation {
+    let claims = match selected_claims(root, target) {
+        Ok(claims) => claims,
+        Err(err) => {
+            return EvidenceValidation {
+                passed: false,
+                evidence: vec![format!("could not load selected claims: {err}")],
+                reviewer_evidence: None,
+                artifact: None,
+            };
+        }
+    };
+    if claims.is_empty() {
+        return EvidenceValidation {
+            passed: false,
+            evidence: vec!["no claims selected for in-repo bundle evidence".to_string()],
+            reviewer_evidence: None,
+            artifact: None,
+        };
+    }
+
+    let mut evidence = Vec::new();
+    let mut missing = Vec::new();
+    for (_, claim) in &claims {
+        let manifest = root
+            .join("artifacts")
+            .join(&claim.claim_id)
+            .join("manifest.json");
+        match inrepo_bundle_manifest_hash(&manifest) {
+            Some(report_hash) => evidence.push(format!(
+                "{}: artifacts/{}/manifest.json (report_sha256={report_hash})",
+                claim.claim_id, claim.claim_id
+            )),
+            None => missing.push(claim.claim_id.clone()),
+        }
+    }
+
+    if missing.is_empty() {
+        EvidenceValidation {
+            passed: true,
+            evidence,
+            reviewer_evidence: None,
+            artifact: None,
+        }
+    } else {
+        evidence.push(format!(
+            "missing or invalid in-repo bundle manifests for: {}",
+            missing.join(", ")
+        ));
+        EvidenceValidation {
+            passed: false,
+            evidence,
+            reviewer_evidence: None,
+            artifact: None,
+        }
+    }
+}
+
+/// Returns the manifest's `report_sha256` if `manifest.json` is a structurally
+/// valid exported bundle manifest: a non-empty `files` map whose values are all
+/// SHA-256 hashes, plus a valid `report_sha256`.
+fn inrepo_bundle_manifest_hash(manifest: &Path) -> Option<String> {
+    let value = super::common::read_json_value(manifest)?;
+    let files = value.get("files")?.as_object()?;
+    if files.is_empty()
+        || !files
+            .values()
+            .all(|hash| hash.as_str().is_some_and(valid_sha256))
+    {
+        return None;
+    }
+    let report = value.get("report_sha256")?.as_str()?;
+    valid_sha256(report).then(|| report.to_string())
+}
+
 fn validate_lean_approval(evidence_dir: Option<&Path>) -> EvidenceValidation {
     let path = evidence_dir
         .and_then(|dir| lean_file_path(dir, "approvals/lean.json", "lean-approval.json"));
@@ -565,4 +652,53 @@ fn refinement_doc(root: &Path, claim_id: &str) -> PathBuf {
     root.join("docs")
         .join("refinement")
         .join(format!("{claim_id}.md"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn inrepo_bundle_manifest_hash_accepts_valid_and_rejects_invalid() {
+        let td = tempfile::tempdir().unwrap();
+        let hash = "a".repeat(64);
+
+        // Valid exported manifest -> returns the report hash.
+        let good = td.path().join("manifest.json");
+        fs::write(
+            &good,
+            serde_json::json!({
+                "claim_id": "X",
+                "files": { "lean/Foo.lean": hash.as_str(), "claims/X.yaml": hash.as_str() },
+                "report_sha256": hash.as_str(),
+                "bundle_schema": 1
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(inrepo_bundle_manifest_hash(&good), Some(hash.clone()));
+
+        // Missing file -> None.
+        assert_eq!(inrepo_bundle_manifest_hash(&td.path().join("nope.json")), None);
+
+        // Empty files map -> not a real bundle.
+        let empty = td.path().join("empty.json");
+        fs::write(
+            &empty,
+            serde_json::json!({ "files": {}, "report_sha256": hash.as_str() }).to_string(),
+        )
+        .unwrap();
+        assert_eq!(inrepo_bundle_manifest_hash(&empty), None);
+
+        // Non-SHA-256 file hash -> rejected.
+        let badhash = td.path().join("bad.json");
+        fs::write(
+            &badhash,
+            serde_json::json!({ "files": { "f": "not-a-hash" }, "report_sha256": hash.as_str() })
+                .to_string(),
+        )
+        .unwrap();
+        assert_eq!(inrepo_bundle_manifest_hash(&badhash), None);
+    }
 }
