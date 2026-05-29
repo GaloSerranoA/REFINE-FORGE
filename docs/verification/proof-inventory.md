@@ -38,7 +38,7 @@ proven in Lean; the grade says whether the statement carries information.
 | REFINEFORGE-TRUST-004 | `AggregateTrust.lean` | `lowest_le_member`, `aggregate_picks_weakest` | induction / `decide` | **A**, **B** | `model+refined` | **real (dogfood)**: `crates/refineforge-cli/src/agent/mod.rs` — `lowest_trust`, `lowest_trust_ceiling` | **Human-reviewed** (Galo Serrano Abad, 2026-05-29). run_all aggregate trust ≤ every member (can't over-trust). Reuses TRUST-001 `rank`. Reports **human-reviewed** |
 | REFINEFORGE-TRUST-005 | `BundleVerify.lean` | `verify_implies_all_match`, `mismatch_implies_reject`, `tamper_is_detected` | `List.all_eq_true`/`cases`/`decide` | **A**, **A**, **B** | `model+refined` | **real (dogfood)**: `crates/refineforge-cli/src/bundle.rs` — `verify`, `verify_with_options` | **Human-reviewed** (Galo Serrano Abad, 2026-05-29). Bundle verify accepts iff all hashes match; tamper ⇒ reject. SHA-256 idealised (collision resistance is `sha2`'s job, refinement §5). Reports **human-reviewed** |
 | REFINEFORGE-TRUST-006 | `EscalationGate.lean` | `axiom_always_escalates`, `set_operator_always_escalates`, `unknown_always_escalates`, `proceed_implies_all_silent` | `decide` / case-split | **B**, **B**, **B**, **A** | `model+refined` | **real (dogfood)**: `crates/refineforge-escalation/src/engine.rs` — `decide`, `classify_custom_axiom`, `classify_status_upgrade`, `classify_scope` | **Human-reviewed** (Galo Serrano Abad, 2026-05-29). Driver never auto-proceeds on axiom / operator-set / unknown — **never auto-sets `human_operator`** (complements TRUST-002/003). Reports **human-reviewed** |
-| REFINEFORGE-TRUST-007 | `PolicyGate.lean` | `present_sorry_rejected`, `present_admit_rejected`, `present_axiom_rejected`, `clean_source_accepted`, `default_policy_rejects_one_sorry` | `simp` / `decide` | **A**, **A**, **A**, **A**, **B** | `model-linked` | **real (dogfood)**: `crates/refineforge-cli/src/sorry_gate.rs` — `check`, `strip_comments`, `GateResult` | **Foundational gate**: accepts iff no enabled policy flag has a positive forbidden-token count. The lexer (regexes + comment-strip) is idealised (refinement §5). Reports **model-linked**; blocked only on `human_review` |
+| REFINEFORGE-TRUST-007 | `PolicyGate.lean` | `present_sorry_rejected`, `present_admit_rejected`, `present_axiom_rejected`, `clean_source_accepted`, `default_policy_rejects_one_sorry` | `simp` / `decide` | **A**, **A**, **A**, **A**, **B** | `model+refined` | **real (dogfood)**: `crates/refineforge-cli/src/sorry_gate.rs` — `check`, `strip_comments`, `GateResult` | **Human-reviewed** (Galo Serrano Abad, 2026-05-29). **Foundational gate**: accepts iff no enabled policy flag has a positive forbidden-token count. Lexer idealised (refinement §5). Reports **human-reviewed** |
 
 ## Remediation note (2026-05-29)
 
@@ -65,8 +65,8 @@ theorem proving the relevant predicate is falsifiable. Verification:
 - HELYX-AUDIT-001 is a cross-repo case-study slice. The refinement document
   records manual assertions about HELYX source alignment; those assertions are
   not yet machine-checked by Refine-Forge.
-- Six claims now carry a human review signature (all Galo Serrano Abad,
-  2026-05-29): **REFINEFORGE-TRUST-001** through **REFINEFORGE-TRUST-006** →
+- Seven claims now carry a human review signature (all Galo Serrano Abad,
+  2026-05-29): **REFINEFORGE-TRUST-001** through **REFINEFORGE-TRUST-007** →
   `human-reviewed`. All other claims still record `review.human_operator: null`.
 - **CRS/EXAMPLE bundles refreshed (2026-05-29):** after the CRS remediation the
   `artifacts/CLAIM-CRS-*` and `artifacts/EXAMPLE-00*` bundles were re-exported
@@ -102,4 +102,4 @@ theorem proving the relevant predicate is falsifiable. Verification:
   gate — the no-sorry policy gate (`sorry_gate::check`). Proves a forbidden token
   (`sorry`/`admit`/`axiom`) under its policy is always rejected, and a clean
   source passes. The lexer (regexes + comment-stripping that produce the counts)
-  is idealised (refinement §5). Reaches `model-linked`; pending human review.
+  is idealised (refinement §5). Now **`human-reviewed`** (Galo Serrano Abad, 2026-05-29).
