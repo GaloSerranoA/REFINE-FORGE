@@ -1,0 +1,45 @@
+claim_id: REFINEFORGE-TRUST-002
+title: "Operator-identity gate rejects automated and placeholder names"
+description: |
+  Dogfood model+refined claim about Refine-Forge's OWN anti-spoofing gate. The
+  Lean model mirrors the membership check in Rust is_automated_operator
+  (crates/refineforge-cli/src/agent/common.rs) -- the function that prevents an
+  AI, bot, or placeholder from being recorded as a human approver. It proves:
+  any operator whose tokens include a blocked name is rejected (T1); an operator
+  with no blocked token is accepted (T2); and concretely, an AI name like
+  "claude" is rejected (T3).
+
+  Honest scope: Lean proves a property of the model. The refinement doc bridges
+  it to the Rust and discloses the tokenisation idealisation -- the Rust
+  lowercases the operator and splits it on non-alphanumeric characters before
+  the membership check; the Lean takes the resulting tokens as given. Not yet
+  human-reviewed, so the agent trust ceiling for it is model-linked.
+
+scope: model-linked
+status: proven
+authors:
+  - refineforge
+
+rust_source:
+  - path: crates/refineforge-cli/src/agent/common.rs
+    functions:
+      - is_automated_operator
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.OperatorGate
+  file: lean/Refineforge/OperatorGate.lean
+  theorems:
+    - blocked_token_is_rejected
+    - clean_operator_is_accepted
+    - ai_name_is_rejected
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: "Dogfood model+refined claim, Rust-linked to the anti-spoofing gate is_automated_operator in common.rs, not yet human-reviewed (agent trust = model-linked). The Lean models the post-tokenisation blocklist membership check; the Rust lowercasing + split-on-non-alphanumeric is the idealisation boundary. This is a DENYLIST (rejects known automated/placeholder tokens), not an exhaustive AI detector -- see refinement doc sections 3 and 5."
