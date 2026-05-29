@@ -1,0 +1,54 @@
+claim_id: REFINEFORGE-TRUST-006
+title: "Escalation engine never auto-proceeds on trust-critical actions"
+description: |
+  Dogfood model+refined claim about Refine-Forge's OWN autonomous-driver
+  escalation engine. The Lean model mirrors Engine::decide in
+  crates/refineforge-escalation/src/engine.rs: it collects per-category
+  classifier hits and returns Proceed ONLY when no category fired, else
+  Escalate. Three trust-critical action shapes always fire a classifier, so they
+  can never auto-proceed: a custom axiom (T1), flipping review.human_operator
+  from null (T2), and an unrecognised action (T3). T4: Proceed requires every
+  classifier silent.
+
+  T2 is the driver-level guard that keeps human review human: the autonomous
+  driver can never auto-set review.human_operator; it must escalate to a person.
+  This complements REFINEFORGE-TRUST-002/003 (the operator and approval gates).
+
+  Honest scope: Lean proves a property of the model. The refinement doc discloses
+  the idealisation -- four action shapes modelled (three always-fire + benign),
+  the 9 classifiers abstracted as anyClassifierFires, criteria-version check and
+  multi-category primary selection out of scope. Not yet human-reviewed, so the
+  agent trust ceiling for it is model-linked.
+
+scope: model-linked
+status: proven
+authors:
+  - refineforge
+
+rust_source:
+  - path: crates/refineforge-escalation/src/engine.rs
+    functions:
+      - decide
+      - classify_custom_axiom
+      - classify_status_upgrade
+      - classify_scope
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.EscalationGate
+  file: lean/Refineforge/EscalationGate.lean
+  theorems:
+    - axiom_always_escalates
+    - set_operator_always_escalates
+    - unknown_always_escalates
+    - proceed_implies_all_silent
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: "Dogfood model+refined claim, Rust-linked to Engine::decide + classify_custom_axiom/status_upgrade/scope in engine.rs, not yet human-reviewed (agent trust = model-linked). Idealisation: four action shapes modelled (three always-fire + benign), the 9 classifiers abstracted as anyClassifierFires; criteria-version check and multi-category primary selection are out of scope. Complements TRUST-002/003. See refinement doc sections 3 and 5."

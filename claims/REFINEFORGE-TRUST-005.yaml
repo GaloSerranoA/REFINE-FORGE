@@ -1,0 +1,44 @@
+claim_id: REFINEFORGE-TRUST-005
+title: "Bundle verification accepts iff every file hash matches"
+description: |
+  Dogfood model+refined claim about Refine-Forge's OWN bundle verifier. The Lean
+  model mirrors the hash-comparison core of verify / verify_with_options in
+  crates/refineforge-cli/src/bundle.rs: a bundle verifies iff every manifest
+  entry's recomputed SHA-256 equals the recorded hash (T1), and a single
+  mismatch makes verification fail (T2/T3 tamper detection).
+
+  Honest scope: SHA-256 is idealised as an opaque hash (String -> Nat); the
+  model proves the COMPARISON logic, NOT SHA-256's collision resistance -- a
+  forged file whose hash collides with the manifest would still pass (that is
+  SHA-256's job, not this gate). Not yet human-reviewed, so the agent trust
+  ceiling for it is model-linked.
+
+scope: model-linked
+status: proven
+authors:
+  - refineforge
+
+rust_source:
+  - path: crates/refineforge-cli/src/bundle.rs
+    functions:
+      - verify
+      - verify_with_options
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.BundleVerify
+  file: lean/Refineforge/BundleVerify.lean
+  theorems:
+    - verify_implies_all_match
+    - mismatch_implies_reject
+    - tamper_is_detected
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: "Dogfood model+refined claim, Rust-linked to verify/verify_with_options in bundle.rs, not yet human-reviewed (agent trust = model-linked). SHA-256 is idealised as an opaque String -> Nat; the model proves the comparison logic, NOT collision resistance (a colliding forged file would pass -- that is sha2's job). Missing-file and signature handling are out of scope. See refinement doc sections 3 and 5."

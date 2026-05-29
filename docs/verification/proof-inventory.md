@@ -35,6 +35,9 @@ proven in Lean; the grade says whether the statement carries information.
 | REFINEFORGE-TRUST-001 | `AgentTrust.lean` | `enforce_never_exceeds_ceiling`, `enforce_keeps_when_within_ceiling`, `enforce_idempotent` | `by_cases`/`rw`/T1∘T2 composition | **A**, **B**, **A** | `model+refined` | **real (dogfood)**: `crates/refineforge-cli/src/agent/common.rs` — `TrustLevel`, `trust_rank`, `enforce_trust_ceiling` | **First human-reviewed claim** (Galo Serrano Abad, 2026-05-29). `refine agent lean --target REFINEFORGE-TRUST-001` reports **human-reviewed**; all six production-proof requirements pass |
 | REFINEFORGE-TRUST-002 | `OperatorGate.lean` | `blocked_token_is_rejected`, `clean_operator_is_accepted`, `ai_name_is_rejected` | `List.any_eq_true`/`cases`/`decide` | **A**, **A**, **B** | `model+refined` | **real (dogfood)**: `crates/refineforge-cli/src/agent/common.rs` — `is_automated_operator` | **Human-reviewed** (Galo Serrano Abad, 2026-05-29). Anti-spoofing gate; `refine agent lean --target REFINEFORGE-TRUST-002` reports **human-reviewed**. Denylist, not an exhaustive AI detector (refinement §5) |
 | REFINEFORGE-TRUST-003 | `ApprovalGate.lean` | `accepts_implies_human`, `automated_operator_rejected`, `all_checks_accept`, `claude_cannot_approve` | `Bool.and_eq_true`/`simp`/TRUST-002 composition | **A**, **A**, **B**, **B** | `model+refined` | **real (dogfood)**: `crates/refineforge-cli/src/agent/common.rs` — `validate_human_approval`, `is_automated_operator` | **Human-reviewed** (Galo Serrano Abad, 2026-05-29). Human-approval gate; **composes TRUST-002** so an automated operator (e.g. "claude") can never produce an accepted approval. `refine agent lean --target REFINEFORGE-TRUST-003` reports **human-reviewed** |
+| REFINEFORGE-TRUST-004 | `AggregateTrust.lean` | `lowest_le_member`, `aggregate_picks_weakest` | induction / `decide` | **A**, **B** | `model-linked` | **real (dogfood)**: `crates/refineforge-cli/src/agent/mod.rs` — `lowest_trust`, `lowest_trust_ceiling` | run_all aggregate trust ≤ every member (can't over-trust). Reuses TRUST-001 `rank`. Reports **model-linked**; blocked only on `human_review` |
+| REFINEFORGE-TRUST-005 | `BundleVerify.lean` | `verify_implies_all_match`, `mismatch_implies_reject`, `tamper_is_detected` | `List.all_eq_true`/`cases`/`decide` | **A**, **A**, **B** | `model-linked` | **real (dogfood)**: `crates/refineforge-cli/src/bundle.rs` — `verify`, `verify_with_options` | Bundle verify accepts iff all hashes match; tamper ⇒ reject. SHA-256 idealised (collision resistance is `sha2`'s job, refinement §5). Reports **model-linked**; blocked only on `human_review` |
+| REFINEFORGE-TRUST-006 | `EscalationGate.lean` | `axiom_always_escalates`, `set_operator_always_escalates`, `unknown_always_escalates`, `proceed_implies_all_silent` | `decide` / case-split | **B**, **B**, **B**, **A** | `model-linked` | **real (dogfood)**: `crates/refineforge-escalation/src/engine.rs` — `decide`, `classify_custom_axiom`, `classify_status_upgrade`, `classify_scope` | Driver never auto-proceeds on axiom / operator-set / unknown — **never auto-sets `human_operator`** (complements TRUST-002/003). Reports **model-linked**; blocked only on `human_review` |
 
 ## Remediation note (2026-05-29)
 
@@ -87,3 +90,11 @@ theorem proving the relevant predicate is falsifiable. Verification:
   accepted approval (the formal "an AI cannot record itself as a human
   approver") — now **`human-reviewed`** (Galo Serrano Abad, 2026-05-29). See
   `docs/refinement/REFINEFORGE-TRUST-003.md`.
+- **REFINEFORGE-TRUST-004 / 005 / 006 (dogfood, 2026-05-29):** three more
+  implementation-linked claims at **`model-linked`**, pending human review —
+  run_all aggregate trust never over-trusts (004, `mod.rs`); bundle verify
+  accepts iff all hashes match (005, `bundle.rs`; SHA-256 collision resistance
+  is out of scope); and the escalation engine never auto-proceeds on a custom
+  axiom / human-operator set / unknown action (006, `refineforge-escalation`).
+  TRUST-006 T2 is the driver-level "never auto-set `human_operator`" guard,
+  complementing TRUST-002/003.
