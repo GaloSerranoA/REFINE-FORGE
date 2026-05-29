@@ -1,12 +1,14 @@
 # REFINEFORGE-TRUST-001 — Refinement argument: agent trust-ceiling enforcement
 
-> **Status: model-linked (NOT human-reviewed).** This is a dogfood claim: Lean
-> proves a property of a model of Refine-Forge's *own* agent trust system, and
-> this document bridges that model to the real Rust. `review.human_operator` is
-> `null`, so the Lean agent's honest trust for this claim is `model-linked`. The
-> only thing standing between this claim and `human-reviewed` is a real human
-> reviewer signing off on §6 — which is exactly how the system is supposed to
-> work.
+> **Status: model+refined (human-reviewed 2026-05-29 by Galo Serrano Abad).**
+> This is a dogfood claim: Lean proves a property of a model of Refine-Forge's
+> *own* agent trust system, and this document bridges that model to the real
+> Rust. The §6 `[needs human]` items were reviewed and confirmed, so the Lean
+> model, refinement doc, Rust citations, and human review all agree;
+> `review.human_operator` is populated and the Lean agent reports
+> `human-reviewed`. (A future change to `TrustLevel`, `trust_rank`,
+> `enforce_trust_ceiling`, or the agents' use of `seal_runtime` invalidates this
+> review and requires re-certification.)
 
 ## 1. What the Lean model says
 
@@ -101,13 +103,17 @@ claim that any of (1)–(4) is itself verified.
       `Verified` (TrustLevel, trust_rank, enforce_trust_ceiling all present).
 - [x] **[machine-checked]** `refine bundle verify artifacts/REFINEFORGE-TRUST-001`
       succeeds (2026-05-29).
-- [ ] **[needs human]** The seven `TrustLevel` variants and their `trust_rank`
-      values match the Lean `TrustLevel`/`rank` exactly.
-- [ ] **[needs human]** `enforce_trust_ceiling`'s resulting `report.trust_level`
-      equals Lean `enforce` for all inputs (the §3.3 correspondence).
-- [ ] **[needs human]** Every agent path that sets `report.trust_level` is
-      bounded by `enforce_trust_ceiling` (or is otherwise within its ceiling).
+- [x] **[needs human]** The seven `TrustLevel` variants and their `trust_rank`
+      values match the Lean `TrustLevel`/`rank` exactly. *(Galo Serrano Abad, 2026-05-29.)*
+- [x] **[needs human]** `enforce_trust_ceiling`'s resulting `report.trust_level`
+      equals Lean `enforce` for all inputs (the §3.3 correspondence). *(Galo Serrano Abad, 2026-05-29.)*
+- [x] **[needs human]** Every agent path that sets `report.trust_level` is
+      bounded by `enforce_trust_ceiling` as the final step — `seal_runtime` in
+      `lean.rs`/`devops.rs`/`train.rs`/`kernel.rs` and the `run_all` summary in
+      `mod.rs`. Verified against the current call graph. *(Galo Serrano Abad, 2026-05-29.)*
 
-Once a second engineer certifies the [needs human] items, populate
-`review.human_operator` with their real name and the claim can move to
-`human-reviewed`.
+Reviewed and confirmed by **Galo Serrano Abad on 2026-05-29**;
+`review.human_operator` is populated and the claim is `human-reviewed` / scope
+`model+refined`. Any future change to `TrustLevel`, `trust_rank`,
+`enforce_trust_ceiling`, or the agents' use of `seal_runtime` invalidates this
+review and requires re-certification.
