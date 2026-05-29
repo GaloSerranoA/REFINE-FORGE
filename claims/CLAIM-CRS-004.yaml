@@ -2,9 +2,9 @@ claim_id: CLAIM-CRS-004
 title: "Ethical gate non-bypass"
 description: |
   Consciousness-rs safety routing requires allowed actions to pass through the
-  same allow decision produced by the gate. This claim verifies the structural
-  slice that an action marked allowed cannot contradict the gate result when
-  the gate result is the action result.
+  gate. This claim models an executor that routes its decision through the gate
+  and verifies non-bypass (executed allow implies the gate allowed); a companion
+  theorem shows a gate-ignoring executor provably bypasses the gate.
 
   Honest scope: this is a formalized routing invariant. It does not prove a
   complete ethics system.
@@ -21,6 +21,7 @@ lean:
   file: lean/Refineforge/Consciousness/Claims.lean
   theorems:
     - ethical_gate_non_bypass
+    - rogue_executor_can_bypass
 
 policy:
   no_sorry: true
@@ -30,4 +31,4 @@ policy:
 review:
   human_operator: null
   reviewed_on: null
-  notes: "Structural CRS claim; safety routing model only; does not prove the Rust implementation or a complete ethics system."
+  notes: "Structural CRS claim; safety routing model only; does not prove the Rust implementation or a complete ethics system. 2026-05-29: strengthened from a vacuous (P→P, two roles collapsed) form to a real routing theorem with a rogue-executor counter-model — see docs/verification/proof-audit.md §Remediation."

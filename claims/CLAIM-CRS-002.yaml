@@ -2,8 +2,8 @@ claim_id: CLAIM-CRS-002
 title: "Workspace capacity bound"
 description: |
   Consciousness-rs treats global-workspace capacity as an explicit bound on
-  selected content. This claim verifies the structural slice that content is
-  accepted only when the stated capacity relation holds.
+  selected content. This claim verifies that the `accept` admission operation
+  preserves the capacity bound (it never overflows) and saturates at capacity.
 
   Honest scope: this is a model-level invariant for the CRS integration
   contract. It does not prove a biological workspace theory.
@@ -20,6 +20,8 @@ lean:
   file: lean/Refineforge/Consciousness/Claims.lean
   theorems:
     - workspace_capacity_bound
+    - accept_saturates_at_capacity
+    - over_capacity_exists
 
 policy:
   no_sorry: true
@@ -29,4 +31,4 @@ policy:
 review:
   human_operator: null
   reviewed_on: null
-  notes: "Structural CRS claim; bounded-content model only; does not prove the Rust implementation."
+  notes: "Structural CRS claim; bounded-content model only; does not prove the Rust implementation. 2026-05-29: strengthened from a vacuous (P→P) form to a preservation theorem about the accept operation — see docs/verification/proof-audit.md §Remediation."

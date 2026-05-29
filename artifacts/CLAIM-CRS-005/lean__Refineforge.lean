@@ -6,3 +6,4 @@ import Refineforge.Example
 import Refineforge.Counter
 import Refineforge.Helyx
 import Refineforge.Consciousness.Claims
+import Refineforge.CapabilityRevocation

@@ -2,8 +2,8 @@ claim_id: CLAIM-CRS-005
 title: "Phi-proxy determinism"
 description: |
   Consciousness-rs reports Phi-proxy as a deterministic metric label rather
-  than as IIT Phi. This claim verifies the structural slice that the modeled
-  Phi-proxy function returns the same value for the same inputs.
+  than as IIT Phi. This claim verifies a closed-form characterization of the
+  metric (no hidden state) and that it is monotone in node and edge counts.
 
   Honest scope: this claim proves deterministic proxy behavior only. It does
   not prove integrated information or consciousness.
@@ -20,6 +20,8 @@ lean:
   file: lean/Refineforge/Consciousness/Claims.lean
   theorems:
     - phi_proxy_deterministic
+    - phi_proxy_monotone_in_nodes
+    - phi_proxy_monotone_in_edges
 
 policy:
   no_sorry: true
@@ -29,4 +31,4 @@ policy:
 review:
   human_operator: null
   reviewed_on: null
-  notes: "Structural CRS claim; metric proxy model only; does not prove the Rust implementation, IIT Phi, or consciousness."
+  notes: "Structural CRS claim; metric proxy model only; does not prove the Rust implementation, IIT Phi, or consciousness. 2026-05-29: replaced a vacuous (x=x) determinism statement with a closed-form characterization plus monotonicity theorems — see docs/verification/proof-audit.md §Remediation."
