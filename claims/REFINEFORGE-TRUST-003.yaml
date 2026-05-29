@@ -13,10 +13,12 @@ description: |
   Honest scope: Lean proves a property of the model. The refinement doc bridges
   it to the Rust and discloses the idealisations -- the five non-operator checks
   are modelled as opaque Bools (the Rust computes them from JSON field
-  comparisons), and humanOk shares TRUST-002's tokenisation boundary. Not yet
-  human-reviewed, so the agent trust ceiling for it is model-linked.
+  comparisons), and humanOk shares TRUST-002's tokenisation boundary.
+  Human-reviewed on 2026-05-29 (see the review block and refinement doc section
+  6): the Lean model, refinement doc, Rust citations, and human review now
+  agree, so the scope is model+refined and the agent reports human-reviewed.
 
-scope: model-linked
+scope: model+refined
 status: proven
 authors:
   - refineforge
@@ -43,6 +45,6 @@ policy:
   no_axioms_beyond_lean_core: true
 
 review:
-  human_operator: null
-  reviewed_on: null
-  notes: "Dogfood model+refined claim, Rust-linked to validate_human_approval + is_automated_operator in common.rs, not yet human-reviewed (agent trust = model-linked). Composes with REFINEFORGE-TRUST-002. The five non-operator checks are modelled as opaque Bools (the Rust computes them from JSON field comparisons); humanOk shares TRUST-002's tokenisation idealisation boundary. See refinement doc sections 3 and 5."
+  human_operator: "Galo Serrano Abad"
+  reviewed_on: "2026-05-29"
+  notes: "Human-reviewed 2026-05-29 by Galo Serrano Abad. Verified: (1) the Rust validation.passed conjunction matches Lean accepts (six flags, same order); (2) Rust human_ok equals Lean humanOk; (3) modelling the five non-operator checks as opaque Bools is acceptable (JSON field-derivation out of scope). Composes with REFINEFORGE-TRUST-002 (also human-reviewed); if that review is invalidated, this one is too."
