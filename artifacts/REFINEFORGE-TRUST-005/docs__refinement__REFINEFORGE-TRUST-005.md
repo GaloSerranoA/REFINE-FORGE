@@ -1,8 +1,11 @@
 # REFINEFORGE-TRUST-005 — Refinement argument: bundle verification
 
-> **Status: model-linked (NOT human-reviewed).** Dogfood claim: Lean proves that
-> Refine-Forge's bundle verifier accepts iff every file's recomputed hash matches
-> the manifest. `review.human_operator` is `null` → `model-linked`.
+> **Status: model+refined (human-reviewed 2026-05-29 by Galo Serrano Abad).**
+> Dogfood claim: Lean proves that Refine-Forge's bundle verifier accepts iff
+> every file's recomputed hash matches the manifest. The §6 items were reviewed
+> and confirmed — **including the conscious acceptance that SHA-256 collision
+> resistance is out of scope (sha2's job)** — so `review.human_operator` is
+> populated and the agent reports `human-reviewed`.
 
 ## 1. What the Lean model says
 
@@ -56,10 +59,12 @@ and critically, see §5 on collision resistance.
 - [x] **[machine-checked]** `refine lean check REFINEFORGE-TRUST-005` → `Verified`.
 - [x] **[machine-checked]** `refine scan check REFINEFORGE-TRUST-005` → `Verified`.
 - [x] **[machine-checked]** `refine bundle verify artifacts/REFINEFORGE-TRUST-005`.
-- [ ] **[needs human]** `verify_with_options` accepts iff `mismatches.is_empty()`,
-      matching `verifyEntries`'s all-match.
-- [ ] **[needs human]** Treating SHA-256 as opaque (collision resistance is sha2's
+- [x] **[needs human]** `verify_with_options` accepts iff `mismatches.is_empty()`,
+      matching `verifyEntries`'s all-match. *(Galo Serrano Abad, 2026-05-29.)*
+- [x] **[needs human]** Treating SHA-256 as opaque (collision resistance is sha2's
       job, §5) is acceptable for what bundle verification guarantees.
+      *(Galo Serrano Abad, 2026-05-29.)*
 
-Once certified, populate `review.human_operator`; the claim moves to
-`human-reviewed` / `model+refined`.
+Reviewed and confirmed by **Galo Serrano Abad on 2026-05-29**; the claim is
+`human-reviewed` / `model+refined`. Changing the verify logic — or relying on
+this gate for collision resistance — invalidates this review.

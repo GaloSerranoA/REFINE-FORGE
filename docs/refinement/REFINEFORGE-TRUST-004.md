@@ -1,8 +1,11 @@
 # REFINEFORGE-TRUST-004 — Refinement argument: run-all aggregate trust
 
-> **Status: model-linked (NOT human-reviewed).** Dogfood claim: Lean proves that
-> Refine-Forge's `run_all` trust aggregation can never claim more trust than its
-> weakest agent. `review.human_operator` is `null` → `model-linked`.
+> **Status: model+refined (human-reviewed 2026-05-29 by Galo Serrano Abad).**
+> Dogfood claim: Lean proves that Refine-Forge's `run_all` trust aggregation can
+> never claim more trust than its weakest agent. The §6 items were reviewed and
+> confirmed, so `review.human_operator` is populated and the agent reports
+> `human-reviewed`. (Depends on TRUST-001; changing `lowest_trust` requires
+> re-certification.)
 
 ## 1. What the Lean model says
 
@@ -60,10 +63,11 @@ any is itself verified.
 - [x] **[machine-checked]** `refine lean check REFINEFORGE-TRUST-004` → `Verified`.
 - [x] **[machine-checked]** `refine scan check REFINEFORGE-TRUST-004` → `Verified`.
 - [x] **[machine-checked]** `refine bundle verify artifacts/REFINEFORGE-TRUST-004`.
-- [ ] **[needs human]** Rust `lowest_trust`'s cascade returns the lowest-rank
-      member, matching Lean `lowest` (min by `rank`).
-- [ ] **[needs human]** Reusing TRUST-001's `rank`/`TrustLevel` correspondence is
-      acceptable (this claim depends on TRUST-001).
+- [x] **[needs human]** Rust `lowest_trust`'s cascade returns the lowest-rank
+      member, matching Lean `lowest` (min by `rank`). *(Galo Serrano Abad, 2026-05-29.)*
+- [x] **[needs human]** Reusing TRUST-001's `rank`/`TrustLevel` correspondence is
+      acceptable (this claim depends on TRUST-001). *(Galo Serrano Abad, 2026-05-29.)*
 
-Once certified, populate `review.human_operator`; the claim moves to
-`human-reviewed` / `model+refined`.
+Reviewed and confirmed by **Galo Serrano Abad on 2026-05-29**; the claim is
+`human-reviewed` / `model+refined`. Depends on TRUST-001; invalidating that
+review or changing `lowest_trust` requires re-certification.
