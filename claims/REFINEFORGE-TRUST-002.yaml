@@ -12,10 +12,12 @@ description: |
   Honest scope: Lean proves a property of the model. The refinement doc bridges
   it to the Rust and discloses the tokenisation idealisation -- the Rust
   lowercases the operator and splits it on non-alphanumeric characters before
-  the membership check; the Lean takes the resulting tokens as given. Not yet
-  human-reviewed, so the agent trust ceiling for it is model-linked.
+  the membership check; the Lean takes the resulting tokens as given.
+  Human-reviewed on 2026-05-29 (see the review block and refinement doc section
+  6): the Lean model, refinement doc, Rust citation, and human review now agree,
+  so the scope is model+refined and the agent reports human-reviewed.
 
-scope: model-linked
+scope: model+refined
 status: proven
 authors:
   - refineforge
@@ -40,6 +42,6 @@ policy:
   no_axioms_beyond_lean_core: true
 
 review:
-  human_operator: null
-  reviewed_on: null
-  notes: "Dogfood model+refined claim, Rust-linked to the anti-spoofing gate is_automated_operator in common.rs, not yet human-reviewed (agent trust = model-linked). The Lean models the post-tokenisation blocklist membership check; the Rust lowercasing + split-on-non-alphanumeric is the idealisation boundary. This is a DENYLIST (rejects known automated/placeholder tokens), not an exhaustive AI detector -- see refinement doc sections 3 and 5."
+  human_operator: "Galo Serrano Abad"
+  reviewed_on: "2026-05-29"
+  notes: "Human-reviewed 2026-05-29 by Galo Serrano Abad. Verified: (1) the Lean blocked list equals the Rust blocked array (15 tokens); (2) the tokenisation idealisation is acceptable; (3) the denylist limitation is acceptable for how human_operator is used. The Lean models the post-tokenisation membership check; the Rust lowercasing + split-on-non-alphanumeric is the idealisation boundary. DENYLIST (15 known tokens), not an exhaustive AI detector -- see refinement doc sections 3 and 5."

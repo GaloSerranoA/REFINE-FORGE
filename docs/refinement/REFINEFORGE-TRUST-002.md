@@ -1,11 +1,13 @@
 # REFINEFORGE-TRUST-002 — Refinement argument: operator-identity gate
 
-> **Status: model-linked (NOT human-reviewed).** Dogfood claim: Lean proves a
-> property of a model of Refine-Forge's *own* anti-spoofing gate
-> (`is_automated_operator`), the check that keeps `review.human_operator` honest
-> by rejecting AI/bot/placeholder names. `review.human_operator` is `null`, so
-> the Lean agent's honest trust for this claim is `model-linked`. It moves to
-> `human-reviewed` only when a real human signs §6.
+> **Status: model+refined (human-reviewed 2026-05-29 by Galo Serrano Abad).**
+> Dogfood claim: Lean proves a property of a model of Refine-Forge's *own*
+> anti-spoofing gate (`is_automated_operator`), the check that keeps
+> `review.human_operator` honest by rejecting AI/bot/placeholder names. The §6
+> `[needs human]` items were reviewed and confirmed — **including the denylist
+> limitation** — so `review.human_operator` is populated and the Lean agent
+> reports `human-reviewed`. (Changing the Rust `blocked` array or the
+> tokenisation invalidates this review and requires re-certification.)
 
 ## 1. What the Lean model says
 
@@ -93,13 +95,16 @@ Conditional on: (1) Lean's kernel; (2) the Lean compiler v4.29.1; (3)
       `Verified` (`is_automated_operator` present).
 - [x] **[machine-checked]** `refine bundle verify artifacts/REFINEFORGE-TRUST-002`
       succeeds.
-- [ ] **[needs human]** The Lean `blocked` list equals the Rust `blocked` array
-      (same 15 tokens).
-- [ ] **[needs human]** The §3.2 tokenisation idealisation is acceptable — the
-      Rust feeds the membership check the tokens the model assumes.
-- [ ] **[needs human]** The denylist limitation in §5 is acceptable for how
-      `human_operator` is used (i.e. a denylist, not a complete AI detector, is
-      the intended guarantee).
+- [x] **[needs human]** The Lean `blocked` list equals the Rust `blocked` array
+      (same 15 tokens). *(Galo Serrano Abad, 2026-05-29.)*
+- [x] **[needs human]** The §3.2 tokenisation idealisation is acceptable — the
+      Rust feeds the membership check the tokens the model assumes. *(Galo Serrano Abad, 2026-05-29.)*
+- [x] **[needs human]** The denylist limitation in §5 is acceptable for how
+      `human_operator` is used (a denylist, not a complete AI detector, is the
+      intended guarantee). *(Galo Serrano Abad, 2026-05-29.)*
 
-Once a human certifies the [needs human] items, populate `review.human_operator`
-with their real name; the claim can then move to `human-reviewed` / `model+refined`.
+Reviewed and confirmed by **Galo Serrano Abad on 2026-05-29**;
+`review.human_operator` is populated and the claim is `human-reviewed` / scope
+`model+refined`. Changing the Rust `blocked` array, the tokenisation, or how
+`human_operator` is consumed invalidates this review and requires
+re-certification.
