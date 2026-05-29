@@ -45,7 +45,8 @@ Read in this order — each doc is short and points at the next.
 | [docs/repair-evaluation.md](docs/repair-evaluation.md) | How we'll measure whether `refine repair` is any good — corpus design, mutation taxonomy, statistical reporting |
 | [docs/security.md](docs/security.md) | Threat model, supply chain, signed-bundle verification, first-CI-signing boundary, vuln reporting |
 | [docs/reproducible-build.md](docs/reproducible-build.md) | Bit-identical-rebuild methodology — Nix flake (authored), verification protocol |
-| [docs/verification/proof-inventory.md](docs/verification/proof-inventory.md) | Current Lean-backed claim inventory: theorem shape, scope, and implementation-link status |
+| [docs/verification/proof-inventory.md](docs/verification/proof-inventory.md) | Current Lean-backed claim inventory: theorem shape, **content grade (A/B/C)**, scope, and implementation-link status |
+| [docs/verification/proof-audit.md](docs/verification/proof-audit.md) | Theorem-by-theorem **informational-content audit** of every Lean theorem (shows the unfolded goal for each), plus the 2026-05-29 record of de-vacuuming the CLAIM-CRS-001…005 proofs |
 | [docs/release/release-readiness-inventory.md](docs/release/release-readiness-inventory.md) | Release infrastructure inventory: shipped-local, stub-tested, CI-pending, blocked, and planned surfaces |
 | [docs/release/ci-audit-report.md](docs/release/ci-audit-report.md) | CI/release audit report template and current local blocker record |
 | [docs/enterprise-readiness.md](docs/enterprise-readiness.md) | Enterprise readiness gate: remote CI, signed releases, checkpoints, HELYX integration, docs polish, and cleanup evidence |

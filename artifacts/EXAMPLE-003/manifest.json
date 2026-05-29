@@ -1,13 +1,13 @@
 {
   "claim_id": "EXAMPLE-003",
-  "created_at": "2026-05-26T11:38:48.530482800Z",
+  "created_at": "2026-05-29T13:05:45.247672700Z",
   "lean_toolchain": "leanprover/lean4:v4.29.1",
   "files": {
     "claims/example-capability-revocation.yaml": "a5aa43c006e3539a47273dfb14a12ee9660aace57dfa7b097c61e8bb195ed330",
     "docs/refinement/EXAMPLE-003.md": "64b276eeb2d4106b70f6e876adfa6a28095a7e024fde456a7a7b9afc6e418325",
     "lean/Refineforge.lean": "5fe3aa082e5a786ee5e72da49f43fac0475bead6056da1e55d15313a78459bf5",
     "lean/Refineforge/CapabilityRevocation.lean": "2607e7f2e7750f80029c97200d07036d1c8bde6aa90956c20579b6fe8c011e06",
-    "lean/Refineforge/Consciousness/Claims.lean": "6a565bdef5b5b21d8413dbbc02f0df89c79c318badfce25cf3ad143a1b2f11bb",
+    "lean/Refineforge/Consciousness/Claims.lean": "ce9c48fc7e31eafc8a41341f044c9788c47e9b1f6863b4112fcd7e1dbd18fc8d",
     "lean/Refineforge/Counter.lean": "e8f2e8097d1b47434a5146cd219741b0119ca513f99b6b945179cde1a72d5a7e",
     "lean/Refineforge/Example.lean": "5c1ea46029bc96b8f6edc97313a4f1f15f47c30ce558abe1e56b890e3ca95b17",
     "lean/Refineforge/Helyx.lean": "df18dd8f14b96b4f2ca96a066771828b87df14abbc363186d3589a40f6fbf8f5",
@@ -16,6 +16,6 @@
     "lean/lakefile.toml": "7cb8ca5099c850288731f77eee6ae594e58c576b34b59f7d5bebc3598c5ea3b5",
     "lean/lean-toolchain": "7dc000621e0046d1aada809e2b7177e64454645cf4c741e9daaf79c99ec2e7a2"
   },
-  "report_sha256": "df45b60e0d1fde63670f01c4fa78e60b32b86289509ca3e825e8bde41c3ffb4c",
+  "report_sha256": "2e4ec09445b727dd1040488ff5211553b7cfed8d90010cd195ae98bf74f1a7cd",
   "bundle_schema": 1
 }

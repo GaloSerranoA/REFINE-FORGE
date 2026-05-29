@@ -1,12 +1,12 @@
 {
   "claim_id": "EXAMPLE-001",
-  "created_at": "2026-05-26T11:38:47.225328Z",
+  "created_at": "2026-05-29T13:05:44.822031900Z",
   "lean_toolchain": "leanprover/lean4:v4.29.1",
   "files": {
     "claims/example.yaml": "9e21019e127f54e72da759b4cecc7087335d6da630d2ca08c39107f4d1ce7632",
     "lean/Refineforge.lean": "5fe3aa082e5a786ee5e72da49f43fac0475bead6056da1e55d15313a78459bf5",
     "lean/Refineforge/CapabilityRevocation.lean": "2607e7f2e7750f80029c97200d07036d1c8bde6aa90956c20579b6fe8c011e06",
-    "lean/Refineforge/Consciousness/Claims.lean": "6a565bdef5b5b21d8413dbbc02f0df89c79c318badfce25cf3ad143a1b2f11bb",
+    "lean/Refineforge/Consciousness/Claims.lean": "ce9c48fc7e31eafc8a41341f044c9788c47e9b1f6863b4112fcd7e1dbd18fc8d",
     "lean/Refineforge/Counter.lean": "e8f2e8097d1b47434a5146cd219741b0119ca513f99b6b945179cde1a72d5a7e",
     "lean/Refineforge/Example.lean": "5c1ea46029bc96b8f6edc97313a4f1f15f47c30ce558abe1e56b890e3ca95b17",
     "lean/Refineforge/Helyx.lean": "df18dd8f14b96b4f2ca96a066771828b87df14abbc363186d3589a40f6fbf8f5",
@@ -15,6 +15,6 @@
     "lean/lakefile.toml": "7cb8ca5099c850288731f77eee6ae594e58c576b34b59f7d5bebc3598c5ea3b5",
     "lean/lean-toolchain": "7dc000621e0046d1aada809e2b7177e64454645cf4c741e9daaf79c99ec2e7a2"
   },
-  "report_sha256": "9801ac17d6c0bf2083fac8eb339395b0d074bdbd7584d0a9f2394995fc8a3b13",
+  "report_sha256": "54f81e68d3ed1947b9270a9517defea4ae62a631b2258c8937837b9874f30b57",
   "bundle_schema": 1
 }
