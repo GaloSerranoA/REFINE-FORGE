@@ -1,11 +1,15 @@
 # REFINEFORGE-TRUST-003 — Refinement argument: human-approval acceptance gate
 
-> **Status: model-linked (NOT human-reviewed).** Dogfood claim: Lean proves a
-> property of a model of Refine-Forge's *own* human-approval acceptance gate
-> (`validate_human_approval`). It composes with REFINEFORGE-TRUST-002 to show an
-> automated operator can never produce an accepted approval — the formal
-> statement of "human review cannot be recorded by an AI". `review.human_operator`
-> is `null`, so the Lean agent's honest trust for this claim is `model-linked`.
+> **Status: model+refined (human-reviewed 2026-05-29 by Galo Serrano Abad).**
+> Dogfood claim: Lean proves a property of a model of Refine-Forge's *own*
+> human-approval acceptance gate (`validate_human_approval`). It composes with
+> REFINEFORGE-TRUST-002 to show an automated operator can never produce an
+> accepted approval — the formal statement of "human review cannot be recorded
+> by an AI". The §6 `[needs human]` items were reviewed and confirmed, so
+> `review.human_operator` is populated and the Lean agent reports
+> `human-reviewed`. (This claim depends on TRUST-002; invalidating that review,
+> or changing the Rust acceptance conjunction or `human_ok`, requires
+> re-certification.)
 
 ## 1. What the Lean model says
 
@@ -87,12 +91,16 @@ and (6) REFINEFORGE-TRUST-002's own trusted base (it is a dependency). We make
       `Verified` (`validate_human_approval`, `is_automated_operator` present).
 - [x] **[machine-checked]** `refine bundle verify artifacts/REFINEFORGE-TRUST-003`
       succeeds.
-- [ ] **[needs human]** The Rust `validation.passed = …` conjunction matches the
-      Lean `accepts` (same six flags, same order).
-- [ ] **[needs human]** `human_ok` in Rust equals `humanOk` in Lean
-      (`!is_empty && !is_automated_operator`).
-- [ ] **[needs human]** Modelling the five non-operator checks as opaque Bools
+- [x] **[needs human]** The Rust `validation.passed = …` conjunction matches the
+      Lean `accepts` (same six flags, same order). *(Galo Serrano Abad, 2026-05-29.)*
+- [x] **[needs human]** `human_ok` in Rust equals `humanOk` in Lean
+      (`!is_empty && !is_automated_operator`). *(Galo Serrano Abad, 2026-05-29.)*
+- [x] **[needs human]** Modelling the five non-operator checks as opaque Bools
       (§3.1) is acceptable — their JSON-derivation is out of scope by design.
+      *(Galo Serrano Abad, 2026-05-29.)*
 
-Once a human certifies the [needs human] items, populate `review.human_operator`
-with their real name; the claim can then move to `human-reviewed` / `model+refined`.
+Reviewed and confirmed by **Galo Serrano Abad on 2026-05-29**;
+`review.human_operator` is populated and the claim is `human-reviewed` / scope
+`model+refined`. This review depends on REFINEFORGE-TRUST-002; invalidating that
+review, or changing the Rust acceptance conjunction or `human_ok`, requires
+re-certification.
