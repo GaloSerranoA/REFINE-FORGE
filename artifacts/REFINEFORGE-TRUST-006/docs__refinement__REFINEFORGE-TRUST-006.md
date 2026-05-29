@@ -1,9 +1,11 @@
 # REFINEFORGE-TRUST-006 — Refinement argument: escalation engine
 
-> **Status: model-linked (NOT human-reviewed).** Dogfood claim: Lean proves that
-> Refine-Forge's autonomous-driver escalation engine never auto-proceeds on
-> trust-critical actions — including never auto-setting `review.human_operator`.
-> `review.human_operator` is `null` → `model-linked`.
+> **Status: model+refined (human-reviewed 2026-05-29 by Galo Serrano Abad).**
+> Dogfood claim: Lean proves that Refine-Forge's autonomous-driver escalation
+> engine never auto-proceeds on trust-critical actions — including never
+> auto-setting `review.human_operator`. The §6 items were reviewed and confirmed,
+> so `review.human_operator` is populated and the agent reports `human-reviewed`.
+> (Changing the classifiers or `decide` requires re-certification.)
 
 ## 1. What the Lean model says
 
@@ -67,12 +69,14 @@ claim that any is itself verified.
 - [x] **[machine-checked]** `refine lean check REFINEFORGE-TRUST-006` → `Verified`.
 - [x] **[machine-checked]** `refine scan check REFINEFORGE-TRUST-006` → `Verified`.
 - [x] **[machine-checked]** `refine bundle verify artifacts/REFINEFORGE-TRUST-006`.
-- [ ] **[needs human]** `Engine::decide` proceeds iff `hits.is_empty()`, matching
-      `decide`.
-- [ ] **[needs human]** `classify_custom_axiom`, `classify_status_upgrade`
+- [x] **[needs human]** `Engine::decide` proceeds iff `hits.is_empty()`, matching
+      `decide`. *(Galo Serrano Abad, 2026-05-29.)*
+- [x] **[needs human]** `classify_custom_axiom`, `classify_status_upgrade`
       (null→value), and `classify_scope` (Unknown) fire as modelled (always).
-- [ ] **[needs human]** Abstracting the 9 classifiers + four action shapes (§3)
-      is acceptable for the guarantee being claimed.
+      *(Galo Serrano Abad, 2026-05-29.)*
+- [x] **[needs human]** Abstracting the 9 classifiers + four action shapes (§3)
+      is acceptable for the guarantee being claimed. *(Galo Serrano Abad, 2026-05-29.)*
 
-Once certified, populate `review.human_operator`; the claim moves to
-`human-reviewed` / `model+refined`.
+Reviewed and confirmed by **Galo Serrano Abad on 2026-05-29**; the claim is
+`human-reviewed` / `model+refined`. Changing the classifiers, `decide`, or the
+action model invalidates this review.

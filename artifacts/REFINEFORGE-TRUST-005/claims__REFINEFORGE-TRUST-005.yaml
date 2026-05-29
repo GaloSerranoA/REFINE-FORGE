@@ -10,10 +10,11 @@ description: |
   Honest scope: SHA-256 is idealised as an opaque hash (String -> Nat); the
   model proves the COMPARISON logic, NOT SHA-256's collision resistance -- a
   forged file whose hash collides with the manifest would still pass (that is
-  SHA-256's job, not this gate). Not yet human-reviewed, so the agent trust
-  ceiling for it is model-linked.
+  SHA-256's job, not this gate). Human-reviewed on 2026-05-29 (see review block
+  and refinement doc section 6), so scope is model+refined and the agent reports
+  human-reviewed.
 
-scope: model-linked
+scope: model+refined
 status: proven
 authors:
   - refineforge
@@ -39,6 +40,6 @@ policy:
   no_axioms_beyond_lean_core: true
 
 review:
-  human_operator: null
-  reviewed_on: null
-  notes: "Dogfood model+refined claim, Rust-linked to verify/verify_with_options in bundle.rs, not yet human-reviewed (agent trust = model-linked). SHA-256 is idealised as an opaque String -> Nat; the model proves the comparison logic, NOT collision resistance (a colliding forged file would pass -- that is sha2's job). Missing-file and signature handling are out of scope. See refinement doc sections 3 and 5."
+  human_operator: "Galo Serrano Abad"
+  reviewed_on: "2026-05-29"
+  notes: "Human-reviewed 2026-05-29 by Galo Serrano Abad. Verified verify_with_options accepts iff its mismatches list is empty (matching Lean verifyEntries) and consciously accepted that SHA-256 collision resistance is out of scope -- a colliding forged file would pass; that is sha2's job, not this gate."

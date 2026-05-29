@@ -9,10 +9,11 @@ description: |
   drags the summary down even alongside human-reviewed agents.
 
   Honest scope: Lean proves a property of the model; the refinement doc bridges
-  it to the Rust. It reuses the TRUST-001 TrustLevel/rank model. Not yet
-  human-reviewed, so the agent trust ceiling for it is model-linked.
+  it to the Rust. It reuses the TRUST-001 TrustLevel/rank model. Human-reviewed
+  on 2026-05-29 (see review block and refinement doc section 6), so scope is
+  model+refined and the agent reports human-reviewed.
 
-scope: model-linked
+scope: model+refined
 status: proven
 authors:
   - refineforge
@@ -37,6 +38,6 @@ policy:
   no_axioms_beyond_lean_core: true
 
 review:
-  human_operator: null
-  reviewed_on: null
-  notes: "Dogfood model+refined claim, Rust-linked to lowest_trust/lowest_trust_ceiling in mod.rs, not yet human-reviewed (agent trust = model-linked). Reuses the TRUST-001 TrustLevel/rank model. Idealisation: the empty-list case returns humanReviewed, matching the Rust else-branch; the run_all status field (separate from trust) is out of scope. See refinement doc."
+  human_operator: "Galo Serrano Abad"
+  reviewed_on: "2026-05-29"
+  notes: "Human-reviewed 2026-05-29 by Galo Serrano Abad. Verified lowest_trust returns the lowest-rank member (matching Lean lowest) and accepted the TRUST-001 rank dependency plus the empty-list->humanReviewed idealisation. Depends on TRUST-001 (human-reviewed)."

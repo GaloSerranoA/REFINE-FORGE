@@ -35,9 +35,9 @@ proven in Lean; the grade says whether the statement carries information.
 | REFINEFORGE-TRUST-001 | `AgentTrust.lean` | `enforce_never_exceeds_ceiling`, `enforce_keeps_when_within_ceiling`, `enforce_idempotent` | `by_cases`/`rw`/T1∘T2 composition | **A**, **B**, **A** | `model+refined` | **real (dogfood)**: `crates/refineforge-cli/src/agent/common.rs` — `TrustLevel`, `trust_rank`, `enforce_trust_ceiling` | **First human-reviewed claim** (Galo Serrano Abad, 2026-05-29). `refine agent lean --target REFINEFORGE-TRUST-001` reports **human-reviewed**; all six production-proof requirements pass |
 | REFINEFORGE-TRUST-002 | `OperatorGate.lean` | `blocked_token_is_rejected`, `clean_operator_is_accepted`, `ai_name_is_rejected` | `List.any_eq_true`/`cases`/`decide` | **A**, **A**, **B** | `model+refined` | **real (dogfood)**: `crates/refineforge-cli/src/agent/common.rs` — `is_automated_operator` | **Human-reviewed** (Galo Serrano Abad, 2026-05-29). Anti-spoofing gate; `refine agent lean --target REFINEFORGE-TRUST-002` reports **human-reviewed**. Denylist, not an exhaustive AI detector (refinement §5) |
 | REFINEFORGE-TRUST-003 | `ApprovalGate.lean` | `accepts_implies_human`, `automated_operator_rejected`, `all_checks_accept`, `claude_cannot_approve` | `Bool.and_eq_true`/`simp`/TRUST-002 composition | **A**, **A**, **B**, **B** | `model+refined` | **real (dogfood)**: `crates/refineforge-cli/src/agent/common.rs` — `validate_human_approval`, `is_automated_operator` | **Human-reviewed** (Galo Serrano Abad, 2026-05-29). Human-approval gate; **composes TRUST-002** so an automated operator (e.g. "claude") can never produce an accepted approval. `refine agent lean --target REFINEFORGE-TRUST-003` reports **human-reviewed** |
-| REFINEFORGE-TRUST-004 | `AggregateTrust.lean` | `lowest_le_member`, `aggregate_picks_weakest` | induction / `decide` | **A**, **B** | `model-linked` | **real (dogfood)**: `crates/refineforge-cli/src/agent/mod.rs` — `lowest_trust`, `lowest_trust_ceiling` | run_all aggregate trust ≤ every member (can't over-trust). Reuses TRUST-001 `rank`. Reports **model-linked**; blocked only on `human_review` |
-| REFINEFORGE-TRUST-005 | `BundleVerify.lean` | `verify_implies_all_match`, `mismatch_implies_reject`, `tamper_is_detected` | `List.all_eq_true`/`cases`/`decide` | **A**, **A**, **B** | `model-linked` | **real (dogfood)**: `crates/refineforge-cli/src/bundle.rs` — `verify`, `verify_with_options` | Bundle verify accepts iff all hashes match; tamper ⇒ reject. SHA-256 idealised (collision resistance is `sha2`'s job, refinement §5). Reports **model-linked**; blocked only on `human_review` |
-| REFINEFORGE-TRUST-006 | `EscalationGate.lean` | `axiom_always_escalates`, `set_operator_always_escalates`, `unknown_always_escalates`, `proceed_implies_all_silent` | `decide` / case-split | **B**, **B**, **B**, **A** | `model-linked` | **real (dogfood)**: `crates/refineforge-escalation/src/engine.rs` — `decide`, `classify_custom_axiom`, `classify_status_upgrade`, `classify_scope` | Driver never auto-proceeds on axiom / operator-set / unknown — **never auto-sets `human_operator`** (complements TRUST-002/003). Reports **model-linked**; blocked only on `human_review` |
+| REFINEFORGE-TRUST-004 | `AggregateTrust.lean` | `lowest_le_member`, `aggregate_picks_weakest` | induction / `decide` | **A**, **B** | `model+refined` | **real (dogfood)**: `crates/refineforge-cli/src/agent/mod.rs` — `lowest_trust`, `lowest_trust_ceiling` | **Human-reviewed** (Galo Serrano Abad, 2026-05-29). run_all aggregate trust ≤ every member (can't over-trust). Reuses TRUST-001 `rank`. Reports **human-reviewed** |
+| REFINEFORGE-TRUST-005 | `BundleVerify.lean` | `verify_implies_all_match`, `mismatch_implies_reject`, `tamper_is_detected` | `List.all_eq_true`/`cases`/`decide` | **A**, **A**, **B** | `model+refined` | **real (dogfood)**: `crates/refineforge-cli/src/bundle.rs` — `verify`, `verify_with_options` | **Human-reviewed** (Galo Serrano Abad, 2026-05-29). Bundle verify accepts iff all hashes match; tamper ⇒ reject. SHA-256 idealised (collision resistance is `sha2`'s job, refinement §5). Reports **human-reviewed** |
+| REFINEFORGE-TRUST-006 | `EscalationGate.lean` | `axiom_always_escalates`, `set_operator_always_escalates`, `unknown_always_escalates`, `proceed_implies_all_silent` | `decide` / case-split | **B**, **B**, **B**, **A** | `model+refined` | **real (dogfood)**: `crates/refineforge-escalation/src/engine.rs` — `decide`, `classify_custom_axiom`, `classify_status_upgrade`, `classify_scope` | **Human-reviewed** (Galo Serrano Abad, 2026-05-29). Driver never auto-proceeds on axiom / operator-set / unknown — **never auto-sets `human_operator`** (complements TRUST-002/003). Reports **human-reviewed** |
 
 ## Remediation note (2026-05-29)
 
@@ -64,10 +64,9 @@ theorem proving the relevant predicate is falsifiable. Verification:
 - HELYX-AUDIT-001 is a cross-repo case-study slice. The refinement document
   records manual assertions about HELYX source alignment; those assertions are
   not yet machine-checked by Refine-Forge.
-- Three claims now carry a human review signature (all Galo Serrano Abad,
-  2026-05-29): **REFINEFORGE-TRUST-001**, **REFINEFORGE-TRUST-002**, and
-  **REFINEFORGE-TRUST-003** → `human-reviewed`. All other claims still record
-  `review.human_operator: null`.
+- Six claims now carry a human review signature (all Galo Serrano Abad,
+  2026-05-29): **REFINEFORGE-TRUST-001** through **REFINEFORGE-TRUST-006** →
+  `human-reviewed`. All other claims still record `review.human_operator: null`.
 - **CRS/EXAMPLE bundles refreshed (2026-05-29):** after the CRS remediation the
   `artifacts/CLAIM-CRS-*` and `artifacts/EXAMPLE-00*` bundles were re-exported
   (`refine bundle export`) and re-verified, so they embed the current Lean. Do
@@ -91,7 +90,7 @@ theorem proving the relevant predicate is falsifiable. Verification:
   approver") — now **`human-reviewed`** (Galo Serrano Abad, 2026-05-29). See
   `docs/refinement/REFINEFORGE-TRUST-003.md`.
 - **REFINEFORGE-TRUST-004 / 005 / 006 (dogfood, 2026-05-29):** three more
-  implementation-linked claims at **`model-linked`**, pending human review —
+  implementation-linked claims, now **`human-reviewed`** (Galo Serrano Abad) —
   run_all aggregate trust never over-trusts (004, `mod.rs`); bundle verify
   accepts iff all hashes match (005, `bundle.rs`; SHA-256 collision resistance
   is out of scope); and the escalation engine never auto-proceeds on a custom
