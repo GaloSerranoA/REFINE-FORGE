@@ -1,0 +1,48 @@
+claim_id: REFINEFORGE-TRUST-003
+title: "Human-approval gate cannot accept an automated operator"
+description: |
+  Dogfood model+refined claim about Refine-Forge's OWN human-approval acceptance
+  gate. The Lean model mirrors the final acceptance conjunction in Rust
+  validate_human_approval (common.rs): an approval passes only if schema, role,
+  decision, approved_at, summary, AND a real human operator (non-empty and not
+  automated) all hold. It COMPOSES with REFINEFORGE-TRUST-002 -- humanOk reuses
+  the operator-gate model, so an automated operator name (e.g. "claude") forces
+  rejection of the whole approval (T2/T4). This is the formal statement that an
+  AI/bot/placeholder cannot be recorded as a human approver.
+
+  Honest scope: Lean proves a property of the model. The refinement doc bridges
+  it to the Rust and discloses the idealisations -- the five non-operator checks
+  are modelled as opaque Bools (the Rust computes them from JSON field
+  comparisons), and humanOk shares TRUST-002's tokenisation boundary. Not yet
+  human-reviewed, so the agent trust ceiling for it is model-linked.
+
+scope: model-linked
+status: proven
+authors:
+  - refineforge
+
+rust_source:
+  - path: crates/refineforge-cli/src/agent/common.rs
+    functions:
+      - validate_human_approval
+      - is_automated_operator
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.ApprovalGate
+  file: lean/Refineforge/ApprovalGate.lean
+  theorems:
+    - accepts_implies_human
+    - automated_operator_rejected
+    - all_checks_accept
+    - claude_cannot_approve
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: "Dogfood model+refined claim, Rust-linked to validate_human_approval + is_automated_operator in common.rs, not yet human-reviewed (agent trust = model-linked). Composes with REFINEFORGE-TRUST-002. The five non-operator checks are modelled as opaque Bools (the Rust computes them from JSON field comparisons); humanOk shares TRUST-002's tokenisation idealisation boundary. See refinement doc sections 3 and 5."
