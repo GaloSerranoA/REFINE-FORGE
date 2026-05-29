@@ -1,9 +1,11 @@
 # REFINEFORGE-TRUST-007 — Refinement argument: no-sorry policy gate
 
-> **Status: model-linked (NOT human-reviewed).** Dogfood claim about the
-> framework's *foundational* gate — the no-sorry policy gate that gives every
-> `status: proven` claim its meaning. `review.human_operator` is `null` →
-> `model-linked`.
+> **Status: model+refined (human-reviewed 2026-05-29 by Galo Serrano Abad).**
+> Dogfood claim about the framework's *foundational* gate — the no-sorry policy
+> gate that gives every `status: proven` claim its meaning. The §6 items were
+> reviewed and confirmed — including that the regex/comment-strip lexer is out of
+> scope — so `review.human_operator` is populated and the agent reports
+> `human-reviewed`. (Changing `check`'s `ok` logic requires re-certification.)
 
 ## 1. What the Lean model says
 
@@ -68,11 +70,12 @@ no claim that any is itself verified — see §5.
 - [x] **[machine-checked]** `refine lean check REFINEFORGE-TRUST-007` → `Verified`.
 - [x] **[machine-checked]** `refine scan check REFINEFORGE-TRUST-007` → `Verified`.
 - [x] **[machine-checked]** `refine bundle verify artifacts/REFINEFORGE-TRUST-007`.
-- [ ] **[needs human]** The Rust `ok` computation in `check` matches Lean `ok`
-      (the three `!(flag && count>0)` conjuncts).
-- [ ] **[needs human]** Taking the post-strip `Counts` as given (the regex +
+- [x] **[needs human]** The Rust `ok` computation in `check` matches Lean `ok`
+      (the three `!(flag && count>0)` conjuncts). *(Galo Serrano Abad, 2026-05-29.)*
+- [x] **[needs human]** Taking the post-strip `Counts` as given (the regex +
       `strip_comments` lexer is out of scope, §5) is acceptable for the
-      guarantee being claimed.
+      guarantee being claimed. *(Galo Serrano Abad, 2026-05-29.)*
 
-Once certified, populate `review.human_operator`; the claim moves to
-`human-reviewed` / `model+refined`.
+Reviewed and confirmed by **Galo Serrano Abad on 2026-05-29**; the claim is
+`human-reviewed` / `model+refined`. Changing `check`'s `ok` logic — or relying on
+this claim to cover the regex/comment-strip lexer — invalidates this review.

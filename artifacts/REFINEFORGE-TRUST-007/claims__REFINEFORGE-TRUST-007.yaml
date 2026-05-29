@@ -13,10 +13,11 @@ description: |
   Honest scope: the Lean proves the gate's boolean DECISION, taking the
   post-comment-strip occurrence counts as given. The word-boundary regexes and
   the comment-stripping that produce those counts are the idealisation boundary
-  and are NOT modelled. Not yet human-reviewed, so the agent trust ceiling for
-  it is model-linked.
+  and are NOT modelled. Human-reviewed on 2026-05-29 (see review block and
+  refinement doc section 6), so scope is model+refined and the agent reports
+  human-reviewed.
 
-scope: model-linked
+scope: model+refined
 status: proven
 authors:
   - refineforge
@@ -46,6 +47,6 @@ policy:
   no_axioms_beyond_lean_core: true
 
 review:
-  human_operator: null
-  reviewed_on: null
-  notes: "Dogfood model+refined claim, Rust-linked to sorry_gate::check + strip_comments + GateResult, not yet human-reviewed (agent trust = model-linked). The Lean proves the boolean decision (ok iff no enabled policy flag has a positive count); the word-boundary regexes and comment-stripping that produce the counts are the idealisation boundary, NOT modelled. See refinement doc sections 3 and 5."
+  human_operator: "Galo Serrano Abad"
+  reviewed_on: "2026-05-29"
+  notes: "Human-reviewed 2026-05-29 by Galo Serrano Abad. Verified the Rust ok computation in check matches Lean ok (the three !(flag && count>0) conjuncts) and consciously accepted that the word-boundary regexes + strip_comments lexer are out of scope -- the model proves the verdict given correct counts, not that the lexer counts correctly."
