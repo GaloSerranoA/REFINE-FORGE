@@ -33,6 +33,7 @@ proven in Lean; the grade says whether the statement carries information.
 | EXAMPLE-002 | `Counter.lean` | `incr_monotone`, `incr_strictly_increases` | `simp` (elementary) | **B**, **B** | `tutorial` | repo-local example refinement doc | tutorial refinement example; refinement doc discloses the `Nat` vs `u64` boundary |
 | EXAMPLE-003 | `CapabilityRevocation.lean` | `revoked_authorizes_nothing`, `fresh_capability_authorizes_held_right`, `revoke_is_idempotent` | structural model proof | **A**, **B**, **A** | `tutorial-production-shaped` | repo-local example refinement doc | first human-review candidate; review remains pending because `human_operator` is null |
 | REFINEFORGE-TRUST-001 | `AgentTrust.lean` | `enforce_never_exceeds_ceiling`, `enforce_keeps_when_within_ceiling`, `enforce_idempotent` | `by_cases`/`rw`/T1∘T2 composition | **A**, **B**, **A** | `model+refined` | **real (dogfood)**: `crates/refineforge-cli/src/agent/common.rs` — `TrustLevel`, `trust_rank`, `enforce_trust_ceiling` | **First human-reviewed claim** (Galo Serrano Abad, 2026-05-29). `refine agent lean --target REFINEFORGE-TRUST-001` reports **human-reviewed**; all six production-proof requirements pass |
+| REFINEFORGE-TRUST-002 | `OperatorGate.lean` | `blocked_token_is_rejected`, `clean_operator_is_accepted`, `ai_name_is_rejected` | `List.any_eq_true`/`cases`/`decide` | **A**, **A**, **B** | `model-linked` | **real (dogfood)**: `crates/refineforge-cli/src/agent/common.rs` — `is_automated_operator` | Anti-spoofing gate (rejects AI/placeholder approvers). `refine agent lean --target REFINEFORGE-TRUST-002` reports **model-linked**; blocked only on `human_review`. Denylist, not an exhaustive AI detector (refinement §5) |
 
 ## Remediation note (2026-05-29)
 
@@ -72,3 +73,9 @@ theorem proving the relevant predicate is falsifiable. Verification:
   (Galo Serrano Abad). `refine agent lean --target REFINEFORGE-TRUST-001`
   reports `human-reviewed`; all six production-proof requirements pass. See
   `docs/refinement/REFINEFORGE-TRUST-001.md` §6.
+- **REFINEFORGE-TRUST-002 (dogfood, 2026-05-29):** a second implementation-linked
+  claim — the operator-identity anti-spoofing gate (`is_automated_operator`,
+  which keeps `review.human_operator` honest). Reaches `model-linked`; pending
+  human review of §6 to become `human-reviewed`. It is a denylist (15 known
+  automated/placeholder tokens), **not** an exhaustive AI detector — see
+  `docs/refinement/REFINEFORGE-TRUST-002.md` §5.
