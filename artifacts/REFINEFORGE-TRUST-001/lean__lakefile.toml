@@ -1,0 +1,6 @@
+name = "refineforge"
+version = "0.1.0"
+defaultTargets = ["Refineforge"]
+
+[[lean_lib]]
+name = "Refineforge"

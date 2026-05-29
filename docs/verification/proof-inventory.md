@@ -32,6 +32,7 @@ proven in Lean; the grade says whether the statement carries information.
 | EXAMPLE-001 | `Example.lean` | `add_comm_demo` | standard-library wrapper (`Nat.add_comm`) | **B** (re-export) | `tutorial` | none | tutorial example, not production implementation assurance |
 | EXAMPLE-002 | `Counter.lean` | `incr_monotone`, `incr_strictly_increases` | `simp` (elementary) | **B**, **B** | `tutorial` | repo-local example refinement doc | tutorial refinement example; refinement doc discloses the `Nat` vs `u64` boundary |
 | EXAMPLE-003 | `CapabilityRevocation.lean` | `revoked_authorizes_nothing`, `fresh_capability_authorizes_held_right`, `revoke_is_idempotent` | structural model proof | **A**, **B**, **A** | `tutorial-production-shaped` | repo-local example refinement doc | first human-review candidate; review remains pending because `human_operator` is null |
+| REFINEFORGE-TRUST-001 | `AgentTrust.lean` | `enforce_never_exceeds_ceiling`, `enforce_keeps_when_within_ceiling`, `enforce_idempotent` | `by_cases`/`rw`/T1∘T2 composition | **A**, **B**, **A** | `model-linked` | **real (dogfood)**: `crates/refineforge-cli/src/agent/common.rs` — `TrustLevel`, `trust_rank`, `enforce_trust_ceiling` | First genuine implementation-linked claim. `refine agent lean --target REFINEFORGE-TRUST-001` reports **model-linked**; production-proof passes no_sorry/scan/scope/docs/bundle and is blocked **only** on `human_review` (review.human_operator null) |
 
 ## Remediation note (2026-05-29)
 
@@ -60,6 +61,11 @@ theorem proving the relevant predicate is falsifiable. Verification:
   not yet machine-checked by Refine-Forge.
 - No claim in this snapshot has a human review signature. Every claim still
   records `review.human_operator: null`.
-- **Exported bundles under `artifacts/CLAIM-CRS-*/` are stale**: they contain the
-  pre-remediation (vacuous) `Claims.lean`. Re-run `refine bundle export` for each
-  CRS claim to refresh them; do not hand-edit sealed bundles.
+- **CRS/EXAMPLE bundles refreshed (2026-05-29):** after the CRS remediation the
+  `artifacts/CLAIM-CRS-*` and `artifacts/EXAMPLE-00*` bundles were re-exported
+  (`refine bundle export`) and re-verified, so they embed the current Lean. Do
+  not hand-edit sealed bundles; regenerate via `refine bundle export`.
+- **REFINEFORGE-TRUST-001 (dogfood, 2026-05-29):** the first claim whose Lean
+  model is linked to *real* Refine-Forge Rust (the agent trust-ceiling
+  enforcement in `common.rs`). It reaches `model-linked` and is one human
+  signature away from `human-reviewed`; see `docs/refinement/REFINEFORGE-TRUST-001.md` §6.

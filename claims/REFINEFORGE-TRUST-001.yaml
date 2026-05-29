@@ -1,0 +1,48 @@
+claim_id: REFINEFORGE-TRUST-001
+title: "Agent trust-ceiling enforcement never exceeds the ceiling"
+description: |
+  Dogfood model+refined claim about Refine-Forge's OWN agent trust system.
+  The Lean model proves that the trust-ceiling enforcement step never yields a
+  trust level ranked above the configured ceiling (T1 safety), returns the
+  reported level unchanged when it is already within the ceiling (T2
+  faithfulness), and is idempotent (T3). This is the invariant that makes the
+  four specialist agents un-spoofable: no reported trust can survive above its
+  ceiling.
+
+  Honest scope: Lean proves a property of the model. The refinement argument in
+  docs/refinement/REFINEFORGE-TRUST-001.md is the trust-critical bridge to the
+  real Rust in crates/refineforge-cli/src/agent/common.rs. This claim is NOT yet
+  human-reviewed (review.human_operator is null), so the agent trust ceiling for
+  it is model-linked, not human-reviewed.
+
+scope: model-linked
+status: proven
+authors:
+  - refineforge
+
+rust_source:
+  - path: crates/refineforge-cli/src/agent/common.rs
+    types:
+      - TrustLevel
+    functions:
+      - trust_rank
+      - enforce_trust_ceiling
+
+lean:
+  toolchain: leanprover/lean4:v4.29.1
+  module: Refineforge.AgentTrust
+  file: lean/Refineforge/AgentTrust.lean
+  theorems:
+    - enforce_never_exceeds_ceiling
+    - enforce_keeps_when_within_ceiling
+    - enforce_idempotent
+
+policy:
+  no_sorry: true
+  no_admit: true
+  no_axioms_beyond_lean_core: true
+
+review:
+  human_operator: null
+  reviewed_on: null
+  notes: "Dogfood model+refined claim. Rust-linked to the agent trust ceiling in common.rs but not yet human-reviewed, so agent trust = model-linked. The Lean models the RESULTING trust level of enforce_trust_ceiling; its side effects (the returned capped bool and the warning it pushes) are out of model scope. See the refinement doc."
