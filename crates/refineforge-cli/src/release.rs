@@ -854,7 +854,29 @@ fn is_cargo_program(program: &str) -> bool {
 }
 
 fn release_cargo_target_dir(root: &Path) -> PathBuf {
-    root.join("target").join("release-ready")
+    gate_cargo_target_dir(root, std::env::current_exe().ok().as_deref())
+}
+
+/// Choose the cargo target dir for release-readiness gate commands.
+///
+/// Normally this is `target/release-ready`. But if the *currently running*
+/// executable lives inside that directory — the common case when an operator
+/// runs `refine` straight out of `target/release-ready/debug/` (e.g. via
+/// `refine agent devops --mode check`) — a gate that invokes `cargo test` or
+/// `cargo run --bin refine` would try to recompile and overwrite the running
+/// binary. On Windows that fails with "Access is denied (os error 5)" and the
+/// gate reports a spurious failure even though the underlying checks pass. In
+/// that case we isolate the gate build into `target/release-ready-gates` so
+/// cargo never touches the locked executable. In CI, where the running binary
+/// lives elsewhere, the default directory (and its build cache) is kept.
+fn gate_cargo_target_dir(root: &Path, current_exe: Option<&Path>) -> PathBuf {
+    let default = root.join("target").join("release-ready");
+    if let Some(exe) = current_exe {
+        if exe.starts_with(&default) {
+            return root.join("target").join("release-ready-gates");
+        }
+    }
+    default
 }
 
 fn push_semver_gate(report: &mut ReleaseReport, version: &str) {
@@ -1323,6 +1345,24 @@ mod tests {
             gate_log_name("bundle verify: EXAMPLE-003"),
             "bundle-verify-example-003.log"
         );
+    }
+
+    #[test]
+    fn gate_cargo_target_dir_isolates_when_running_binary_would_collide() {
+        let root = PathBuf::from("repo-root");
+        let default = root.join("target").join("release-ready");
+        let isolated = root.join("target").join("release-ready-gates");
+
+        // No exe info, or a binary outside the gate tree (CI): keep the
+        // default dir so the build cache is reused.
+        assert_eq!(gate_cargo_target_dir(&root, None), default);
+        let elsewhere = root.join("target").join("debug").join("refine");
+        assert_eq!(gate_cargo_target_dir(&root, Some(&elsewhere)), default);
+
+        // Running binary lives inside the default gate tree: isolate so cargo
+        // does not try to overwrite the locked, currently-running executable.
+        let running = default.join("debug").join("refine.exe");
+        assert_eq!(gate_cargo_target_dir(&root, Some(&running)), isolated);
     }
 
     #[test]
