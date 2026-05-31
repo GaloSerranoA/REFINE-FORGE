@@ -201,5 +201,20 @@ remains the deterministic reference.
   still memorizes train to 99 %. Honest takeaway — past ~25 %, the lever is **more
   data**, not more regularization. The regularizers are correct and reusable
   (parity-gated); they buy calibration and a wider early-stopping window, not a new
-  accuracy regime. Dropout, a block-diagonal attention kernel for real packed
-  throughput, more data, and the GPU compute ledger remain the open follow-ups.
+  accuracy regime.
+
+- **M10 — GPU compute ledger / evidence pack.** The originally-planned final GPU
+  milestone. The `gpu_ledger` example emits a self-contained JSON evidence pack
+  (`docs/training/gpu-compute-ledger.json`, schema
+  `refineforge-gpu-compute-ledger-v1`): the live **device** (name + compute
+  capability, queried via the new `GpuKernels::compute_capability`), the
+  **kernel-source SHA-256** + kernel count, the **24-gate parity roster** (the
+  CPU-oracle checks that verify every kernel; 32 cuda tests total), the **held-out
+  eval** (CPU 5.6 % vs GPU best 25.3 % / peak 25.6 %, ~4.6×), the **milestone map
+  M1–M10**, and the explicit **f32 / statistical-not-bit-exact reproducibility
+  declaration** (CPU f64 stays the deterministic reference). This closes the GPU
+  phase with the evidence artifact the project's trust model expects.
+
+  Open follow-ups (beyond this phase): dropout, a block-diagonal / flash-attention
+  kernel for real packed throughput, **more training data** (the accuracy lever),
+  and wiring the GPU backend into the trainer's evidence / trust-ladder pipeline.
