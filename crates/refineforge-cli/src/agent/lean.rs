@@ -680,7 +680,10 @@ mod tests {
         assert_eq!(inrepo_bundle_manifest_hash(&good), Some(hash.clone()));
 
         // Missing file -> None.
-        assert_eq!(inrepo_bundle_manifest_hash(&td.path().join("nope.json")), None);
+        assert_eq!(
+            inrepo_bundle_manifest_hash(&td.path().join("nope.json")),
+            None
+        );
 
         // Empty files map -> not a real bundle.
         let empty = td.path().join("empty.json");
