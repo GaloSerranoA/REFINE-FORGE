@@ -1,0 +1,66 @@
+# Native from-scratch GPT transformer smoke training.
+#
+# This uses the built-in `refineforge_native_gpt` backend: a real, hand-written,
+# deterministic GPT (trainable token/position embeddings, multi-head causal
+# self-attention, pre-norm LayerNorm, GELU MLP, residuals, full backprop, AdamW)
+# implemented in Rust with NO Python, PyTorch, Axolotl, or GPU. It realizes the
+# `train-llm-from-scratch` architecture; it is intentionally small and is still a
+# smoke-grade proof, not an LLM-quality checkpoint.
+#
+# The backend consumes a deterministic SFT token pack. Generate one first:
+#
+#   refine-train data pack-sft training/data/lean-proof-repair-smoke.jsonl \
+#     --out training/runs/native-gpt-smoke/sft-pack --seed 7 --max-seq-len 64
+#
+# then run:
+#
+#   refine-train --runs-root training/runs run \
+#     training/configs/refineforge-native-gpt-smoke.yaml
+
+id: refineforge-native-gpt-smoke
+description: |
+  Deterministic native GPT smoke run. Proves Refine-Forge can train a real
+  decoder-only transformer locally (forward + analytic backprop + AdamW),
+  emit native checkpoints, and feed the report/eval/promotion evidence surface.
+  It is not an LLM-quality checkpoint.
+
+base_model:
+  name: refineforge-native-gpt-smoke
+  source: native
+
+dataset:
+  path: training/runs/native-gpt-smoke/sft-pack
+  format: sft_pack
+
+backend:
+  kind: refineforge_native_gpt
+
+hyperparameters:
+  steps: 20
+  learning_rate: 0.01
+  weight_decay: 0.01
+  n_embed: 32
+  n_head: 4
+  n_layers: 2
+  context_length: 64
+  seed: 7
+  eval_split: heldout
+
+checkpoint:
+  dir: checkpoints
+  save_steps: 10
+  keep_last: 2
+
+monitoring:
+  log_file: train.log
+  progress_format: native
+  metrics_to_track:
+    - train_loss
+    - dev_loss
+    - target_token_accuracy
+    - learning_rate
+
+retry:
+  max_attempts: 1
+  backoff_seconds: 0
+  resume_from_checkpoint: false

@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use crate::checkpoint;
 use crate::experiment::{Backend, Experiment};
 use crate::progress::parser_for;
-use crate::{native, native_causal};
+use crate::{native, native_causal, native_gpt};
 
 #[derive(Debug, Clone)]
 pub struct RunPaths {
@@ -286,6 +286,17 @@ pub fn run_once(runs_root: &Path, exp: &Experiment) -> Result<RunOutcome> {
         return Ok(RunOutcome {
             exit_status: successful_exit_status(),
             progress_records: native_outcome.progress_records,
+            paths,
+        });
+    }
+    if exp.backend.kind == "refineforge_native_gpt" {
+        let gpt_outcome = native_gpt::run(&paths, exp)?;
+        if let Some(keep_last) = exp.checkpoint.keep_last {
+            let _ = checkpoint::prune(&paths.checkpoint_dir, keep_last);
+        }
+        return Ok(RunOutcome {
+            exit_status: successful_exit_status(),
+            progress_records: gpt_outcome.progress_records,
             paths,
         });
     }

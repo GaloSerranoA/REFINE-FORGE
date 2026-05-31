@@ -118,6 +118,19 @@ production GPU/runtime proof are absent or out of scope.
 5. Implemented: both `refine agent train` and
    `refine production-proof verify` reject `human-reviewed` trust when eval
    evidence is loss-only.
+6. Implemented: `backend.kind = refineforge_native_gpt` is a real from-scratch
+   decoder-only transformer — trainable token/position embeddings, multi-head
+   causal self-attention, pre-norm LayerNorm, GELU MLP, residual connections,
+   final LayerNorm, LM head, cross-entropy, and AdamW — with full hand-written
+   backpropagation. The backward pass is gradient-checked against finite
+   differences (`crates/refineforge-trainer/src/native_gpt/nn.rs`), the run is
+   deterministic (seeded init → reproducible `weights_sha256`), and it is
+   CPU/`f64` with no Python, PyTorch, or GPU. It realizes the
+   `train-llm-from-scratch` architecture in Rust and is a drop-in for the same
+   evidence pipeline as the linear smoke backend. On 32 real Mathlib heldout
+   rows it reaches roughly 5–6% target-token accuracy versus the linear smoke's
+   ~3% — still smoke-grade, an over-parameterized model that overfits tiny data,
+   and explicitly not an LLM-quality checkpoint.
 
 The implementation is intentionally a local production-proof smoke framework,
 not a claim that Refine-Forge has produced a production LLM checkpoint. A real
