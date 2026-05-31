@@ -351,7 +351,278 @@ impl MlpBlock {
     }
 }
 
+/// Multi-head causal self-attention, device-resident. Q/K/V/O are dense
+/// projections; per head the scores `Q_h·K_hᵀ` are scaled, causally masked,
+/// softmaxed, and applied to `V_h`. Composed entirely from the device
+/// primitives (matmul, slice/set-cols, causal mask, softmax).
+pub struct Attention {
+    q: Linear,
+    k: Linear,
+    v: Linear,
+    o: Linear,
+    n_head: usize,
+    head_dim: usize,
+    scale: f32,
+}
+
+/// Forward activations the attention backward needs.
+pub struct AttnCache {
+    qd: DeviceTensor,
+    kd: DeviceTensor,
+    vd: DeviceTensor,
+    attn: Vec<DeviceTensor>, // per head, T×T
+    ctx: DeviceTensor,
+}
+
+impl Attention {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        kern: &GpuKernels,
+        embed: usize,
+        n_head: usize,
+        wq: &[f32],
+        wk: &[f32],
+        wv: &[f32],
+        wo: &[f32],
+    ) -> Result<Self> {
+        anyhow::ensure!(embed.is_multiple_of(n_head), "embed must divide n_head");
+        let zero = vec![0.0f32; embed];
+        Ok(Self {
+            q: Linear::new(kern, wq, &zero, embed, embed)?,
+            k: Linear::new(kern, wk, &zero, embed, embed)?,
+            v: Linear::new(kern, wv, &zero, embed, embed)?,
+            o: Linear::new(kern, wo, &zero, embed, embed)?,
+            n_head,
+            head_dim: embed / n_head,
+            scale: 1.0 / (embed as f32 / n_head as f32).sqrt(),
+        })
+    }
+
+    pub fn forward(
+        &self,
+        kern: &GpuKernels,
+        x: &DeviceTensor,
+    ) -> Result<(DeviceTensor, AttnCache)> {
+        let (t, e, hd) = (x.rows, x.cols, self.head_dim);
+        let qd = self.q.forward(kern, x)?;
+        let kd = self.k.forward(kern, x)?;
+        let vd = self.v.forward(kern, x)?;
+        let mut ctx = kern.zeros_device(t, e)?;
+        let mut attn_per_head = Vec::with_capacity(self.n_head);
+        for h in 0..self.n_head {
+            let off = h * hd;
+            let q_h = kern.dev_slice_cols(&qd, off, hd)?;
+            let k_h = kern.dev_slice_cols(&kd, off, hd)?;
+            let v_h = kern.dev_slice_cols(&vd, off, hd)?;
+            let mut scores = kern.dev_matmul_nt(&q_h, &k_h)?; // T×T = Q_h·K_hᵀ
+            kern.dev_scale_causal_mask(&mut scores, self.scale)?;
+            let attn = kern.dev_softmax(&scores)?;
+            let ctx_h = kern.dev_matmul_nn(&attn, &v_h)?; // T×hd
+            kern.dev_set_cols(&mut ctx, &ctx_h, off)?;
+            attn_per_head.push(attn);
+        }
+        let out = self.o.forward(kern, &ctx)?;
+        Ok((
+            out,
+            AttnCache {
+                qd,
+                kd,
+                vd,
+                attn: attn_per_head,
+                ctx,
+            },
+        ))
+    }
+
+    pub fn backward(
+        &mut self,
+        kern: &GpuKernels,
+        x: &DeviceTensor,
+        cache: &AttnCache,
+        d_out: &DeviceTensor,
+    ) -> Result<DeviceTensor> {
+        let (t, e, hd) = (x.rows, x.cols, self.head_dim);
+        let d_ctx = self.o.backward(kern, &cache.ctx, d_out)?;
+        let mut dq = kern.zeros_device(t, e)?;
+        let mut dk = kern.zeros_device(t, e)?;
+        let mut dv = kern.zeros_device(t, e)?;
+        for h in 0..self.n_head {
+            let off = h * hd;
+            let q_h = kern.dev_slice_cols(&cache.qd, off, hd)?;
+            let k_h = kern.dev_slice_cols(&cache.kd, off, hd)?;
+            let v_h = kern.dev_slice_cols(&cache.vd, off, hd)?;
+            let attn = &cache.attn[h];
+            let d_ctx_h = kern.dev_slice_cols(&d_ctx, off, hd)?;
+            // ctx_h = attn · V_h
+            let d_attn = kern.dev_matmul_nt(&d_ctx_h, &v_h)?; // T×T = d_ctx_h·V_hᵀ
+            let d_v_h = kern.dev_matmul_tn(attn, &d_ctx_h)?; // T×hd = attnᵀ·d_ctx_h
+            kern.dev_set_cols(&mut dv, &d_v_h, off)?;
+            // softmax + scale/mask backward
+            let mut d_scores = kern.dev_softmax_backward(attn, &d_attn)?; // T×T
+            kern.dev_scale_causal_mask_grad(&mut d_scores, self.scale)?;
+            // scores = Q_h · K_hᵀ
+            let d_q_h = kern.dev_matmul_nn(&d_scores, &k_h)?; // T×hd = d_scores·K_h
+            let d_k_h = kern.dev_matmul_tn(&d_scores, &q_h)?; // T×hd = d_scoresᵀ·Q_h
+            kern.dev_set_cols(&mut dq, &d_q_h, off)?;
+            kern.dev_set_cols(&mut dk, &d_k_h, off)?;
+        }
+        let mut dx = self.q.backward(kern, x, &dq)?;
+        let dx_k = self.k.backward(kern, x, &dk)?;
+        let dx_v = self.v.backward(kern, x, &dv)?;
+        kern.dev_add_inplace(&mut dx, &dx_k)?;
+        kern.dev_add_inplace(&mut dx, &dx_v)?;
+        Ok(dx)
+    }
+
+    pub fn adamw_step(&mut self, kern: &GpuKernels, t: u32, lr: f32) -> Result<()> {
+        self.q.adamw_step(kern, t, lr)?;
+        self.k.adamw_step(kern, t, lr)?;
+        self.v.adamw_step(kern, t, lr)?;
+        self.o.adamw_step(kern, t, lr)?;
+        Ok(())
+    }
+}
+
+/// A full pre-norm transformer block:
+/// `x1 = x + Attn(LN1(x)); out = x1 + MLP(LN2(x1))`.
+pub struct Block {
+    ln1: LayerNorm,
+    attn: Attention,
+    ln2: LayerNorm,
+    mlp: Mlp,
+}
+
+/// Forward activations the [`Block`] backward needs.
+pub struct BlockCache {
+    ln1_y: DeviceTensor,
+    m1: DeviceTensor,
+    r1: DeviceTensor,
+    attn_cache: AttnCache,
+    x1: DeviceTensor,
+    ln2_y: DeviceTensor,
+    m2: DeviceTensor,
+    r2: DeviceTensor,
+    h1: DeviceTensor,
+    act: DeviceTensor,
+}
+
+impl Block {
+    pub fn new(ln1: LayerNorm, attn: Attention, ln2: LayerNorm, mlp: Mlp) -> Self {
+        Self {
+            ln1,
+            attn,
+            ln2,
+            mlp,
+        }
+    }
+
+    pub fn forward(&self, k: &GpuKernels, x: &DeviceTensor) -> Result<(DeviceTensor, BlockCache)> {
+        let (ln1_y, m1, r1) = self.ln1.forward(k, x)?;
+        let (attn_out, attn_cache) = self.attn.forward(k, &ln1_y)?;
+        let mut x1 = attn_out;
+        k.dev_add_inplace(&mut x1, x)?; // x1 = x + Attn(LN1(x))
+        let (ln2_y, m2, r2) = self.ln2.forward(k, &x1)?;
+        let (mlp_out, h1, act) = self.mlp.forward(k, &ln2_y)?;
+        let mut out = mlp_out;
+        k.dev_add_inplace(&mut out, &x1)?; // out = x1 + MLP(LN2(x1))
+        Ok((
+            out,
+            BlockCache {
+                ln1_y,
+                m1,
+                r1,
+                attn_cache,
+                x1,
+                ln2_y,
+                m2,
+                r2,
+                h1,
+                act,
+            },
+        ))
+    }
+
+    pub fn backward(
+        &mut self,
+        k: &GpuKernels,
+        x: &DeviceTensor,
+        c: &BlockCache,
+        d_out: &DeviceTensor,
+    ) -> Result<DeviceTensor> {
+        // out = x1 + MLP(LN2(x1))
+        let d_ln2_y = self.mlp.backward(k, &c.ln2_y, &c.h1, &c.act, d_out)?;
+        let mut d_x1 = self.ln2.backward(k, &c.x1, &d_ln2_y, &c.m2, &c.r2)?;
+        k.dev_add_inplace(&mut d_x1, d_out)?; // residual through x1
+                                              // x1 = x + Attn(LN1(x))
+        let d_ln1_y = self.attn.backward(k, &c.ln1_y, &c.attn_cache, &d_x1)?;
+        let mut dx = self.ln1.backward(k, x, &d_ln1_y, &c.m1, &c.r1)?;
+        k.dev_add_inplace(&mut dx, &d_x1)?; // residual through x
+        Ok(dx)
+    }
+
+    pub fn adamw_step(&mut self, k: &GpuKernels, t: u32, lr: f32) -> Result<()> {
+        self.ln1.adamw_step(k, t, lr)?;
+        self.attn.adamw_step(k, t, lr)?;
+        self.ln2.adamw_step(k, t, lr)?;
+        self.mlp.adamw_step(k, t, lr)?;
+        Ok(())
+    }
+}
+
 // ─── CPU references for the composed layers (parity oracle) ───
+
+/// CPU multi-head causal self-attention forward (mirrors the GPU composition).
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+fn attention_forward_cpu(
+    x: &[f32],
+    t: usize,
+    e: usize,
+    n_head: usize,
+    wq: &[f32],
+    wk: &[f32],
+    wv: &[f32],
+    wo: &[f32],
+) -> Vec<f32> {
+    let zero = vec![0.0f32; e];
+    let hd = e / n_head;
+    let scale = 1.0f32 / (hd as f32).sqrt();
+    let q = linear_forward_cpu(x, t, e, wq, e, &zero);
+    let kk = linear_forward_cpu(x, t, e, wk, e, &zero);
+    let vv = linear_forward_cpu(x, t, e, wv, e, &zero);
+    let mut ctx = vec![0.0f32; t * e];
+    for h in 0..n_head {
+        let off = h * hd;
+        let mut q_h = vec![0.0f32; t * hd];
+        let mut k_h = vec![0.0f32; t * hd];
+        let mut v_h = vec![0.0f32; t * hd];
+        for i in 0..t {
+            for d in 0..hd {
+                q_h[i * hd + d] = q[i * e + off + d];
+                k_h[i * hd + d] = kk[i * e + off + d];
+                v_h[i * hd + d] = vv[i * e + off + d];
+            }
+        }
+        let mut scores = crate::matmul_nt_cpu(&q_h, t, hd, &k_h, t); // T×T
+        for i in 0..t {
+            for j in 0..t {
+                if j > i {
+                    scores[i * t + j] = -1.0e30;
+                } else {
+                    scores[i * t + j] *= scale;
+                }
+            }
+        }
+        let attn = crate::softmax_cpu(&scores, t, t);
+        let ctx_h = crate::matmul_nn_cpu(&attn, t, t, &v_h, hd); // T×hd
+        for i in 0..t {
+            for d in 0..hd {
+                ctx[i * e + off + d] = ctx_h[i * hd + d];
+            }
+        }
+    }
+    linear_forward_cpu(&ctx, t, e, wo, e, &zero)
+}
 
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
@@ -598,6 +869,141 @@ mod tests {
         assert!(
             last < first * 0.3,
             "GPU MLP block should fit the target: first={first} last={last}"
+        );
+    }
+
+    #[test]
+    fn gpu_attention_forward_matches_cpu() {
+        let k = GpuKernels::new(0).expect("gpu init");
+        let (t, e, h) = (8, 16, 4);
+        let x = fill(t * e, 1);
+        let (wq, wk, wv, wo) = (
+            fill(e * e, 2),
+            fill(e * e, 3),
+            fill(e * e, 4),
+            fill(e * e, 5),
+        );
+        let attn = Attention::new(&k, e, h, &wq, &wk, &wv, &wo).unwrap();
+        let x_dev = k.to_device(&x, t, e).unwrap();
+        let (out_dev, _cache) = attn.forward(&k, &x_dev).unwrap();
+        assert_close(
+            &k.to_host(&out_dev).unwrap(),
+            &attention_forward_cpu(&x, t, e, h, &wq, &wk, &wv, &wo),
+            2.0e-3,
+        );
+    }
+
+    #[test]
+    fn gpu_attention_backward_gradient_check() {
+        // Finite-difference the input gradient through the whole attention
+        // (incl. softmax + causal mask) against the analytic GPU backward.
+        let k = GpuKernels::new(0).expect("gpu init");
+        let (t, e, h) = (5, 8, 2);
+        let x = fill(t * e, 1);
+        let (wq, wk, wv, wo) = (
+            fill(e * e, 2),
+            fill(e * e, 3),
+            fill(e * e, 4),
+            fill(e * e, 5),
+        );
+        let g = fill(t * e, 6); // cotangent / d_out
+        let mut attn = Attention::new(&k, e, h, &wq, &wk, &wv, &wo).unwrap();
+        let x_dev = k.to_device(&x, t, e).unwrap();
+        let (_out, cache) = attn.forward(&k, &x_dev).unwrap();
+        let g_dev = k.to_device(&g, t, e).unwrap();
+        let dx = k
+            .to_host(&attn.backward(&k, &x_dev, &cache, &g_dev).unwrap())
+            .unwrap();
+
+        // loss(x) = Σ out(x) ⊙ g, computed via the CPU forward oracle.
+        let loss_of = |xv: &[f32]| -> f32 {
+            attention_forward_cpu(xv, t, e, h, &wq, &wk, &wv, &wo)
+                .iter()
+                .zip(&g)
+                .map(|(a, b)| a * b)
+                .sum()
+        };
+        let eps = 2.0e-3f32;
+        for idx in 0..(t * e) {
+            let mut xp = x.clone();
+            xp[idx] += eps;
+            let mut xm = x.clone();
+            xm[idx] -= eps;
+            let num = (loss_of(&xp) - loss_of(&xm)) / (2.0 * eps);
+            let denom = dx[idx].abs().max(0.5);
+            assert!(
+                (num - dx[idx]).abs() / denom < 0.05,
+                "dx[{idx}]: numeric={num} analytic={}",
+                dx[idx]
+            );
+        }
+    }
+
+    #[test]
+    fn gpu_block_trains_end_to_end() {
+        // A full pre-norm transformer block (attention + MLP + residuals)
+        // trained entirely on the GPU. Requires a correct attention backward.
+        let k = GpuKernels::new(0).expect("gpu init");
+        let (t, e, h, hidden) = (8, 16, 4, 32);
+        let x = fill(t * e, 1);
+        let target = fill(t * e, 2);
+        let small =
+            |seed: u64, n: usize| -> Vec<f32> { fill(n, seed).iter().map(|v| v * 0.1).collect() };
+        let attn = Attention::new(
+            &k,
+            e,
+            h,
+            &small(3, e * e),
+            &small(4, e * e),
+            &small(5, e * e),
+            &small(6, e * e),
+        )
+        .unwrap();
+        let mlp = Mlp::new(
+            &k,
+            &small(7, hidden * e),
+            &vec![0.0; hidden],
+            &small(8, e * hidden),
+            &vec![0.0; e],
+            e,
+            hidden,
+        )
+        .unwrap();
+        let ln1 = LayerNorm::new(&k, e).unwrap();
+        let ln2 = LayerNorm::new(&k, e).unwrap();
+        let mut block = Block::new(ln1, attn, ln2, mlp);
+        let x_dev = k.to_device(&x, t, e).unwrap();
+
+        let n = (t * e) as f32;
+        let mse = |p: &[f32]| {
+            p.iter()
+                .zip(&target)
+                .map(|(a, b)| (a - b) * (a - b))
+                .sum::<f32>()
+                / n
+        };
+        let mut first = 0.0f32;
+        let mut last = 0.0f32;
+        for step in 1..=200u32 {
+            let (out_dev, cache) = block.forward(&k, &x_dev).unwrap();
+            let pred = k.to_host(&out_dev).unwrap();
+            let loss = mse(&pred);
+            let dout: Vec<f32> = pred
+                .iter()
+                .zip(&target)
+                .map(|(a, b)| 2.0 * (a - b) / n)
+                .collect();
+            let dout_dev = k.to_device(&dout, t, e).unwrap();
+            block.backward(&k, &x_dev, &cache, &dout_dev).unwrap();
+            block.adamw_step(&k, step, 0.01).unwrap();
+            if step == 1 {
+                first = loss;
+            }
+            last = loss;
+        }
+        assert!(
+            last < first * 0.3,
+            "full transformer block should fit the target: first={first} last={last}"
         );
     }
 }
