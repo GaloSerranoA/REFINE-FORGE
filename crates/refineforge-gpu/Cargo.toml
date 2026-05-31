@@ -15,3 +15,7 @@ cuda = ["dep:cudarc"]
 [dependencies]
 anyhow = "1.0"
 cudarc = { version = "0.19", optional = true, default-features = false, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-version-from-build-system"] }
+
+[dev-dependencies]
+# Only used by the `train_mathlib` example to parse the SFT pack's records.json.
+serde_json = "1.0"

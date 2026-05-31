@@ -569,7 +569,306 @@ impl Block {
     }
 }
 
+/// Deterministic seeded `Normal(0, std)` init (SplitMix64 + Box-Muller).
+fn seeded_normal(n: usize, seed: u64, std: f32) -> Vec<f32> {
+    let mut s = seed;
+    let mut next = || {
+        s = s.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = s;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        ((z ^ (z >> 31)) >> 11) as f32 / ((1u64 << 53) as f32)
+    };
+    (0..n)
+        .map(|_| {
+            let u1 = next().max(1.0e-7);
+            let u2 = next();
+            (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos() * std
+        })
+        .collect()
+}
+
+/// A device-resident decoder-only transformer (GPT): trainable token + position
+/// embeddings → N pre-norm [`Block`]s → final LayerNorm → LM head. Forward,
+/// backward, cross-entropy, and AdamW all run on the GPU.
+pub struct GptModel {
+    tok_emb: DeviceTensor,
+    pos_emb: DeviceTensor,
+    d_tok: DeviceTensor,
+    d_pos: DeviceTensor,
+    mt: DeviceTensor,
+    vt: DeviceTensor,
+    mp: DeviceTensor,
+    vp: DeviceTensor,
+    blocks: Vec<Block>,
+    ln_f: LayerNorm,
+    lm_head: Linear,
+    vocab: usize,
+    context: usize,
+}
+
+/// Forward activations the [`GptModel`] backward needs.
+pub struct ModelCache {
+    xs: Vec<DeviceTensor>,
+    caches: Vec<BlockCache>,
+    lnf_y: DeviceTensor,
+    m: DeviceTensor,
+    r: DeviceTensor,
+}
+
+impl GptModel {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        k: &GpuKernels,
+        vocab: usize,
+        embed: usize,
+        n_head: usize,
+        n_layers: usize,
+        hidden: usize,
+        context: usize,
+        seed: u64,
+    ) -> Result<Self> {
+        let std = 0.02f32;
+        let blocks = (0..n_layers)
+            .map(|i| -> Result<Block> {
+                let s = seed.wrapping_add(i as u64 * 1000 + 1);
+                let attn = Attention::new(
+                    k,
+                    embed,
+                    n_head,
+                    &seeded_normal(embed * embed, s + 1, std),
+                    &seeded_normal(embed * embed, s + 2, std),
+                    &seeded_normal(embed * embed, s + 3, std),
+                    &seeded_normal(embed * embed, s + 4, std),
+                )?;
+                let mlp = Mlp::new(
+                    k,
+                    &seeded_normal(hidden * embed, s + 5, std),
+                    &vec![0.0; hidden],
+                    &seeded_normal(embed * hidden, s + 6, std),
+                    &vec![0.0; embed],
+                    embed,
+                    hidden,
+                )?;
+                Ok(Block::new(
+                    LayerNorm::new(k, embed)?,
+                    attn,
+                    LayerNorm::new(k, embed)?,
+                    mlp,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
+            tok_emb: k.to_device(
+                &seeded_normal(vocab * embed, seed.wrapping_mul(13) + 1, std),
+                vocab,
+                embed,
+            )?,
+            pos_emb: k.to_device(
+                &seeded_normal(context * embed, seed.wrapping_mul(13) + 2, std),
+                context,
+                embed,
+            )?,
+            d_tok: k.zeros_device(vocab, embed)?,
+            d_pos: k.zeros_device(context, embed)?,
+            mt: k.zeros_device(vocab, embed)?,
+            vt: k.zeros_device(vocab, embed)?,
+            mp: k.zeros_device(context, embed)?,
+            vp: k.zeros_device(context, embed)?,
+            blocks,
+            ln_f: LayerNorm::new(k, embed)?,
+            lm_head: Linear::new(
+                k,
+                &seeded_normal(vocab * embed, seed.wrapping_mul(13) + 3, std),
+                &vec![0.0; vocab],
+                embed,
+                vocab,
+            )?,
+            vocab,
+            context,
+        })
+    }
+
+    pub fn forward(&self, k: &GpuKernels, tokens: &[i32]) -> Result<(DeviceTensor, ModelCache)> {
+        anyhow::ensure!(tokens.len() <= self.context, "sequence longer than context");
+        let x0 = k.dev_embedding_forward(&self.tok_emb, &self.pos_emb, tokens)?;
+        let mut xs = vec![x0];
+        let mut caches = Vec::with_capacity(self.blocks.len());
+        for block in &self.blocks {
+            let (y, c) = block.forward(k, xs.last().unwrap())?;
+            caches.push(c);
+            xs.push(y);
+        }
+        let (lnf_y, m, r) = self.ln_f.forward(k, xs.last().unwrap())?;
+        let logits = self.lm_head.forward(k, &lnf_y)?;
+        Ok((
+            logits,
+            ModelCache {
+                xs,
+                caches,
+                lnf_y,
+                m,
+                r,
+            },
+        ))
+    }
+
+    pub fn backward(
+        &mut self,
+        k: &GpuKernels,
+        tokens: &[i32],
+        cache: &ModelCache,
+        d_logits: &DeviceTensor,
+    ) -> Result<()> {
+        let d_lnf_y = self.lm_head.backward(k, &cache.lnf_y, d_logits)?;
+        let n = self.blocks.len();
+        let mut d_x = self
+            .ln_f
+            .backward(k, &cache.xs[n], &d_lnf_y, &cache.m, &cache.r)?;
+        for i in (0..n).rev() {
+            d_x = self.blocks[i].backward(k, &cache.xs[i], &cache.caches[i], &d_x)?;
+        }
+        let (d_tok, d_pos) = k.dev_embedding_backward(&d_x, tokens, self.vocab, self.context)?;
+        self.d_tok = d_tok;
+        self.d_pos = d_pos;
+        Ok(())
+    }
+
+    pub fn adamw_step(&mut self, k: &GpuKernels, t: u32, lr: f32) -> Result<()> {
+        k.dev_adamw(
+            &mut self.tok_emb,
+            &self.d_tok,
+            &mut self.mt,
+            &mut self.vt,
+            t,
+            lr,
+            0.9,
+            0.999,
+            1.0e-8,
+            0.0,
+        )?;
+        k.dev_adamw(
+            &mut self.pos_emb,
+            &self.d_pos,
+            &mut self.mp,
+            &mut self.vp,
+            t,
+            lr,
+            0.9,
+            0.999,
+            1.0e-8,
+            0.0,
+        )?;
+        for block in &mut self.blocks {
+            block.adamw_step(k, t, lr)?;
+        }
+        self.ln_f.adamw_step(k, t, lr)?;
+        self.lm_head.adamw_step(k, t, lr)?;
+        Ok(())
+    }
+
+    /// Count active next-token targets (mask set, in-vocab) in a sequence.
+    fn count_targets(&self, tokens: &[i32], loss_mask: &[i32]) -> usize {
+        (0..tokens.len().saturating_sub(1))
+            .filter(|&i| {
+                loss_mask[i + 1] != 0 && tokens[i + 1] >= 0 && (tokens[i + 1] as usize) < self.vocab
+            })
+            .count()
+    }
+
+    /// One training step on one sequence → `(mean_loss, accuracy)`.
+    pub fn train_step(
+        &mut self,
+        k: &GpuKernels,
+        tokens: &[i32],
+        loss_mask: &[i32],
+        t: u32,
+        lr: f32,
+    ) -> Result<(f32, f32)> {
+        let (logits, cache) = self.forward(k, tokens)?;
+        let count = self.count_targets(tokens, loss_mask);
+        let inv = if count > 0 { 1.0 / count as f32 } else { 0.0 };
+        let (d_logits, losses, correct) = k.dev_cross_entropy(&logits, tokens, loss_mask, inv)?;
+        self.backward(k, tokens, &cache, &d_logits)?;
+        self.adamw_step(k, t, lr)?;
+        Ok(mean_loss_acc(&losses, &correct, count))
+    }
+
+    /// Forward-only loss/accuracy on one sequence (no weight update) — held-out eval.
+    pub fn evaluate(
+        &self,
+        k: &GpuKernels,
+        tokens: &[i32],
+        loss_mask: &[i32],
+    ) -> Result<(f32, f32)> {
+        let (logits, _cache) = self.forward(k, tokens)?;
+        let count = self.count_targets(tokens, loss_mask);
+        let inv = if count > 0 { 1.0 / count as f32 } else { 0.0 };
+        let (_d, losses, correct) = k.dev_cross_entropy(&logits, tokens, loss_mask, inv)?;
+        Ok(mean_loss_acc(&losses, &correct, count))
+    }
+}
+
+/// Mean loss + accuracy from per-row cross-entropy outputs over `count` targets.
+fn mean_loss_acc(losses: &[f32], correct: &[i32], count: usize) -> (f32, f32) {
+    if count == 0 {
+        return (0.0, 0.0);
+    }
+    (
+        losses.iter().sum::<f32>() / count as f32,
+        correct.iter().sum::<i32>() as f32 / count as f32,
+    )
+}
+
 // ─── CPU references for the composed layers (parity oracle) ───
+
+/// CPU embedding forward (mirrors `embedding_forward`).
+#[cfg(test)]
+fn embedding_forward_cpu(tok_emb: &[f32], pos_emb: &[f32], tokens: &[i32], e: usize) -> Vec<f32> {
+    let t = tokens.len();
+    let mut x = vec![0.0f32; t * e];
+    for i in 0..t {
+        for d in 0..e {
+            x[i * e + d] = tok_emb[tokens[i] as usize * e + d] + pos_emb[i * e + d];
+        }
+    }
+    x
+}
+
+/// CPU softmax cross-entropy (mirrors `softmax_cross_entropy`).
+#[cfg(test)]
+fn cross_entropy_cpu(
+    logits: &[f32],
+    tokens: &[i32],
+    loss_mask: &[i32],
+    inv: f32,
+    t: usize,
+    v: usize,
+) -> (Vec<f32>, Vec<f32>, Vec<i32>) {
+    let mut d = vec![0.0f32; t * v];
+    let mut loss = vec![0.0f32; t];
+    let mut correct = vec![0i32; t];
+    for i in 0..t.saturating_sub(1) {
+        let target = tokens[i + 1];
+        if loss_mask[i + 1] == 0 || target < 0 || target as usize >= v {
+            continue;
+        }
+        let target = target as usize;
+        let probs = crate::softmax_cpu(&logits[i * v..i * v + v], 1, v);
+        for j in 0..v {
+            d[i * v + j] = inv * (probs[j] - if j == target { 1.0 } else { 0.0 });
+        }
+        loss[i] = -probs[target].max(1.0e-12).ln();
+        let am = probs
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.total_cmp(b.1))
+            .map(|x| x.0)
+            .unwrap();
+        correct[i] = i32::from(am == target);
+    }
+    (d, loss, correct)
+}
 
 /// CPU multi-head causal self-attention forward (mirrors the GPU composition).
 #[cfg(test)]
@@ -1004,6 +1303,94 @@ mod tests {
         assert!(
             last < first * 0.3,
             "full transformer block should fit the target: first={first} last={last}"
+        );
+    }
+
+    #[test]
+    fn gpu_embedding_matches_cpu() {
+        let k = GpuKernels::new(0).expect("gpu init");
+        let (vocab, e, t) = (20usize, 16usize, 10usize);
+        let tok_emb = fill(vocab * e, 1);
+        let pos_emb = fill(t * e, 2);
+        let tokens: Vec<i32> = (0..t).map(|i| ((i * 7 + 3) % vocab) as i32).collect();
+        let te = k.to_device(&tok_emb, vocab, e).unwrap();
+        let pe = k.to_device(&pos_emb, t, e).unwrap();
+        let x = k
+            .to_host(&k.dev_embedding_forward(&te, &pe, &tokens).unwrap())
+            .unwrap();
+        assert_close(
+            &x,
+            &embedding_forward_cpu(&tok_emb, &pos_emb, &tokens, e),
+            1.0e-5,
+        );
+
+        let dx = fill(t * e, 3);
+        let dx_dev = k.to_device(&dx, t, e).unwrap();
+        let (d_tok, d_pos) = k
+            .dev_embedding_backward(&dx_dev, &tokens, vocab, t)
+            .unwrap();
+        let mut dt_cpu = vec![0.0f32; vocab * e];
+        let mut dp_cpu = vec![0.0f32; t * e];
+        for i in 0..t {
+            for d in 0..e {
+                dt_cpu[tokens[i] as usize * e + d] += dx[i * e + d];
+                dp_cpu[i * e + d] += dx[i * e + d];
+            }
+        }
+        assert_close(&k.to_host(&d_tok).unwrap(), &dt_cpu, 1.0e-3);
+        assert_close(&k.to_host(&d_pos).unwrap(), &dp_cpu, 1.0e-5);
+    }
+
+    #[test]
+    fn gpu_cross_entropy_matches_cpu() {
+        let k = GpuKernels::new(0).expect("gpu init");
+        let (t, v) = (12usize, 30usize);
+        let logits = fill(t * v, 1);
+        let tokens: Vec<i32> = (0..t).map(|i| ((i * 5 + 2) % v) as i32).collect();
+        let loss_mask: Vec<i32> = (0..t).map(|i| i32::from(i % 3 != 0)).collect();
+        let count = (1..t).filter(|&i| loss_mask[i] != 0).count();
+        let inv = 1.0 / count as f32;
+        let logits_dev = k.to_device(&logits, t, v).unwrap();
+        let (d_dev, loss, correct) = k
+            .dev_cross_entropy(&logits_dev, &tokens, &loss_mask, inv)
+            .unwrap();
+        let (d_cpu, loss_cpu, correct_cpu) =
+            cross_entropy_cpu(&logits, &tokens, &loss_mask, inv, t, v);
+        assert_close(&k.to_host(&d_dev).unwrap(), &d_cpu, 1.0e-4);
+        assert_close(&loss, &loss_cpu, 1.0e-4);
+        assert_eq!(correct, correct_cpu);
+    }
+
+    #[test]
+    fn gpu_gpt_model_trains_end_to_end() {
+        // A full GPT (embeddings → 2 blocks → final LN → LM head + cross-entropy)
+        // trained entirely on the GPU learns a periodic next-token pattern.
+        let k = GpuKernels::new(0).expect("gpu init");
+        let (vocab, embed, n_head, n_layers, hidden, context) = (24, 32, 4, 2, 64, 12);
+        let mut model =
+            GptModel::new(&k, vocab, embed, n_head, n_layers, hidden, context, 7).unwrap();
+        let tokens: Vec<i32> = (0..context).map(|i| ((i % 5) + 2) as i32).collect();
+        let loss_mask: Vec<i32> = vec![1; context];
+        let mut first = 0.0f32;
+        let mut last = 0.0f32;
+        let mut last_acc = 0.0f32;
+        for step in 1..=80u32 {
+            let (loss, acc) = model
+                .train_step(&k, &tokens, &loss_mask, step, 0.01)
+                .unwrap();
+            if step == 1 {
+                first = loss;
+            }
+            last = loss;
+            last_acc = acc;
+        }
+        assert!(
+            last < first * 0.3,
+            "GPT model should learn the pattern: first={first} last={last}"
+        );
+        assert!(
+            last_acc > 0.7,
+            "next-token accuracy should rise: {last_acc}"
         );
     }
 }
