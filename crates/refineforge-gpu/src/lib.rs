@@ -499,6 +499,52 @@ extern "C" __global__ void softmax_cross_entropy(const float* logits, const int*
     loss_out[i] = -logf(fmaxf(pt, 1e-12f));
     correct_out[i] = (am == target) ? 1 : 0;
 }
+
+// ─── Packed mini-batch variants (multiple sequences in one buffer) ───
+
+// Packed embedding forward: positions reset per segment via pos_ids.
+// x[i,d] = tok_emb[tokens[i], d] + pos_emb[pos_ids[i], d]
+extern "C" __global__ void embedding_forward_packed(const float* tok_emb, const float* pos_emb,
+                                                    const int* tokens, const int* pos_ids,
+                                                    float* x, int t, int e) {
+    int d = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i < t && d < e) x[i * e + d] = tok_emb[tokens[i] * e + d] + pos_emb[pos_ids[i] * e + d];
+}
+
+// Packed embedding backward: scatter dx into d_tok_emb (by token) and d_pos_emb
+// (by pos_ids). Both are atomic since tokens and positions repeat across the batch.
+extern "C" __global__ void embedding_backward_packed(const float* dx, const int* tokens,
+                                                     const int* pos_ids, float* d_tok_emb,
+                                                     float* d_pos_emb, int t, int e) {
+    int d = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i < t && d < e) {
+        float g = dx[i * e + d];
+        atomicAdd(&d_tok_emb[tokens[i] * e + d], g);
+        atomicAdd(&d_pos_emb[pos_ids[i] * e + d], g);
+    }
+}
+
+// Segmented causal mask: token i attends to j iff same segment and j <= i.
+extern "C" __global__ void scale_segmented_causal_mask(float* s, const int* seg, int tt, float scale) {
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i < tt && j < tt) {
+        if (j > i || seg[i] != seg[j]) s[i * tt + j] = -1e30f;
+        else s[i * tt + j] *= scale;
+    }
+}
+
+// Backward of scale_segmented_causal_mask: scale kept entries, zero the masked.
+extern "C" __global__ void scale_segmented_causal_mask_grad(float* s, const int* seg, int tt, float scale) {
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i < tt && j < tt) {
+        if (j > i || seg[i] != seg[j]) s[i * tt + j] = 0.0f;
+        else s[i * tt + j] *= scale;
+    }
+}
 "#;
 
 #[cfg(feature = "cuda")]
@@ -1375,6 +1421,62 @@ pub mod gpu {
             Ok(())
         }
 
+        /// In-place scale + segmented causal mask: token `i` attends to `j` only
+        /// within the same segment (`seg_ids[i] == seg_ids[j]`) and `j <= i`.
+        pub fn dev_scale_segmented_causal_mask(
+            &self,
+            s: &mut DeviceTensor,
+            seg_ids: &[i32],
+            scale: f32,
+        ) -> Result<()> {
+            anyhow::ensure!(s.rows == s.cols, "segmented mask expects a square matrix");
+            anyhow::ensure!(seg_ids.len() == s.rows, "seg_ids length must match rows");
+            let seg_dev = self.stream.clone_htod(seg_ids).context("htod seg_ids")?;
+            let func = self.module.load_function("scale_segmented_causal_mask")?;
+            let ti = s.rows as i32;
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&mut s.buf);
+            b.arg(&seg_dev);
+            b.arg(&ti);
+            b.arg(&scale);
+            // SAFETY: 4 args match scale_segmented_causal_mask(float*, const int*, int, float).
+            unsafe {
+                b.launch(cfg_2d(s.rows, s.cols))
+                    .context("launch scale_segmented_causal_mask")?;
+            }
+            Ok(())
+        }
+
+        /// Backward of [`GpuKernels::dev_scale_segmented_causal_mask`].
+        pub fn dev_scale_segmented_causal_mask_grad(
+            &self,
+            s: &mut DeviceTensor,
+            seg_ids: &[i32],
+            scale: f32,
+        ) -> Result<()> {
+            anyhow::ensure!(
+                s.rows == s.cols,
+                "segmented mask grad expects a square matrix"
+            );
+            anyhow::ensure!(seg_ids.len() == s.rows, "seg_ids length must match rows");
+            let seg_dev = self.stream.clone_htod(seg_ids).context("htod seg_ids")?;
+            let func = self
+                .module
+                .load_function("scale_segmented_causal_mask_grad")?;
+            let ti = s.rows as i32;
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&mut s.buf);
+            b.arg(&seg_dev);
+            b.arg(&ti);
+            b.arg(&scale);
+            // SAFETY: 4 args match scale_segmented_causal_mask_grad(float*, const int*, int, float).
+            unsafe {
+                b.launch(cfg_2d(s.rows, s.cols))
+                    .context("launch scale_segmented_causal_mask_grad")?;
+            }
+            Ok(())
+        }
+
         // ─── Embedding + cross-entropy (model endpoints) ───
 
         /// `x[i] = tok_emb[tokens[i]] + pos_emb[i]` for a length-`T` sequence.
@@ -1439,6 +1541,78 @@ pub mod gpu {
             unsafe {
                 b.launch(cfg_2d(t, e))
                     .context("launch embedding_backward")?;
+            }
+            Ok((d_tok, d_pos))
+        }
+
+        /// Packed embedding forward: `x[i] = tok_emb[tokens[i]] + pos_emb[pos_ids[i]]`,
+        /// so positions reset per packed sequence.
+        pub fn dev_embedding_forward_packed(
+            &self,
+            tok_emb: &DeviceTensor,
+            pos_emb: &DeviceTensor,
+            tokens: &[i32],
+            pos_ids: &[i32],
+        ) -> Result<DeviceTensor> {
+            let t = tokens.len();
+            let e = tok_emb.cols;
+            anyhow::ensure!(pos_ids.len() == t, "pos_ids length must match tokens");
+            anyhow::ensure!(pos_emb.cols == e, "embedding dim mismatch");
+            let tok_dev = self.stream.clone_htod(tokens).context("htod tokens")?;
+            let pos_dev = self.stream.clone_htod(pos_ids).context("htod pos_ids")?;
+            let mut x = self.zeros_device(t, e)?;
+            let func = self.module.load_function("embedding_forward_packed")?;
+            let (ti, ei) = (t as i32, e as i32);
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&tok_emb.buf);
+            b.arg(&pos_emb.buf);
+            b.arg(&tok_dev);
+            b.arg(&pos_dev);
+            b.arg(&mut x.buf);
+            b.arg(&ti);
+            b.arg(&ei);
+            // SAFETY: 7 args match embedding_forward_packed.
+            unsafe {
+                b.launch(cfg_2d(t, e))
+                    .context("launch embedding_forward_packed")?;
+            }
+            Ok(x)
+        }
+
+        /// Packed embedding backward: scatter `dx` into `(d_tok_emb [vocab×E],
+        /// d_pos_emb [pos_rows×E])` by `tokens` and `pos_ids` (both atomic, since
+        /// tokens and positions repeat across the packed batch).
+        pub fn dev_embedding_backward_packed(
+            &self,
+            dx: &DeviceTensor,
+            tokens: &[i32],
+            pos_ids: &[i32],
+            vocab: usize,
+            pos_rows: usize,
+        ) -> Result<(DeviceTensor, DeviceTensor)> {
+            let (t, e) = (dx.rows, dx.cols);
+            anyhow::ensure!(
+                tokens.len() == t && pos_ids.len() == t,
+                "packed embedding backward length mismatch"
+            );
+            let tok_dev = self.stream.clone_htod(tokens).context("htod tokens")?;
+            let pos_dev = self.stream.clone_htod(pos_ids).context("htod pos_ids")?;
+            let mut d_tok = self.zeros_device(vocab, e)?;
+            let mut d_pos = self.zeros_device(pos_rows, e)?;
+            let func = self.module.load_function("embedding_backward_packed")?;
+            let (ti, ei) = (t as i32, e as i32);
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&dx.buf);
+            b.arg(&tok_dev);
+            b.arg(&pos_dev);
+            b.arg(&mut d_tok.buf);
+            b.arg(&mut d_pos.buf);
+            b.arg(&ti);
+            b.arg(&ei);
+            // SAFETY: 7 args match embedding_backward_packed.
+            unsafe {
+                b.launch(cfg_2d(t, e))
+                    .context("launch embedding_backward_packed")?;
             }
             Ok((d_tok, d_pos))
         }
