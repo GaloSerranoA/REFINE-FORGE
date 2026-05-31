@@ -1,0 +1,52 @@
+name: generate-flake-lock
+
+# One-time helper. `flake.nix` ships without a committed `flake.lock`, so
+# `nix flake check --no-update-lock-file` in ci.yml fails, which skips the
+# `sign-bundles` (cosign OIDC) job. Nix does not run on Windows, so this job
+# generates the lock on a Nix-capable runner and commits it back. Trigger it
+# once from the Actions tab ("Run workflow" on the default branch); after the
+# lock lands, the normal `ci` run can sign bundles.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    name: generate-flake-lock
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix (flakes enabled)
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Generate flake.lock
+        run: nix flake lock
+
+      - name: Upload flake.lock artifact (backup)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flake-lock
+          path: flake.lock
+          if-no-files-found: warn
+
+      - name: Commit flake.lock to ${{ github.ref_name }}
+        run: |
+          if [ ! -f flake.lock ]; then
+            echo "::error::flake.lock was not generated"; exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add flake.lock
+          if git diff --cached --quiet; then
+            echo "flake.lock unchanged; nothing to commit"
+            exit 0
+          fi
+          git commit -m "chore(nix): add generated flake.lock (CI helper)"
+          git push origin "HEAD:${{ github.ref_name }}"
