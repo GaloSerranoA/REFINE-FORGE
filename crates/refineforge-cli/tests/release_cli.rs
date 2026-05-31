@@ -62,24 +62,31 @@ fn release_ready_dry_run_writes_evidence_files() {
         64
     );
 
-    // The dry-run evidence is real, not a placeholder: the SBOM lists actual
-    // dependency components and the provenance attests the in-repo bundles.
-    let sbom: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(evidence.join("sbom.cyclonedx.json")).unwrap(),
-    )
-    .unwrap();
-    assert!(
-        !sbom["components"].as_array().unwrap().is_empty(),
-        "dry-run SBOM should list real dependency components"
-    );
-    let provenance: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(evidence.join("provenance.intoto.json")).unwrap(),
-    )
-    .unwrap();
-    assert!(
-        !provenance["subject"].as_array().unwrap().is_empty(),
-        "dry-run provenance should attest in-repo bundle subjects"
-    );
+    // From a full checkout the dry-run evidence is real (not placeholder): the
+    // SBOM lists actual dependency components and the provenance attests the
+    // in-repo bundles. Skip these richness checks in the hermetic Nix build
+    // sandbox, where `artifacts/` is filtered out of the source and
+    // `cargo metadata` is unavailable, so the code correctly falls back to empty
+    // (the logic itself is covered by release::tests). `artifacts/` presence
+    // discriminates the two environments.
+    if workspace_root().join("artifacts").is_dir() {
+        let sbom: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(evidence.join("sbom.cyclonedx.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            !sbom["components"].as_array().unwrap().is_empty(),
+            "dry-run SBOM should list real dependency components"
+        );
+        let provenance: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(evidence.join("provenance.intoto.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            !provenance["subject"].as_array().unwrap().is_empty(),
+            "dry-run provenance should attest in-repo bundle subjects"
+        );
+    }
     assert!(report["artifacts"]["verifier_container_digest"].is_null());
 }
 
