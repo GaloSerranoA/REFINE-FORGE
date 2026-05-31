@@ -146,6 +146,37 @@ reaches **44.9 % train / 13.3 % held-out** next-token accuracy in **288 steps /
 
 Honesty constraints from this design are upheld: the GPU path is **`f32`** and
 **parity-checked within tolerance, never claimed bit-exact**; the CPU `f64` path
-remains the deterministic reference. Larger-scale training and the GPU compute
-ledger / bit-exact build evidence (original M5–M6 "scale up" + "evidence" items)
-remain open follow-ups.
+remains the deterministic reference.
+
+### Phase 2 — scale-up (M7–M8, 2026-05-31)
+
+- **M7 — packed mini-batch path (segmented attention).** Several sequences in one
+  buffer: segmented causal attention (a token attends only within its own
+  sequence) + per-sequence-resetting position embeddings. New parity-checked
+  kernels (`embedding_forward_packed`/`embedding_backward_packed`,
+  `scale_segmented_causal_mask`(+grad)); `GptModel::{forward,backward,train_step,
+  evaluate}_packed`. The gate (`gpu_packed_forward_matches_sequential`) asserts
+  packed per-token logits equal the per-sequence forwards within 3e-3.
+  **Honest throughput finding:** this is *not* a speed win for short-sequence
+  batches — measured **0.95×** vs sequential, because segmented attention is
+  O(packed_length²) (B short sequences ⇒ ~B× wasted attention). Its value is
+  correct mini-batch gradient semantics; a **block-diagonal / flash-attention
+  kernel** (O(Σ Lᵢ²)) is the throughput follow-up.
+
+- **M8 — scale on the full Mathlib data.** A bigger GPT (`embed=256, heads=8,
+  layers=4, hidden=1024, ctx=256`) trained on the **full 800-train / 100-held-out**
+  SFT pack (vocab 7505, 143k tokens) via the `train_scale` example (lr warmup +
+  cosine decay, per-epoch held-out eval). **Result (RTX 3060, 16k steps / ~10 min,
+  37 ms/step):** held-out next-token accuracy peaks at **25.6 % (epoch 6)**, best
+  held-out loss **4.74 (epoch 4)** — vs the **CPU `native-gpt` scale baseline of
+  5.6 % / 6.40 after 40 steps** (the CPU `f64` path stalled at ~5 s/step and never
+  reached convergence). That is a **~4.6× held-out accuracy gain**, and the
+  decisive point of the GPU phase: the CPU was *compute-bound*; the GPU runs the
+  thousands of steps it could not.
+
+  **Honest caveat:** the model **overfits** past ~epoch 6 (train accuracy → 99.5 %
+  by epoch 20 while held-out drifts to 22 % and held-out loss rises to 7.8). The
+  bottleneck has moved from compute to **data / regularization** — and AdamW weight
+  decay is currently `0.0`. Regularization (weight decay, dropout), early stopping,
+  a block-diagonal attention kernel for real packed throughput, more data, and the
+  GPU compute ledger / bit-exact build evidence are the open follow-ups.
