@@ -36,6 +36,16 @@ fn main() -> anyhow::Result<()> {
         Some(s) => s.parse()?,
         None => 12,
     };
+    // Defaults are the measured-best regularization (best held-out loss, peak
+    // overfitting delayed to epoch ~10); pass explicit args to ablate.
+    let weight_decay: f32 = match args.next() {
+        Some(s) => s.parse()?,
+        None => 0.1,
+    };
+    let label_smoothing: f32 = match args.next() {
+        Some(s) => s.parse()?,
+        None => 0.1,
+    };
     let pack = std::path::Path::new(&pack_dir);
 
     // ─── load the pack ───
@@ -87,11 +97,13 @@ fn main() -> anyhow::Result<()> {
         tokens.len()
     );
     println!(
-        "model: embed={embed} heads={n_head} layers={n_layers} hidden={hidden} base_lr={base_lr} · {epochs} epochs, batch=1"
+        "model: embed={embed} heads={n_head} layers={n_layers} hidden={hidden} base_lr={base_lr} wd={weight_decay} ls={label_smoothing} · {epochs} epochs, batch=1"
     );
 
     let k = GpuKernels::new(0)?;
     let mut model = GptModel::new(&k, vocab, embed, n_head, n_layers, hidden, context, 7)?;
+    model.set_weight_decay(weight_decay);
+    model.set_label_smoothing(label_smoothing);
 
     let total_steps = epochs as usize * train.len();
     let warmup = (total_steps / 20).max(1);
