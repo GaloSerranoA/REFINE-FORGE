@@ -1,8 +1,33 @@
 {
-  "schema_version": "refineforge-human-approval-v1",
-  "human_operator": "Galo Training Operator",
-  "role": "training",
+  "approved_at": "2026-05-31T08:24:22.435627900+00:00",
+  "candidate_id": "live-heldout-smoke-candidate-2026-05-25",
+  "candidate_model_id": "live-heldout-smoke-candidate-2026-05-25",
+  "checkpoint_sha256": "d8e2cbc51ff9789032dd029e3097bca5e975a3bd36751b91ea2832caf26ec738",
+  "conversion_manifest_sha256": "c03fef414c15702e8d38b69afd8b2b1e176488c5fcbb50daf3af9012db55a0a7",
   "decision": "approved",
-  "approved_at": "2026-05-25T05:12:32Z",
-  "evidence_summary": "Approved by the human operator after review request. Evidence: live local native causal smoke run on 32 real Mathlib Anthropic SFT rows, 24 train and 8 heldout; candidate completed 3 non-dry-run steps; baseline completed 1 non-dry-run step; regression passed with dev_loss_inverse +0.005560476845942741, heldout_exact_patch_acceptance delta 0.0, target_token_accuracy delta 0.0; checkpoint, conversion, eval, regression, compute ledger, and promotion evidence generated under production-proof/evidence/live-heldout-smoke-2026-05-25/training."
+  "evidence_dir": ".\\production-proof/evidence/live-heldout-smoke-2026-05-25",
+  "evidence_summary": "training production-proof evidence reviewed for live-heldout-smoke-candidate-2026-05-25",
+  "human_operator": "Galo Serrano Abad",
+  "metric_deltas": {
+    "dev_loss_inverse": 0.005560476845942741,
+    "heldout_exact_patch_acceptance": 0.0,
+    "target_token_accuracy": 0.0
+  },
+  "policy_path": ".\\production-proof/approval-policy.yaml",
+  "required_evidence": [
+    "training/checkpoint.safetensors",
+    "training/eval-report.json",
+    "training/regression-report.json",
+    "training/compute-ledger.json",
+    "training/conversion-manifest.json",
+    "training/promotion-manifest.json"
+  ],
+  "required_metric_minimums": {
+    "dev_loss_inverse": 0.0,
+    "heldout_exact_patch_acceptance": 0.0,
+    "target_token_accuracy": 0.0
+  },
+  "review_request_path": ".\\.\\production-proof/evidence/live-heldout-smoke-2026-05-25\\approvals\\training.review-request.json",
+  "role": "training",
+  "schema_version": "refineforge-human-approval-v1"
 }
