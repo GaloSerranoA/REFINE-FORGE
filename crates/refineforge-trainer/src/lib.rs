@@ -13,6 +13,7 @@ pub mod hrm_text_runtime;
 pub mod mentor;
 pub mod native;
 pub mod native_causal;
+pub mod native_gpt;
 pub mod pack;
 pub mod progress;
 pub mod promotion;

@@ -25,6 +25,7 @@ mod hrm_text_runtime;
 mod mentor;
 mod native;
 mod native_causal;
+mod native_gpt;
 mod pack;
 mod progress;
 mod promotion;
