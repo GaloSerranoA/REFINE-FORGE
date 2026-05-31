@@ -443,6 +443,62 @@ extern "C" __global__ void scale_causal_mask_grad(float* s, int tt, float scale)
         else s[i * tt + j] *= scale;
     }
 }
+
+// x[i,d] = tok_emb[tokens[i], d] + pos_emb[i, d]
+extern "C" __global__ void embedding_forward(const float* tok_emb, const float* pos_emb,
+                                             const int* tokens, float* x, int t, int e) {
+    int d = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i < t && d < e) x[i * e + d] = tok_emb[tokens[i] * e + d] + pos_emb[i * e + d];
+}
+
+// Scatter dx into d_tok_emb (atomic; a token may repeat across positions) and
+// d_pos_emb (each position row is written by exactly one thread).
+extern "C" __global__ void embedding_backward(const float* dx, const int* tokens,
+                                              float* d_tok_emb, float* d_pos_emb, int t, int e) {
+    int d = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i < t && d < e) {
+        float g = dx[i * e + d];
+        atomicAdd(&d_tok_emb[tokens[i] * e + d], g);
+        d_pos_emb[i * e + d] += g;
+    }
+}
+
+// One thread per row: softmax(logits[i]) → cross-entropy loss + d_logits for the
+// next-token target tokens[i+1] (masked by loss_mask[i+1]). d_logits is scaled
+// by inv_count so the gradient corresponds to the mean loss.
+extern "C" __global__ void softmax_cross_entropy(const float* logits, const int* tokens,
+                                                 const int* loss_mask, float* d_logits,
+                                                 float* loss_out, int* correct_out,
+                                                 int t, int v, float inv_count) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= t) return;
+    const float* row = logits + i * v;
+    float* drow = d_logits + i * v;
+    int target = (i + 1 < t) ? tokens[i + 1] : -1;
+    int active = (i + 1 < t) && (loss_mask[i + 1] != 0) && target >= 0 && target < v;
+    if (!active) {
+        for (int j = 0; j < v; ++j) drow[j] = 0.0f;
+        loss_out[i] = 0.0f;
+        correct_out[i] = 0;
+        return;
+    }
+    float maxv = -1e30f;
+    for (int j = 0; j < v; ++j) maxv = fmaxf(maxv, row[j]);
+    float sum = 0.0f;
+    for (int j = 0; j < v; ++j) sum += expf(row[j] - maxv);
+    int am = 0;
+    float best = -1e30f;
+    for (int j = 0; j < v; ++j) {
+        float p = expf(row[j] - maxv) / sum;
+        drow[j] = inv_count * (p - (j == target ? 1.0f : 0.0f));
+        if (row[j] > best) { best = row[j]; am = j; }
+    }
+    float pt = expf(row[target] - maxv) / sum;
+    loss_out[i] = -logf(fmaxf(pt, 1e-12f));
+    correct_out[i] = (am == target) ? 1 : 0;
+}
 "#;
 
 #[cfg(feature = "cuda")]
@@ -1317,6 +1373,119 @@ pub mod gpu {
                     .context("launch scale_causal_mask_grad")?;
             }
             Ok(())
+        }
+
+        // ─── Embedding + cross-entropy (model endpoints) ───
+
+        /// `x[i] = tok_emb[tokens[i]] + pos_emb[i]` for a length-`T` sequence.
+        pub fn dev_embedding_forward(
+            &self,
+            tok_emb: &DeviceTensor,
+            pos_emb: &DeviceTensor,
+            tokens: &[i32],
+        ) -> Result<DeviceTensor> {
+            let t = tokens.len();
+            let e = tok_emb.cols;
+            anyhow::ensure!(
+                pos_emb.cols == e && pos_emb.rows >= t,
+                "embedding dim mismatch"
+            );
+            let tok_dev = self.stream.clone_htod(tokens).context("htod tokens")?;
+            let mut x = self.zeros_device(t, e)?;
+            let func = self.module.load_function("embedding_forward")?;
+            let (ti, ei) = (t as i32, e as i32);
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&tok_emb.buf);
+            b.arg(&pos_emb.buf);
+            b.arg(&tok_dev);
+            b.arg(&mut x.buf);
+            b.arg(&ti);
+            b.arg(&ei);
+            // SAFETY: 6 args match embedding_forward.
+            unsafe {
+                b.launch(cfg_2d(t, e)).context("launch embedding_forward")?;
+            }
+            Ok(x)
+        }
+
+        /// Scatter `dx` into `(d_tok_emb [vocab×E], d_pos_emb [pos_rows×E])`.
+        /// `d_pos_emb` is sized to the full position table (`pos_rows`, zero-filled
+        /// past the sequence length) so it always matches `pos_emb` for AdamW even
+        /// when the sequence is shorter than the context window.
+        pub fn dev_embedding_backward(
+            &self,
+            dx: &DeviceTensor,
+            tokens: &[i32],
+            vocab: usize,
+            pos_rows: usize,
+        ) -> Result<(DeviceTensor, DeviceTensor)> {
+            let (t, e) = (dx.rows, dx.cols);
+            anyhow::ensure!(tokens.len() == t, "embedding_backward token count mismatch");
+            anyhow::ensure!(pos_rows >= t, "pos_rows must cover the sequence length");
+            let tok_dev = self.stream.clone_htod(tokens).context("htod tokens")?;
+            // alloc_zeros: d_tok_emb is atomicAdd-accumulated.
+            let mut d_tok = self.zeros_device(vocab, e)?;
+            let mut d_pos = self.zeros_device(pos_rows, e)?;
+            let func = self.module.load_function("embedding_backward")?;
+            let (ti, ei) = (t as i32, e as i32);
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&dx.buf);
+            b.arg(&tok_dev);
+            b.arg(&mut d_tok.buf);
+            b.arg(&mut d_pos.buf);
+            b.arg(&ti);
+            b.arg(&ei);
+            // SAFETY: 6 args match embedding_backward.
+            unsafe {
+                b.launch(cfg_2d(t, e))
+                    .context("launch embedding_backward")?;
+            }
+            Ok((d_tok, d_pos))
+        }
+
+        /// Softmax cross-entropy over next-token targets. Returns `d_logits`
+        /// (device, scaled by `inv_count`) plus per-row `(loss, correct)` for
+        /// host-side mean-loss / accuracy.
+        pub fn dev_cross_entropy(
+            &self,
+            logits: &DeviceTensor,
+            tokens: &[i32],
+            loss_mask: &[i32],
+            inv_count: f32,
+        ) -> Result<(DeviceTensor, Vec<f32>, Vec<i32>)> {
+            let (t, v) = (logits.rows, logits.cols);
+            anyhow::ensure!(
+                tokens.len() == t && loss_mask.len() == t,
+                "cross_entropy token/mask length mismatch"
+            );
+            let tok_dev = self.stream.clone_htod(tokens).context("htod tokens")?;
+            let mask_dev = self.stream.clone_htod(loss_mask).context("htod mask")?;
+            let mut d_logits = self.zeros_device(t, v)?;
+            let mut loss_dev = self.stream.alloc_zeros::<f32>(t).context("alloc loss")?;
+            let mut correct_dev = self.stream.alloc_zeros::<i32>(t).context("alloc correct")?;
+            let func = self.module.load_function("softmax_cross_entropy")?;
+            let (ti, vi) = (t as i32, v as i32);
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&logits.buf);
+            b.arg(&tok_dev);
+            b.arg(&mask_dev);
+            b.arg(&mut d_logits.buf);
+            b.arg(&mut loss_dev);
+            b.arg(&mut correct_dev);
+            b.arg(&ti);
+            b.arg(&vi);
+            b.arg(&inv_count);
+            // SAFETY: 9 args match softmax_cross_entropy; one thread per row.
+            unsafe {
+                b.launch(LaunchConfig::for_num_elems(t as u32))
+                    .context("launch softmax_cross_entropy")?;
+            }
+            let loss = self.stream.clone_dtoh(&loss_dev).context("dtoh loss")?;
+            let correct = self
+                .stream
+                .clone_dtoh(&correct_dev)
+                .context("dtoh correct")?;
+            Ok((d_logits, loss, correct))
         }
     }
 }
