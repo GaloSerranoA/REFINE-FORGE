@@ -61,6 +61,25 @@ fn release_ready_dry_run_writes_evidence_files() {
             .len(),
         64
     );
+
+    // The dry-run evidence is real, not a placeholder: the SBOM lists actual
+    // dependency components and the provenance attests the in-repo bundles.
+    let sbom: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(evidence.join("sbom.cyclonedx.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        !sbom["components"].as_array().unwrap().is_empty(),
+        "dry-run SBOM should list real dependency components"
+    );
+    let provenance: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(evidence.join("provenance.intoto.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        !provenance["subject"].as_array().unwrap().is_empty(),
+        "dry-run provenance should attest in-repo bundle subjects"
+    );
     assert!(report["artifacts"]["verifier_container_digest"].is_null());
 }
 

@@ -1,0 +1,11 @@
+{
+  "schema_version": "refineforge-hosted-ci-evidence-v1",
+  "status": "passed",
+  "hosted_ci_url": "https://github.com/GaloSerranoA/REFINE-FORGE/actions/runs/26700352378",
+  "oidc_issuer": "https://token.actions.githubusercontent.com",
+  "run_id": "26700352378",
+  "run_attempt": "1",
+  "workflow": "ci",
+  "ref": "refs/heads/main",
+  "sha": "c58336bf663415f70d6351c5ef8ae64a9595400d"
+}
