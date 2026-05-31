@@ -471,7 +471,7 @@ extern "C" __global__ void embedding_backward(const float* dx, const int* tokens
 extern "C" __global__ void softmax_cross_entropy(const float* logits, const int* tokens,
                                                  const int* loss_mask, float* d_logits,
                                                  float* loss_out, int* correct_out,
-                                                 int t, int v, float inv_count) {
+                                                 int t, int v, float inv_count, float smoothing) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= t) return;
     const float* row = logits + i * v;
@@ -490,11 +490,18 @@ extern "C" __global__ void softmax_cross_entropy(const float* logits, const int*
     for (int j = 0; j < v; ++j) sum += expf(row[j] - maxv);
     int am = 0;
     float best = -1e30f;
+    // Label smoothing: target distribution q_j = smoothing/v everywhere, plus
+    // (1 - smoothing) mass on the true target (smoothing = 0 → standard one-hot).
+    float eps_v = smoothing / (float)v;
+    float q_target = (1.0f - smoothing) + eps_v;
     for (int j = 0; j < v; ++j) {
         float p = expf(row[j] - maxv) / sum;
-        drow[j] = inv_count * (p - (j == target ? 1.0f : 0.0f));
+        float q = (j == target) ? q_target : eps_v;
+        drow[j] = inv_count * (p - q);
         if (row[j] > best) { best = row[j]; am = j; }
     }
+    // loss_out is the hard cross-entropy (-log p_target), kept comparable across
+    // smoothing settings; only the gradient above uses the smoothed target.
     float pt = expf(row[target] - maxv) / sum;
     loss_out[i] = -logf(fmaxf(pt, 1e-12f));
     correct_out[i] = (am == target) ? 1 : 0;
@@ -1626,6 +1633,7 @@ pub mod gpu {
             tokens: &[i32],
             loss_mask: &[i32],
             inv_count: f32,
+            smoothing: f32,
         ) -> Result<(DeviceTensor, Vec<f32>, Vec<i32>)> {
             let (t, v) = (logits.rows, logits.cols);
             anyhow::ensure!(
@@ -1649,7 +1657,8 @@ pub mod gpu {
             b.arg(&ti);
             b.arg(&vi);
             b.arg(&inv_count);
-            // SAFETY: 9 args match softmax_cross_entropy; one thread per row.
+            b.arg(&smoothing);
+            // SAFETY: 10 args match softmax_cross_entropy; one thread per row.
             unsafe {
                 b.launch(LaunchConfig::for_num_elems(t as u32))
                     .context("launch softmax_cross_entropy")?;

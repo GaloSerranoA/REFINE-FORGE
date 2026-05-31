@@ -177,6 +177,29 @@ remains the deterministic reference.
   **Honest caveat:** the model **overfits** past ~epoch 6 (train accuracy → 99.5 %
   by epoch 20 while held-out drifts to 22 % and held-out loss rises to 7.8). The
   bottleneck has moved from compute to **data / regularization** — and AdamW weight
-  decay is currently `0.0`. Regularization (weight decay, dropout), early stopping,
-  a block-diagonal attention kernel for real packed throughput, more data, and the
-  GPU compute ledger / bit-exact build evidence are the open follow-ups.
+  decay was `0.0` here. Early stopping, regularization (next), more data, and the
+  GPU compute ledger are the follow-ups.
+
+- **M9 — regularization (weight decay + label smoothing).** AdamW weight decay is
+  now threaded through the matmul weights only (attention / MLP / LM head — *not*
+  LayerNorm, biases, or embeddings, per standard practice; `set_weight_decay`), and
+  the cross-entropy kernel gained **label smoothing** (`set_label_smoothing`,
+  parity-checked vs CPU at ε = 0 and ε = 0.1). `train_scale` exposes both as args
+  (defaults wd = 0.1, ls = 0.1). **Honest measured effect** (same model/data as M8,
+  20 epochs):
+
+  | config | best held-out acc | best held-out loss | peak epoch |
+  |---|---|---|---|
+  | baseline (wd 0, ls 0) | 25.6 % (e6) | 4.74 (e4) | 6 |
+  | wd 0.01 | ~24.9 % | ~4.75 | 6 |
+  | **wd 0.1 + ls 0.1** | 25.3 % (e10) | **4.55** (e4) | **10** |
+
+  Regularization **measurably improves held-out loss / calibration (4.74 → 4.55,
+  −4 %) and delays the overfitting peak (epoch 6 → 10)**, but it does **not** lift
+  peak held-out **accuracy** (~25 % regardless). The accuracy ceiling is
+  **data-bound**: 800 records cannot support more generalization, and the model
+  still memorizes train to 99 %. Honest takeaway — past ~25 %, the lever is **more
+  data**, not more regularization. The regularizers are correct and reusable
+  (parity-gated); they buy calibration and a wider early-stopping window, not a new
+  accuracy regime. Dropout, a block-diagonal attention kernel for real packed
+  throughput, more data, and the GPU compute ledger remain the open follow-ups.

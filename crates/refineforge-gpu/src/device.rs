@@ -24,6 +24,8 @@ pub struct Linear {
     vb: DeviceTensor,
     in_dim: usize,
     out_dim: usize,
+    /// AdamW weight decay applied to `w` only (0 = none). Biases are never decayed.
+    weight_decay: f32,
 }
 
 impl Linear {
@@ -49,7 +51,13 @@ impl Linear {
             vb: k.zeros_device(1, out_dim)?,
             in_dim,
             out_dim,
+            weight_decay: 0.0,
         })
+    }
+
+    /// Set the AdamW weight decay for this layer's weight matrix `w`.
+    pub fn set_weight_decay(&mut self, wd: f32) {
+        self.weight_decay = wd;
     }
 
     /// `y = x·Wᵀ + b`, where `x` is `T×in` and `y` is `T×out`.
@@ -88,7 +96,7 @@ impl Linear {
             0.9,
             0.999,
             1.0e-8,
-            0.0,
+            self.weight_decay,
         )?;
         k.dev_adamw(
             &mut self.bias,
@@ -282,6 +290,11 @@ impl Mlp {
         self.fc1.adamw_step(k, t, lr)?;
         self.fc2.adamw_step(k, t, lr)?;
         Ok(())
+    }
+
+    pub fn set_weight_decay(&mut self, wd: f32) {
+        self.fc1.set_weight_decay(wd);
+        self.fc2.set_weight_decay(wd);
     }
 }
 
@@ -531,6 +544,13 @@ impl Attention {
         self.o.adamw_step(kern, t, lr)?;
         Ok(())
     }
+
+    pub fn set_weight_decay(&mut self, wd: f32) {
+        self.q.set_weight_decay(wd);
+        self.k.set_weight_decay(wd);
+        self.v.set_weight_decay(wd);
+        self.o.set_weight_decay(wd);
+    }
 }
 
 /// A full pre-norm transformer block:
@@ -661,6 +681,12 @@ impl Block {
         self.mlp.adamw_step(k, t, lr)?;
         Ok(())
     }
+
+    /// Weight decay on attention + MLP weight matrices (not the LayerNorms).
+    pub fn set_weight_decay(&mut self, wd: f32) {
+        self.attn.set_weight_decay(wd);
+        self.mlp.set_weight_decay(wd);
+    }
 }
 
 /// Deterministic seeded `Normal(0, std)` init (SplitMix64 + Box-Muller).
@@ -699,6 +725,8 @@ pub struct GptModel {
     lm_head: Linear,
     vocab: usize,
     context: usize,
+    /// Label-smoothing ε used by the training cross-entropy (0 = none).
+    label_smoothing: f32,
 }
 
 /// Forward activations the [`GptModel`] backward needs.
@@ -780,6 +808,7 @@ impl GptModel {
             )?,
             vocab,
             context,
+            label_smoothing: 0.0,
         })
     }
 
@@ -928,6 +957,22 @@ impl GptModel {
         Ok(())
     }
 
+    /// Set AdamW weight decay on the matmul weights (attention / MLP / LM head).
+    /// Token + position embeddings, LayerNorm, and biases are left undecayed,
+    /// which is standard practice for transformer training.
+    pub fn set_weight_decay(&mut self, wd: f32) {
+        for block in &mut self.blocks {
+            block.set_weight_decay(wd);
+        }
+        self.lm_head.set_weight_decay(wd);
+    }
+
+    /// Set the label-smoothing ε for the training cross-entropy (0 = none).
+    /// Held-out [`evaluate`](Self::evaluate) always uses the unsmoothed loss.
+    pub fn set_label_smoothing(&mut self, eps: f32) {
+        self.label_smoothing = eps;
+    }
+
     /// Count active next-token targets (mask set, in-vocab) in a sequence.
     fn count_targets(&self, tokens: &[i32], loss_mask: &[i32]) -> usize {
         (0..tokens.len().saturating_sub(1))
@@ -949,7 +994,8 @@ impl GptModel {
         let (logits, cache) = self.forward(k, tokens)?;
         let count = self.count_targets(tokens, loss_mask);
         let inv = if count > 0 { 1.0 / count as f32 } else { 0.0 };
-        let (d_logits, losses, correct) = k.dev_cross_entropy(&logits, tokens, loss_mask, inv)?;
+        let (d_logits, losses, correct) =
+            k.dev_cross_entropy(&logits, tokens, loss_mask, inv, self.label_smoothing)?;
         self.backward(k, tokens, &cache, &d_logits)?;
         self.adamw_step(k, t, lr)?;
         Ok(mean_loss_acc(&losses, &correct, count))
@@ -965,7 +1011,7 @@ impl GptModel {
         let (logits, _cache) = self.forward(k, tokens)?;
         let count = self.count_targets(tokens, loss_mask);
         let inv = if count > 0 { 1.0 / count as f32 } else { 0.0 };
-        let (_d, losses, correct) = k.dev_cross_entropy(&logits, tokens, loss_mask, inv)?;
+        let (_d, losses, correct) = k.dev_cross_entropy(&logits, tokens, loss_mask, inv, 0.0)?;
         Ok(mean_loss_acc(&losses, &correct, count))
     }
 
@@ -986,7 +1032,8 @@ impl GptModel {
         let (logits, cache) = self.forward_packed(k, tokens, seg_ids, pos_ids)?;
         let count = self.count_targets(tokens, loss_mask);
         let inv = if count > 0 { 1.0 / count as f32 } else { 0.0 };
-        let (d_logits, losses, correct) = k.dev_cross_entropy(&logits, tokens, loss_mask, inv)?;
+        let (d_logits, losses, correct) =
+            k.dev_cross_entropy(&logits, tokens, loss_mask, inv, self.label_smoothing)?;
         self.backward_packed(k, tokens, seg_ids, pos_ids, &cache, &d_logits)?;
         self.adamw_step(k, t, lr)?;
         Ok(mean_loss_acc(&losses, &correct, count))
@@ -1004,7 +1051,7 @@ impl GptModel {
         let (logits, _cache) = self.forward_packed(k, tokens, seg_ids, pos_ids)?;
         let count = self.count_targets(tokens, loss_mask);
         let inv = if count > 0 { 1.0 / count as f32 } else { 0.0 };
-        let (_d, losses, correct) = k.dev_cross_entropy(&logits, tokens, loss_mask, inv)?;
+        let (_d, losses, correct) = k.dev_cross_entropy(&logits, tokens, loss_mask, inv, 0.0)?;
         Ok(mean_loss_acc(&losses, &correct, count))
     }
 }
@@ -1057,12 +1104,15 @@ fn cross_entropy_cpu(
     tokens: &[i32],
     loss_mask: &[i32],
     inv: f32,
+    smoothing: f32,
     t: usize,
     v: usize,
 ) -> (Vec<f32>, Vec<f32>, Vec<i32>) {
     let mut d = vec![0.0f32; t * v];
     let mut loss = vec![0.0f32; t];
     let mut correct = vec![0i32; t];
+    let eps_v = smoothing / v as f32;
+    let q_target = (1.0 - smoothing) + eps_v;
     for i in 0..t.saturating_sub(1) {
         let target = tokens[i + 1];
         if loss_mask[i + 1] == 0 || target < 0 || target as usize >= v {
@@ -1071,7 +1121,8 @@ fn cross_entropy_cpu(
         let target = target as usize;
         let probs = crate::softmax_cpu(&logits[i * v..i * v + v], 1, v);
         for j in 0..v {
-            d[i * v + j] = inv * (probs[j] - if j == target { 1.0 } else { 0.0 });
+            let q = if j == target { q_target } else { eps_v };
+            d[i * v + j] = inv * (probs[j] - q);
         }
         loss[i] = -probs[target].max(1.0e-12).ln();
         let am = probs
@@ -1566,14 +1617,17 @@ mod tests {
         let count = (1..t).filter(|&i| loss_mask[i] != 0).count();
         let inv = 1.0 / count as f32;
         let logits_dev = k.to_device(&logits, t, v).unwrap();
-        let (d_dev, loss, correct) = k
-            .dev_cross_entropy(&logits_dev, &tokens, &loss_mask, inv)
-            .unwrap();
-        let (d_cpu, loss_cpu, correct_cpu) =
-            cross_entropy_cpu(&logits, &tokens, &loss_mask, inv, t, v);
-        assert_close(&k.to_host(&d_dev).unwrap(), &d_cpu, 1.0e-4);
-        assert_close(&loss, &loss_cpu, 1.0e-4);
-        assert_eq!(correct, correct_cpu);
+        // parity at both no smoothing and label-smoothing ε = 0.1
+        for smoothing in [0.0f32, 0.1] {
+            let (d_dev, loss, correct) = k
+                .dev_cross_entropy(&logits_dev, &tokens, &loss_mask, inv, smoothing)
+                .unwrap();
+            let (d_cpu, loss_cpu, correct_cpu) =
+                cross_entropy_cpu(&logits, &tokens, &loss_mask, inv, smoothing, t, v);
+            assert_close(&k.to_host(&d_dev).unwrap(), &d_cpu, 1.0e-4);
+            assert_close(&loss, &loss_cpu, 1.0e-4);
+            assert_eq!(correct, correct_cpu);
+        }
     }
 
     #[test]
