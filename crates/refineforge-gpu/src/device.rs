@@ -403,6 +403,25 @@ impl Attention {
         kern: &GpuKernels,
         x: &DeviceTensor,
     ) -> Result<(DeviceTensor, AttnCache)> {
+        self.forward_impl(kern, x, None)
+    }
+
+    /// Packed-batch forward: attention masked per segment via `seg_ids[row]`.
+    pub fn forward_seg(
+        &self,
+        kern: &GpuKernels,
+        x: &DeviceTensor,
+        seg_ids: &[i32],
+    ) -> Result<(DeviceTensor, AttnCache)> {
+        self.forward_impl(kern, x, Some(seg_ids))
+    }
+
+    fn forward_impl(
+        &self,
+        kern: &GpuKernels,
+        x: &DeviceTensor,
+        seg: Option<&[i32]>,
+    ) -> Result<(DeviceTensor, AttnCache)> {
         let (t, e, hd) = (x.rows, x.cols, self.head_dim);
         let qd = self.q.forward(kern, x)?;
         let kd = self.k.forward(kern, x)?;
@@ -415,7 +434,10 @@ impl Attention {
             let k_h = kern.dev_slice_cols(&kd, off, hd)?;
             let v_h = kern.dev_slice_cols(&vd, off, hd)?;
             let mut scores = kern.dev_matmul_nt(&q_h, &k_h)?; // T×T = Q_h·K_hᵀ
-            kern.dev_scale_causal_mask(&mut scores, self.scale)?;
+            match seg {
+                Some(s) => kern.dev_scale_segmented_causal_mask(&mut scores, s, self.scale)?,
+                None => kern.dev_scale_causal_mask(&mut scores, self.scale)?,
+            }
             let attn = kern.dev_softmax(&scores)?;
             let ctx_h = kern.dev_matmul_nn(&attn, &v_h)?; // T×hd
             kern.dev_set_cols(&mut ctx, &ctx_h, off)?;
@@ -441,6 +463,29 @@ impl Attention {
         cache: &AttnCache,
         d_out: &DeviceTensor,
     ) -> Result<DeviceTensor> {
+        self.backward_impl(kern, x, cache, d_out, None)
+    }
+
+    /// Packed-batch backward: attention grad masked per segment via `seg_ids[row]`.
+    pub fn backward_seg(
+        &mut self,
+        kern: &GpuKernels,
+        x: &DeviceTensor,
+        cache: &AttnCache,
+        d_out: &DeviceTensor,
+        seg_ids: &[i32],
+    ) -> Result<DeviceTensor> {
+        self.backward_impl(kern, x, cache, d_out, Some(seg_ids))
+    }
+
+    fn backward_impl(
+        &mut self,
+        kern: &GpuKernels,
+        x: &DeviceTensor,
+        cache: &AttnCache,
+        d_out: &DeviceTensor,
+        seg: Option<&[i32]>,
+    ) -> Result<DeviceTensor> {
         let (t, e, hd) = (x.rows, x.cols, self.head_dim);
         let d_ctx = self.o.backward(kern, &cache.ctx, d_out)?;
         let mut dq = kern.zeros_device(t, e)?;
@@ -459,7 +504,12 @@ impl Attention {
             kern.dev_set_cols(&mut dv, &d_v_h, off)?;
             // softmax + scale/mask backward
             let mut d_scores = kern.dev_softmax_backward(attn, &d_attn)?; // T×T
-            kern.dev_scale_causal_mask_grad(&mut d_scores, self.scale)?;
+            match seg {
+                Some(s) => {
+                    kern.dev_scale_segmented_causal_mask_grad(&mut d_scores, s, self.scale)?
+                }
+                None => kern.dev_scale_causal_mask_grad(&mut d_scores, self.scale)?,
+            }
             // scores = Q_h · K_hᵀ
             let d_q_h = kern.dev_matmul_nn(&d_scores, &k_h)?; // T×hd = d_scores·K_h
             let d_k_h = kern.dev_matmul_tn(&d_scores, &q_h)?; // T×hd = d_scoresᵀ·Q_h
@@ -517,8 +567,27 @@ impl Block {
     }
 
     pub fn forward(&self, k: &GpuKernels, x: &DeviceTensor) -> Result<(DeviceTensor, BlockCache)> {
+        self.forward_impl(k, x, None)
+    }
+
+    /// Packed-batch forward: attention masked per segment via `seg_ids[row]`.
+    pub fn forward_seg(
+        &self,
+        k: &GpuKernels,
+        x: &DeviceTensor,
+        seg_ids: &[i32],
+    ) -> Result<(DeviceTensor, BlockCache)> {
+        self.forward_impl(k, x, Some(seg_ids))
+    }
+
+    fn forward_impl(
+        &self,
+        k: &GpuKernels,
+        x: &DeviceTensor,
+        seg: Option<&[i32]>,
+    ) -> Result<(DeviceTensor, BlockCache)> {
         let (ln1_y, m1, r1) = self.ln1.forward(k, x)?;
-        let (attn_out, attn_cache) = self.attn.forward(k, &ln1_y)?;
+        let (attn_out, attn_cache) = self.attn.forward_impl(k, &ln1_y, seg)?;
         let mut x1 = attn_out;
         k.dev_add_inplace(&mut x1, x)?; // x1 = x + Attn(LN1(x))
         let (ln2_y, m2, r2) = self.ln2.forward(k, &x1)?;
@@ -549,12 +618,37 @@ impl Block {
         c: &BlockCache,
         d_out: &DeviceTensor,
     ) -> Result<DeviceTensor> {
+        self.backward_impl(k, x, c, d_out, None)
+    }
+
+    /// Packed-batch backward: attention grad masked per segment via `seg_ids[row]`.
+    pub fn backward_seg(
+        &mut self,
+        k: &GpuKernels,
+        x: &DeviceTensor,
+        c: &BlockCache,
+        d_out: &DeviceTensor,
+        seg_ids: &[i32],
+    ) -> Result<DeviceTensor> {
+        self.backward_impl(k, x, c, d_out, Some(seg_ids))
+    }
+
+    fn backward_impl(
+        &mut self,
+        k: &GpuKernels,
+        x: &DeviceTensor,
+        c: &BlockCache,
+        d_out: &DeviceTensor,
+        seg: Option<&[i32]>,
+    ) -> Result<DeviceTensor> {
         // out = x1 + MLP(LN2(x1))
         let d_ln2_y = self.mlp.backward(k, &c.ln2_y, &c.h1, &c.act, d_out)?;
         let mut d_x1 = self.ln2.backward(k, &c.x1, &d_ln2_y, &c.m2, &c.r2)?;
         k.dev_add_inplace(&mut d_x1, d_out)?; // residual through x1
                                               // x1 = x + Attn(LN1(x))
-        let d_ln1_y = self.attn.backward(k, &c.ln1_y, &c.attn_cache, &d_x1)?;
+        let d_ln1_y = self
+            .attn
+            .backward_impl(k, &c.ln1_y, &c.attn_cache, &d_x1, seg)?;
         let mut dx = self.ln1.backward(k, x, &d_ln1_y, &c.m1, &c.r1)?;
         k.dev_add_inplace(&mut dx, &d_x1)?; // residual through x
         Ok(dx)
@@ -713,6 +807,47 @@ impl GptModel {
         ))
     }
 
+    /// Packed mini-batch forward over several sequences in one buffer.
+    /// `seg_ids[row]` is the sequence index (for segmented causal attention) and
+    /// `pos_ids[row]` the within-sequence position (for the position embedding).
+    pub fn forward_packed(
+        &self,
+        k: &GpuKernels,
+        tokens: &[i32],
+        seg_ids: &[i32],
+        pos_ids: &[i32],
+    ) -> Result<(DeviceTensor, ModelCache)> {
+        let t = tokens.len();
+        anyhow::ensure!(
+            seg_ids.len() == t && pos_ids.len() == t,
+            "packed layout length mismatch"
+        );
+        anyhow::ensure!(
+            pos_ids.iter().all(|&p| (p as usize) < self.context),
+            "packed position exceeds context"
+        );
+        let x0 = k.dev_embedding_forward_packed(&self.tok_emb, &self.pos_emb, tokens, pos_ids)?;
+        let mut xs = vec![x0];
+        let mut caches = Vec::with_capacity(self.blocks.len());
+        for block in &self.blocks {
+            let (y, c) = block.forward_seg(k, xs.last().unwrap(), seg_ids)?;
+            caches.push(c);
+            xs.push(y);
+        }
+        let (lnf_y, m, r) = self.ln_f.forward(k, xs.last().unwrap())?;
+        let logits = self.lm_head.forward(k, &lnf_y)?;
+        Ok((
+            logits,
+            ModelCache {
+                xs,
+                caches,
+                lnf_y,
+                m,
+                r,
+            },
+        ))
+    }
+
     pub fn backward(
         &mut self,
         k: &GpuKernels,
@@ -729,6 +864,32 @@ impl GptModel {
             d_x = self.blocks[i].backward(k, &cache.xs[i], &cache.caches[i], &d_x)?;
         }
         let (d_tok, d_pos) = k.dev_embedding_backward(&d_x, tokens, self.vocab, self.context)?;
+        self.d_tok = d_tok;
+        self.d_pos = d_pos;
+        Ok(())
+    }
+
+    /// Packed mini-batch backward (segmented attention via `seg_ids`, packed
+    /// position grads via `pos_ids`).
+    pub fn backward_packed(
+        &mut self,
+        k: &GpuKernels,
+        tokens: &[i32],
+        seg_ids: &[i32],
+        pos_ids: &[i32],
+        cache: &ModelCache,
+        d_logits: &DeviceTensor,
+    ) -> Result<()> {
+        let d_lnf_y = self.lm_head.backward(k, &cache.lnf_y, d_logits)?;
+        let n = self.blocks.len();
+        let mut d_x = self
+            .ln_f
+            .backward(k, &cache.xs[n], &d_lnf_y, &cache.m, &cache.r)?;
+        for i in (0..n).rev() {
+            d_x = self.blocks[i].backward_seg(k, &cache.xs[i], &cache.caches[i], &d_x, seg_ids)?;
+        }
+        let (d_tok, d_pos) =
+            k.dev_embedding_backward_packed(&d_x, tokens, pos_ids, self.vocab, self.context)?;
         self.d_tok = d_tok;
         self.d_pos = d_pos;
         Ok(())
@@ -807,6 +968,60 @@ impl GptModel {
         let (_d, losses, correct) = k.dev_cross_entropy(&logits, tokens, loss_mask, inv)?;
         Ok(mean_loss_acc(&losses, &correct, count))
     }
+
+    /// One packed mini-batch training step → `(mean_loss, accuracy)` over all
+    /// supervised targets in the batch. `seg_ids`/`pos_ids` come from
+    /// [`packed_layout`]; `loss_mask` is the packed per-token supervision mask.
+    #[allow(clippy::too_many_arguments)]
+    pub fn train_step_packed(
+        &mut self,
+        k: &GpuKernels,
+        tokens: &[i32],
+        seg_ids: &[i32],
+        pos_ids: &[i32],
+        loss_mask: &[i32],
+        t: u32,
+        lr: f32,
+    ) -> Result<(f32, f32)> {
+        let (logits, cache) = self.forward_packed(k, tokens, seg_ids, pos_ids)?;
+        let count = self.count_targets(tokens, loss_mask);
+        let inv = if count > 0 { 1.0 / count as f32 } else { 0.0 };
+        let (d_logits, losses, correct) = k.dev_cross_entropy(&logits, tokens, loss_mask, inv)?;
+        self.backward_packed(k, tokens, seg_ids, pos_ids, &cache, &d_logits)?;
+        self.adamw_step(k, t, lr)?;
+        Ok(mean_loss_acc(&losses, &correct, count))
+    }
+
+    /// Forward-only packed eval (no weight update) → `(mean_loss, accuracy)`.
+    pub fn evaluate_packed(
+        &self,
+        k: &GpuKernels,
+        tokens: &[i32],
+        seg_ids: &[i32],
+        pos_ids: &[i32],
+        loss_mask: &[i32],
+    ) -> Result<(f32, f32)> {
+        let (logits, _cache) = self.forward_packed(k, tokens, seg_ids, pos_ids)?;
+        let count = self.count_targets(tokens, loss_mask);
+        let inv = if count > 0 { 1.0 / count as f32 } else { 0.0 };
+        let (_d, losses, correct) = k.dev_cross_entropy(&logits, tokens, loss_mask, inv)?;
+        Ok(mean_loss_acc(&losses, &correct, count))
+    }
+}
+
+/// Build `(seg_ids, pos_ids)` for a packed batch from per-sequence lengths:
+/// `seg_ids[row]` = sequence index, `pos_ids[row]` = within-sequence position.
+pub fn packed_layout(lengths: &[usize]) -> (Vec<i32>, Vec<i32>) {
+    let total: usize = lengths.iter().sum();
+    let mut seg = Vec::with_capacity(total);
+    let mut pos = Vec::with_capacity(total);
+    for (s, &len) in lengths.iter().enumerate() {
+        for p in 0..len {
+            seg.push(s as i32);
+            pos.push(p as i32);
+        }
+    }
+    (seg, pos)
 }
 
 /// Mean loss + accuracy from per-row cross-entropy outputs over `count` targets.
@@ -1391,6 +1606,79 @@ mod tests {
         assert!(
             last_acc > 0.7,
             "next-token accuracy should rise: {last_acc}"
+        );
+    }
+
+    #[test]
+    fn gpu_packed_forward_matches_sequential() {
+        // Packing several sequences into one buffer (segmented attention + packed
+        // positions) must produce the SAME per-token logits as forwarding each
+        // sequence on its own — segments are independent. This is the M7 gate.
+        let k = GpuKernels::new(0).expect("gpu init");
+        let (vocab, embed, n_head, n_layers, hidden, context) = (20, 32, 4, 2, 64, 16);
+        let model = GptModel::new(&k, vocab, embed, n_head, n_layers, hidden, context, 11).unwrap();
+        let seqs: Vec<Vec<i32>> = vec![vec![3, 7, 1, 9, 4], vec![2, 8, 5], vec![6, 0, 1, 1, 7, 3]];
+
+        // standalone forwards (one sequence at a time)
+        let want: Vec<Vec<f32>> = seqs
+            .iter()
+            .map(|s| k.to_host(&model.forward(&k, s).unwrap().0).unwrap())
+            .collect();
+
+        // packed forward (all sequences in one buffer)
+        let tokens: Vec<i32> = seqs.iter().flatten().copied().collect();
+        let lengths: Vec<usize> = seqs.iter().map(Vec::len).collect();
+        let (seg, pos) = packed_layout(&lengths);
+        let got = k
+            .to_host(&model.forward_packed(&k, &tokens, &seg, &pos).unwrap().0)
+            .unwrap();
+
+        let mut off = 0;
+        for (si, s) in seqs.iter().enumerate() {
+            let rows = s.len();
+            assert_close(&got[off * vocab..(off + rows) * vocab], &want[si], 3.0e-3);
+            off += rows;
+        }
+    }
+
+    #[test]
+    fn gpu_packed_model_trains_end_to_end() {
+        // A packed mini-batch (segmented attention + packed positions in BOTH
+        // forward and backward) trains end-to-end: loss drops, accuracy rises.
+        let k = GpuKernels::new(0).expect("gpu init");
+        let (vocab, embed, n_head, n_layers, hidden, context) = (24, 32, 4, 2, 64, 10);
+        let mut model =
+            GptModel::new(&k, vocab, embed, n_head, n_layers, hidden, context, 5).unwrap();
+        // four phase-shifted period-5 sequences, prompt-first masks
+        let (mut tokens, mut loss_mask, mut lengths) = (Vec::new(), Vec::new(), Vec::new());
+        for sidx in 0..4usize {
+            for i in 0..context {
+                tokens.push((((i + sidx) % 5) + 2) as i32);
+                loss_mask.push(i32::from(i >= 2)); // first 2 tokens = prompt
+            }
+            lengths.push(context);
+        }
+        let (seg, pos) = packed_layout(&lengths);
+        let mut first = 0.0f32;
+        let mut last = 0.0f32;
+        let mut last_acc = 0.0f32;
+        for step in 1..=80u32 {
+            let (loss, acc) = model
+                .train_step_packed(&k, &tokens, &seg, &pos, &loss_mask, step, 0.01)
+                .unwrap();
+            if step == 1 {
+                first = loss;
+            }
+            last = loss;
+            last_acc = acc;
+        }
+        assert!(
+            last < first * 0.4,
+            "packed batch should learn: first={first} last={last}"
+        );
+        assert!(
+            last_acc > 0.7,
+            "packed next-token accuracy should rise: {last_acc}"
         );
     }
 }
