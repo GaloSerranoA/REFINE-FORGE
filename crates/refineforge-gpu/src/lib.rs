@@ -618,6 +618,17 @@ pub mod gpu {
             self.ctx.name().unwrap_or_else(|_| "unknown".to_string())
         }
 
+        /// Device compute capability `(major, minor)` — e.g. `(8, 6)` for an
+        /// RTX 3060. Returns `(0, 0)` if the attribute query fails.
+        pub fn compute_capability(&self) -> (u32, u32) {
+            use cudarc::driver::sys::CUdevice_attribute as A;
+            let q = |a| self.ctx.attribute(a).map(|v| v as u32).unwrap_or(0);
+            (
+                q(A::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR),
+                q(A::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR),
+            )
+        }
+
         /// Element-wise `a + b` on the GPU.
         pub fn vector_add(&self, a: &[f32], b: &[f32]) -> Result<Vec<f32>> {
             anyhow::ensure!(a.len() == b.len(), "vector_add length mismatch");
@@ -1852,6 +1863,17 @@ mod tests {
         fn gpu_device_name_is_reported() {
             let k = gpu::GpuKernels::new(0).expect("gpu init");
             assert!(!k.device_name().is_empty());
+        }
+
+        #[test]
+        fn gpu_compute_capability_is_reported() {
+            let k = gpu::GpuKernels::new(0).expect("gpu init");
+            let (major, minor) = k.compute_capability();
+            // Any real CUDA device reports a major capability >= 1.
+            assert!(
+                major >= 1,
+                "compute capability major should be reported: {major}.{minor}"
+            );
         }
 
         #[test]
