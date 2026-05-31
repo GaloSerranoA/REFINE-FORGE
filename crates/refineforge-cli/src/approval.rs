@@ -801,9 +801,14 @@ fn validate_release_evidence(evidence_dir: &Path, request: Option<&Value>) -> Re
     require_json_status_in(&cosign, &["passed", "verified"], &cosign_path)?;
     // `identity_regex` is the canonical key emitted by the CI cosign-verify
     // evidence writer; the remaining names are accepted aliases.
-    if !["identity_regex", "signer_identity", "identity", "certificate_identity"]
-        .iter()
-        .any(|field| string_field_nonempty(&cosign, field))
+    if ![
+        "identity_regex",
+        "signer_identity",
+        "identity",
+        "certificate_identity",
+    ]
+    .iter()
+    .any(|field| string_field_nonempty(&cosign, field))
     {
         bail!("{} must include a signer identity", cosign_path.display());
     }
