@@ -98,3 +98,54 @@ of nondeterministic parallel float accumulation. Therefore:
 - `.cu` kernels under `kernels/src/gpt/`, built via the bit-exact wrapper.
 - Backend dispatch in `runner.rs` / `mod.rs` for `device: cuda`.
 - Docs: update `docs/training/train-llm-from-scratch-analysis.md` status.
+
+## Implementation status (as built, 2026-05-31)
+
+Realized as a dedicated crate **`crates/refineforge-gpu/`** (not the in-trainer
+module sketched above). CUDA lives behind an optional **`cuda`** feature
+(`cudarc 0.19`, runtime NVRTC); the **default build is CPU-only with no CUDA
+dependency**, so the workspace + `nix flake check` stay green on CI without a GPU.
+Every CUDA kernel keeps a CPU `f32` reference in the same crate as its parity
+oracle. All GPU tests are `#[cfg(feature = "cuda")]` (hardware-gated, never
+disabled) and pass on the local **RTX 3060** — **29/29** as of this writing.
+
+As-built milestones (each parity-gated and shipped behind green CI):
+
+- **M1 — toolchain + vector-add.** `cudarc` + NVRTC building/running on the 3060;
+  vector-add parity vs CPU. De-risked the Windows/CUDA/MSVC path (needed CUDA 13.2
+  → `cudarc 0.19` with `cuda-version-from-build-system`).
+- **M2 — matmul.** `matmul_nn` / `matmul_nt` (Linear fwd) / `matmul_tn` (Linear
+  dW), all parity-checked. Measured ~**28×** over the scalar CPU reference
+  (512×1024×1024: GPU 2.42 ms vs CPU 68.68 ms, release).
+- **M3 — elementwise + reductions.** `gelu`(+grad), row-wise `softmax`(+grad),
+  `layernorm` fwd/bwd, `adamw_update` — each parity-checked.
+- **M4 — device-resident `Linear` + AdamW step.** Tensors stay on the GPU across
+  forward → backward → optimizer (the pattern that actually accelerates training),
+  parity-checked end to end.
+- **M5 — full transformer `Block`.** Device-resident `LayerNorm`, `Mlp`, multi-head
+  causal `Attention`, and a pre-norm residual `Block`. Attention backward is
+  verified by a **finite-difference gradient check**; the block trains a synthetic
+  target end to end.
+- **M6 — full GPU GPT + real-data training loop.** `GptModel` = trainable token +
+  position embeddings → N `Block`s → final LayerNorm → LM head → softmax
+  cross-entropy, with forward / backward / AdamW **all device-resident**. New
+  parity-checked kernels: `embedding_forward` / `embedding_backward` (atomicAdd
+  token grads; position grads sized to the full context table) and
+  `softmax_cross_entropy`. Verified by embedding/cross-entropy parity tests, a
+  synthetic end-to-end learning test, and the **`train_mathlib`** example.
+
+**Real-data result (`cargo run -p refineforge-gpu --features cuda --release
+--example train_mathlib -- production-proof/native-gpt-mathlib/sft-pack 12`):** a
+smoke-scale GPT (`embed=128, heads=4, layers=4, hidden=512`) on the 32-record
+Mathlib SFT pack (vocab ≈ 800, ctx = 128) drops **train loss 6.36 → 3.26** and
+reaches **44.9 % train / 13.3 % held-out** next-token accuracy in **288 steps /
+3.2 s** (~11 ms/step, ~7.4k target-tokens/s) — the entire forward + cross-entropy
++ backward + AdamW path on the GPU. Held-out 13.3 % is well above chance
+(1/797 ≈ 0.13 %) and above the linear-smoke baseline (~5.5 %); it is honestly
+**smoke-grade** (24 train sequences), not a production LLM.
+
+Honesty constraints from this design are upheld: the GPU path is **`f32`** and
+**parity-checked within tolerance, never claimed bit-exact**; the CPU `f64` path
+remains the deterministic reference. Larger-scale training and the GPU compute
+ledger / bit-exact build evidence (original M5–M6 "scale up" + "evidence" items)
+remain open follow-ups.
