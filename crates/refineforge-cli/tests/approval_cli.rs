@@ -548,6 +548,62 @@ fn approval_release_draft_verifies_hosted_release_evidence() {
 }
 
 #[test]
+fn approval_release_draft_accepts_canonical_ci_evidence_schema() {
+    // Regression: the approval validator must accept the exact field names
+    // emitted by scripts/ci/write-release-production-evidence.sh
+    // (`hosted_ci_url` in hosted-ci.json, `identity_regex` in
+    // cosign-verify.json) — the same schema the production-proof validator
+    // reads. Previously the approval validator only recognized aliases like
+    // `workflow_url`/`signer_identity` and rejected real hosted CI evidence.
+    let td = tempfile::tempdir().unwrap();
+    let evidence_dir = td.path().join("release-evidence");
+    let policy = td.path().join("approval-policy.yaml");
+    write_release_evidence(&evidence_dir);
+    write_role_policy(&policy);
+    // Overwrite the two evidence files with the canonical CI-emitted schema.
+    write_json(
+        &evidence_dir.join("release/hosted-ci.json"),
+        json!({
+            "schema_version": "refineforge-hosted-ci-evidence-v1",
+            "status": "passed",
+            "hosted_ci_url": "https://github.com/GaloSerranoA/REFINE-FORGE/actions/runs/26701886602",
+            "oidc_issuer": "https://token.actions.githubusercontent.com",
+            "run_id": "26701886602"
+        }),
+    );
+    write_json(
+        &evidence_dir.join("release/cosign-verify.json"),
+        json!({
+            "schema_version": "refineforge-cosign-verify-evidence-v1",
+            "status": "passed",
+            "identity_regex": "https://github.com/GaloSerranoA/REFINE-FORGE/.github/workflows/ci.yml@refs/(heads|tags)/.*",
+            "oidc_issuer": "https://token.actions.githubusercontent.com"
+        }),
+    );
+    let request = evidence_dir.join("approvals/release.review-request.json");
+
+    let output = run_refine(&[
+        "--root",
+        ".",
+        "approval",
+        "draft",
+        "--review-request",
+        request.to_str().unwrap(),
+        "--policy",
+        policy.to_str().unwrap(),
+        "--operator",
+        "Galo Release Operator",
+        "--json",
+    ]);
+
+    assert_success(&output);
+    assert!(evidence_dir.join("approvals/release.draft.json").exists());
+    let draft = read_json(&evidence_dir.join("approvals/release.draft.json"));
+    assert_eq!(draft["role"], "release");
+    assert_eq!(draft["decision"], "draft-ready");
+}
+
+#[test]
 fn approval_release_approve_writes_final_approval_and_resolves_request() {
     let td = tempfile::tempdir().unwrap();
     let evidence_dir = td.path().join("release-evidence");
