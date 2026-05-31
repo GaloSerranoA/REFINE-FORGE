@@ -36,6 +36,10 @@ __pycache__/
 # InmortalProof proof-search run outputs
 /inmortal-proof-runs/
 
+# DevOps / production-proof evidence packs (downloaded CI artifacts; local
+# validation inputs for the agents, not source)
+/production-proof/
+
 # Nix
 result
 result-*
