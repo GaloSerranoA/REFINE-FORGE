@@ -432,6 +432,40 @@ pub fn provenance_from_report(report: &ReleaseReport) -> serde_json::Value {
     })
 }
 
+/// Collect verification bundles already exported in-repo under
+/// `artifacts/<id>/manifest.json`, for provenance subjects when the dry-run
+/// release path has not exported fresh bundles. Sorted by directory for
+/// determinism.
+fn inrepo_bundle_evidence(root: &Path) -> Vec<BundleEvidence> {
+    let mut bundles = Vec::new();
+    let Ok(entries) = std::fs::read_dir(root.join("artifacts")) else {
+        return bundles;
+    };
+    let mut dirs: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect();
+    dirs.sort();
+    for dir in dirs {
+        let manifest = dir.join("manifest.json");
+        if !manifest.is_file() {
+            continue;
+        }
+        let Ok(hash) = sha256_file(&manifest) else {
+            continue;
+        };
+        let name = dir.file_name().unwrap_or_default();
+        bundles.push(BundleEvidence {
+            claim_id: name.to_string_lossy().into_owned(),
+            bundle_dir: PathBuf::from("artifacts").join(name),
+            manifest_sha256: hash,
+            signature: SignatureEvidence::Unsigned,
+        });
+    }
+    bundles
+}
+
 #[derive(Debug, Clone)]
 pub struct ReleaseReadyOptions {
     pub version: String,
@@ -454,7 +488,13 @@ pub struct OfflineProofOptions {
 }
 
 pub fn ready(root: &Path, opts: ReleaseReadyOptions) -> Result<()> {
-    let report = build_ready_report(root, &opts)?;
+    let mut report = build_ready_report(root, &opts)?;
+    if report.bundles.is_empty() {
+        // Dry-run skips the bundle-export gates, so attest the verification
+        // bundles already exported in-repo (artifacts/<id>/manifest.json) rather
+        // than emit a subject-less provenance statement.
+        report.bundles = inrepo_bundle_evidence(root);
+    }
     let metadata = cargo_metadata_json(root, opts.dry_run)?;
     let sbom = sbom_from_cargo_metadata(&metadata, &opts.version)?;
     let provenance = provenance_from_report(&report);
@@ -692,25 +732,29 @@ pub fn build_ready_report(root: &Path, opts: &ReleaseReadyOptions) -> Result<Rel
 }
 
 fn cargo_metadata_json(root: &Path, dry_run: bool) -> Result<serde_json::Value> {
-    if dry_run {
-        return Ok(serde_json::json!({
-            "packages": [],
-            "workspace_members": []
-        }));
-    }
-
-    let output = Command::new("cargo")
+    // `cargo metadata` is read-only and does not build, so we run it even in
+    // dry-run: a real SBOM should list the actual dependency graph. In dry-run
+    // we drop `--locked` (lenient) and fall back to an empty package set only if
+    // cargo is unavailable or the workspace cannot resolve; a non-dry-run
+    // release still requires a locked, succeeding metadata call.
+    let mut command = Command::new("cargo");
+    command
         .current_dir(root)
-        .args(["metadata", "--locked", "--format-version", "1"])
-        .output()
-        .context("running cargo metadata --locked")?;
-    if !output.status.success() {
-        return Err(anyhow::anyhow!(
+        .args(["metadata", "--format-version", "1"]);
+    if !dry_run {
+        command.arg("--locked");
+    }
+    let empty = || serde_json::json!({ "packages": [], "workspace_members": [] });
+    match command.output() {
+        Ok(output) if output.status.success() => Ok(serde_json::from_slice(&output.stdout)?),
+        Ok(_) if dry_run => Ok(empty()),
+        Ok(output) => Err(anyhow::anyhow!(
             "cargo metadata --locked failed: {}",
             String::from_utf8_lossy(&output.stderr)
-        ));
+        )),
+        Err(_) if dry_run => Ok(empty()),
+        Err(e) => Err(anyhow::Error::new(e).context("running cargo metadata --locked")),
     }
-    Ok(serde_json::from_slice(&output.stdout)?)
 }
 
 fn fill_git_context(
@@ -1420,6 +1464,26 @@ mod tests {
         let components = sbom["components"].as_array().unwrap();
         assert!(components.iter().any(|c| c["name"] == "refineforge-cli"));
         assert!(components.iter().any(|c| c["name"] == "serde"));
+    }
+
+    #[test]
+    fn inrepo_bundle_evidence_collects_exported_manifests() {
+        let td = tempfile::tempdir().unwrap();
+        let root = td.path();
+        let bdir = root.join("artifacts").join("EXAMPLE-001");
+        std::fs::create_dir_all(&bdir).unwrap();
+        std::fs::write(bdir.join("manifest.json"), "{\"claim_id\":\"EXAMPLE-001\"}").unwrap();
+        // A directory without a manifest is ignored.
+        std::fs::create_dir_all(root.join("artifacts").join("no-manifest")).unwrap();
+
+        let bundles = inrepo_bundle_evidence(root);
+        assert_eq!(
+            bundles.len(),
+            1,
+            "only the dir with a manifest is collected"
+        );
+        assert_eq!(bundles[0].claim_id, "EXAMPLE-001");
+        assert_eq!(bundles[0].manifest_sha256.len(), 64);
     }
 
     #[test]
