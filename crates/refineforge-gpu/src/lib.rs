@@ -409,6 +409,40 @@ extern "C" __global__ void add_inplace(float* out, const float* a, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) out[i] += a[i];
 }
+
+// dst[r, 0..w) = src[r, col0..col0+w)   (extract a column block, e.g. one head)
+extern "C" __global__ void slice_cols(const float* src, float* dst, int rows, int total, int col0, int w) {
+    int c = blockIdx.x * blockDim.x + threadIdx.x;
+    int r = blockIdx.y * blockDim.y + threadIdx.y;
+    if (r < rows && c < w) dst[r * w + c] = src[r * total + col0 + c];
+}
+
+// out[r, col0..col0+w) = src[r, 0..w)   (write a column block back, e.g. one head)
+extern "C" __global__ void set_cols(float* out, const float* src, int rows, int total, int col0, int w) {
+    int c = blockIdx.x * blockDim.x + threadIdx.x;
+    int r = blockIdx.y * blockDim.y + threadIdx.y;
+    if (r < rows && c < w) out[r * total + col0 + c] = src[r * w + c];
+}
+
+// In place over a T×T attention-score matrix: scale, then causal-mask (j>i -> -inf).
+extern "C" __global__ void scale_causal_mask(float* s, int tt, float scale) {
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i < tt && j < tt) {
+        if (j > i) s[i * tt + j] = -1e30f;
+        else s[i * tt + j] *= scale;
+    }
+}
+
+// Backward of scale_causal_mask: scale the kept entries, zero the masked ones.
+extern "C" __global__ void scale_causal_mask_grad(float* s, int tt, float scale) {
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i < tt && j < tt) {
+        if (j > i) s[i * tt + j] = 0.0f;
+        else s[i * tt + j] *= scale;
+    }
+}
 "#;
 
 #[cfg(feature = "cuda")]
@@ -1035,6 +1069,252 @@ pub mod gpu {
                 builder
                     .launch(LaunchConfig::for_num_elems(n as u32))
                     .context("launch dev_adamw")?;
+            }
+            Ok(())
+        }
+
+        // ─── Device-resident elementwise / norm / attention-helper ops ───
+
+        /// GELU forward (device-resident).
+        pub fn dev_gelu(&self, x: &DeviceTensor) -> Result<DeviceTensor> {
+            let mut y = self.zeros_device(x.rows, x.cols)?;
+            let func = self.module.load_function("gelu_forward")?;
+            let n = x.len() as i32;
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&x.buf);
+            b.arg(&mut y.buf);
+            b.arg(&n);
+            // SAFETY: 3 args match gelu_forward(const float*, float*, int).
+            unsafe {
+                b.launch(LaunchConfig::for_num_elems(x.len() as u32))
+                    .context("launch dev_gelu")?;
+            }
+            Ok(y)
+        }
+
+        /// GELU backward (device-resident).
+        pub fn dev_gelu_backward(
+            &self,
+            x: &DeviceTensor,
+            dy: &DeviceTensor,
+        ) -> Result<DeviceTensor> {
+            anyhow::ensure!(x.len() == dy.len(), "dev_gelu_backward length mismatch");
+            let mut dx = self.zeros_device(x.rows, x.cols)?;
+            let func = self.module.load_function("gelu_backward")?;
+            let n = x.len() as i32;
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&x.buf);
+            b.arg(&dy.buf);
+            b.arg(&mut dx.buf);
+            b.arg(&n);
+            // SAFETY: 4 args match gelu_backward(const float*, const float*, float*, int).
+            unsafe {
+                b.launch(LaunchConfig::for_num_elems(x.len() as u32))
+                    .context("launch dev_gelu_backward")?;
+            }
+            Ok(dx)
+        }
+
+        /// Row-wise softmax (device-resident).
+        pub fn dev_softmax(&self, x: &DeviceTensor) -> Result<DeviceTensor> {
+            let mut y = self.zeros_device(x.rows, x.cols)?;
+            let func = self.module.load_function("softmax_forward")?;
+            let (ri, ci) = (x.rows as i32, x.cols as i32);
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&x.buf);
+            b.arg(&mut y.buf);
+            b.arg(&ri);
+            b.arg(&ci);
+            // SAFETY: 4 args match softmax_forward; one thread per row.
+            unsafe {
+                b.launch(LaunchConfig::for_num_elems(x.rows as u32))
+                    .context("launch dev_softmax")?;
+            }
+            Ok(y)
+        }
+
+        /// Row-wise softmax backward (device-resident).
+        pub fn dev_softmax_backward(
+            &self,
+            y: &DeviceTensor,
+            dy: &DeviceTensor,
+        ) -> Result<DeviceTensor> {
+            anyhow::ensure!(y.len() == dy.len(), "dev_softmax_backward dim mismatch");
+            let mut dx = self.zeros_device(y.rows, y.cols)?;
+            let func = self.module.load_function("softmax_backward")?;
+            let (ri, ci) = (y.rows as i32, y.cols as i32);
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&y.buf);
+            b.arg(&dy.buf);
+            b.arg(&mut dx.buf);
+            b.arg(&ri);
+            b.arg(&ci);
+            // SAFETY: 5 args match softmax_backward; one thread per row.
+            unsafe {
+                b.launch(LaunchConfig::for_num_elems(y.rows as u32))
+                    .context("launch dev_softmax_backward")?;
+            }
+            Ok(dx)
+        }
+
+        /// LayerNorm forward (device-resident) → `(y, mean, rstd)`.
+        pub fn dev_layernorm_forward(
+            &self,
+            x: &DeviceTensor,
+            gamma: &DeviceTensor,
+            beta: &DeviceTensor,
+            eps: f32,
+        ) -> Result<(DeviceTensor, DeviceTensor, DeviceTensor)> {
+            anyhow::ensure!(
+                gamma.len() == x.cols && beta.len() == x.cols,
+                "layernorm dim mismatch"
+            );
+            let mut y = self.zeros_device(x.rows, x.cols)?;
+            let mut mean = self.zeros_device(x.rows, 1)?;
+            let mut rstd = self.zeros_device(x.rows, 1)?;
+            let func = self.module.load_function("layernorm_forward")?;
+            let (ri, ci) = (x.rows as i32, x.cols as i32);
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&x.buf);
+            b.arg(&gamma.buf);
+            b.arg(&beta.buf);
+            b.arg(&mut y.buf);
+            b.arg(&mut mean.buf);
+            b.arg(&mut rstd.buf);
+            b.arg(&ri);
+            b.arg(&ci);
+            b.arg(&eps);
+            // SAFETY: 9 args match layernorm_forward; one thread per row.
+            unsafe {
+                b.launch(LaunchConfig::for_num_elems(x.rows as u32))
+                    .context("launch dev_layernorm_forward")?;
+            }
+            Ok((y, mean, rstd))
+        }
+
+        /// LayerNorm backward (device-resident) → `(dx, dgamma, dbeta)`.
+        pub fn dev_layernorm_backward(
+            &self,
+            x: &DeviceTensor,
+            gamma: &DeviceTensor,
+            dy: &DeviceTensor,
+            mean: &DeviceTensor,
+            rstd: &DeviceTensor,
+        ) -> Result<(DeviceTensor, DeviceTensor, DeviceTensor)> {
+            let mut dx = self.zeros_device(x.rows, x.cols)?;
+            // zeroed: the kernel atomicAdd-accumulates these across rows.
+            let mut dgamma = self.zeros_device(1, x.cols)?;
+            let mut dbeta = self.zeros_device(1, x.cols)?;
+            let func = self.module.load_function("layernorm_backward")?;
+            let (ri, ci) = (x.rows as i32, x.cols as i32);
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&x.buf);
+            b.arg(&gamma.buf);
+            b.arg(&dy.buf);
+            b.arg(&mean.buf);
+            b.arg(&rstd.buf);
+            b.arg(&mut dx.buf);
+            b.arg(&mut dgamma.buf);
+            b.arg(&mut dbeta.buf);
+            b.arg(&ri);
+            b.arg(&ci);
+            // SAFETY: 10 args match layernorm_backward; one thread per row.
+            unsafe {
+                b.launch(LaunchConfig::for_num_elems(x.rows as u32))
+                    .context("launch dev_layernorm_backward")?;
+            }
+            Ok((dx, dgamma, dbeta))
+        }
+
+        /// Extract columns `[col0, col0+w)` of `src` into a new `rows×w` tensor.
+        pub fn dev_slice_cols(
+            &self,
+            src: &DeviceTensor,
+            col0: usize,
+            w: usize,
+        ) -> Result<DeviceTensor> {
+            anyhow::ensure!(col0 + w <= src.cols, "slice_cols out of range");
+            let mut dst = self.zeros_device(src.rows, w)?;
+            let func = self.module.load_function("slice_cols")?;
+            let (ri, ti, c0, wi) = (src.rows as i32, src.cols as i32, col0 as i32, w as i32);
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&src.buf);
+            b.arg(&mut dst.buf);
+            b.arg(&ri);
+            b.arg(&ti);
+            b.arg(&c0);
+            b.arg(&wi);
+            // SAFETY: 6 args match slice_cols.
+            unsafe {
+                b.launch(cfg_2d(src.rows, w)).context("launch slice_cols")?;
+            }
+            Ok(dst)
+        }
+
+        /// Write `src` (`rows×w`) into columns `[col0, col0+w)` of `out` in place.
+        pub fn dev_set_cols(
+            &self,
+            out: &mut DeviceTensor,
+            src: &DeviceTensor,
+            col0: usize,
+        ) -> Result<()> {
+            anyhow::ensure!(
+                src.rows == out.rows && col0 + src.cols <= out.cols,
+                "set_cols out of range"
+            );
+            let w = src.cols;
+            let func = self.module.load_function("set_cols")?;
+            let (ri, ti, c0, wi) = (out.rows as i32, out.cols as i32, col0 as i32, w as i32);
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&mut out.buf);
+            b.arg(&src.buf);
+            b.arg(&ri);
+            b.arg(&ti);
+            b.arg(&c0);
+            b.arg(&wi);
+            // SAFETY: 6 args match set_cols.
+            unsafe {
+                b.launch(cfg_2d(out.rows, w)).context("launch set_cols")?;
+            }
+            Ok(())
+        }
+
+        /// In-place scale + causal mask over a `T×T` score matrix.
+        pub fn dev_scale_causal_mask(&self, s: &mut DeviceTensor, scale: f32) -> Result<()> {
+            anyhow::ensure!(
+                s.rows == s.cols,
+                "scale_causal_mask expects a square matrix"
+            );
+            let func = self.module.load_function("scale_causal_mask")?;
+            let ti = s.rows as i32;
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&mut s.buf);
+            b.arg(&ti);
+            b.arg(&scale);
+            // SAFETY: 3 args match scale_causal_mask(float*, int, float).
+            unsafe {
+                b.launch(cfg_2d(s.rows, s.cols))
+                    .context("launch scale_causal_mask")?;
+            }
+            Ok(())
+        }
+
+        /// Backward of [`GpuKernels::dev_scale_causal_mask`].
+        pub fn dev_scale_causal_mask_grad(&self, s: &mut DeviceTensor, scale: f32) -> Result<()> {
+            anyhow::ensure!(
+                s.rows == s.cols,
+                "scale_causal_mask_grad expects a square matrix"
+            );
+            let func = self.module.load_function("scale_causal_mask_grad")?;
+            let ti = s.rows as i32;
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&mut s.buf);
+            b.arg(&ti);
+            b.arg(&scale);
+            // SAFETY: 3 args match scale_causal_mask_grad(float*, int, float).
+            unsafe {
+                b.launch(cfg_2d(s.rows, s.cols))
+                    .context("launch scale_causal_mask_grad")?;
             }
             Ok(())
         }
