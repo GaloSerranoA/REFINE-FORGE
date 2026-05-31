@@ -84,6 +84,156 @@ pub fn gelu_cpu(x: &[f32]) -> Vec<f32> {
         .collect()
 }
 
+/// Row-wise softmax: `x` is `rows×cols`, softmax taken over each row.
+pub fn softmax_cpu(x: &[f32], rows: usize, cols: usize) -> Vec<f32> {
+    assert_eq!(x.len(), rows * cols);
+    let mut y = vec![0.0f32; rows * cols];
+    for r in 0..rows {
+        let row = &x[r * cols..r * cols + cols];
+        let max = row.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let mut sum = 0.0f32;
+        for (j, &v) in row.iter().enumerate() {
+            let e = (v - max).exp();
+            y[r * cols + j] = e;
+            sum += e;
+        }
+        for yj in &mut y[r * cols..r * cols + cols] {
+            *yj /= sum;
+        }
+    }
+    y
+}
+
+/// Backward of row-wise softmax given the forward output `y` and upstream `dy`.
+pub fn softmax_backward_cpu(y: &[f32], dy: &[f32], rows: usize, cols: usize) -> Vec<f32> {
+    assert_eq!(y.len(), rows * cols);
+    assert_eq!(dy.len(), rows * cols);
+    let mut dx = vec![0.0f32; rows * cols];
+    for r in 0..rows {
+        let yr = &y[r * cols..r * cols + cols];
+        let dyr = &dy[r * cols..r * cols + cols];
+        let dot: f32 = yr.iter().zip(dyr).map(|(a, b)| a * b).sum();
+        for (j, dxj) in dx[r * cols..r * cols + cols].iter_mut().enumerate() {
+            *dxj = yr[j] * (dyr[j] - dot);
+        }
+    }
+    dx
+}
+
+/// LayerNorm forward over each row (`rows×cols`). Returns `(y, mean, rstd)`;
+/// the per-row `mean`/`rstd` feed the backward pass.
+pub fn layernorm_forward_cpu(
+    x: &[f32],
+    gamma: &[f32],
+    beta: &[f32],
+    rows: usize,
+    cols: usize,
+    eps: f32,
+) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    assert_eq!(x.len(), rows * cols);
+    assert_eq!(gamma.len(), cols);
+    assert_eq!(beta.len(), cols);
+    let mut y = vec![0.0f32; rows * cols];
+    let mut mean = vec![0.0f32; rows];
+    let mut rstd = vec![0.0f32; rows];
+    for r in 0..rows {
+        let row = &x[r * cols..r * cols + cols];
+        let m = row.iter().sum::<f32>() / cols as f32;
+        let var = row.iter().map(|v| (v - m) * (v - m)).sum::<f32>() / cols as f32;
+        let rs = 1.0 / (var + eps).sqrt();
+        mean[r] = m;
+        rstd[r] = rs;
+        for (j, yj) in y[r * cols..r * cols + cols].iter_mut().enumerate() {
+            let xhat = (row[j] - m) * rs;
+            *yj = gamma[j] * xhat + beta[j];
+        }
+    }
+    (y, mean, rstd)
+}
+
+/// LayerNorm backward. Returns `(dx, dgamma, dbeta)` (`dgamma`/`dbeta` summed
+/// over rows).
+#[allow(clippy::too_many_arguments)]
+pub fn layernorm_backward_cpu(
+    x: &[f32],
+    gamma: &[f32],
+    dy: &[f32],
+    mean: &[f32],
+    rstd: &[f32],
+    rows: usize,
+    cols: usize,
+) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    let mut dx = vec![0.0f32; rows * cols];
+    let mut dgamma = vec![0.0f32; cols];
+    let mut dbeta = vec![0.0f32; cols];
+    for r in 0..rows {
+        let (m, rs) = (mean[r], rstd[r]);
+        let mut mean_dxhat = 0.0f32;
+        let mut mean_dxhat_xhat = 0.0f32;
+        for j in 0..cols {
+            let xhat = (x[r * cols + j] - m) * rs;
+            let dxhat = dy[r * cols + j] * gamma[j];
+            mean_dxhat += dxhat;
+            mean_dxhat_xhat += dxhat * xhat;
+        }
+        mean_dxhat /= cols as f32;
+        mean_dxhat_xhat /= cols as f32;
+        for j in 0..cols {
+            let xhat = (x[r * cols + j] - m) * rs;
+            let dxhat = dy[r * cols + j] * gamma[j];
+            dx[r * cols + j] = rs * (dxhat - mean_dxhat - xhat * mean_dxhat_xhat);
+            dgamma[j] += dy[r * cols + j] * xhat;
+            dbeta[j] += dy[r * cols + j];
+        }
+    }
+    (dx, dgamma, dbeta)
+}
+
+/// Backward of [`gelu_cpu`]: `dx[i] = dy[i] * gelu'(x[i])`.
+pub fn gelu_backward_cpu(x: &[f32], dy: &[f32]) -> Vec<f32> {
+    const C: f32 = 0.797_885;
+    x.iter()
+        .zip(dy.iter())
+        .map(|(&v, &g)| {
+            let inner = C * (v + 0.044_715 * v * v * v);
+            let tanh = inner.tanh();
+            let dinner = C * (1.0 + 3.0 * 0.044_715 * v * v);
+            let grad = 0.5 * (1.0 + tanh) + 0.5 * v * (1.0 - tanh * tanh) * dinner;
+            g * grad
+        })
+        .collect()
+}
+
+/// Decoupled AdamW update over a flat parameter block, in place. `m`/`v` are
+/// the optimizer state; `t` is the 1-based step for bias correction.
+#[allow(clippy::too_many_arguments)]
+pub fn adamw_update_cpu(
+    param: &mut [f32],
+    grad: &[f32],
+    m: &mut [f32],
+    v: &mut [f32],
+    t: u32,
+    lr: f32,
+    beta1: f32,
+    beta2: f32,
+    eps: f32,
+    weight_decay: f32,
+) {
+    let bc1 = 1.0 - beta1.powi(t as i32);
+    let bc2 = 1.0 - beta2.powi(t as i32);
+    for i in 0..param.len() {
+        let g = grad[i];
+        m[i] = beta1 * m[i] + (1.0 - beta1) * g;
+        v[i] = beta2 * v[i] + (1.0 - beta2) * g * g;
+        let mhat = m[i] / bc1;
+        let vhat = v[i] / bc2;
+        if weight_decay != 0.0 {
+            param[i] -= lr * weight_decay * param[i];
+        }
+        param[i] -= lr * mhat / (vhat.sqrt() + eps);
+    }
+}
+
 /// CUDA C source for all kernels, compiled once at runtime with nvrtc.
 #[cfg(feature = "cuda")]
 pub const KERNEL_SOURCE: &str = r#"
@@ -131,6 +281,109 @@ extern "C" __global__ void gelu_forward(const float* x, float* y, int n) {
         float v = x[i];
         float inner = 0.79788456f * (v + 0.044715f * v * v * v);
         y[i] = 0.5f * v * (1.0f + tanhf(inner));
+    }
+}
+
+extern "C" __global__ void gelu_backward(const float* x, const float* dy, float* dx, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        float v = x[i];
+        float inner = 0.79788456f * (v + 0.044715f * v * v * v);
+        float t = tanhf(inner);
+        float dinner = 0.79788456f * (1.0f + 3.0f * 0.044715f * v * v);
+        float grad = 0.5f * (1.0f + t) + 0.5f * v * (1.0f - t * t) * dinner;
+        dx[i] = dy[i] * grad;
+    }
+}
+
+// One thread per row. softmax over each row of x[rows,cols].
+extern "C" __global__ void softmax_forward(const float* x, float* y, int rows, int cols) {
+    int r = blockIdx.x * blockDim.x + threadIdx.x;
+    if (r < rows) {
+        const float* xr = x + r * cols;
+        float* yr = y + r * cols;
+        float maxv = -1e30f;
+        for (int j = 0; j < cols; ++j) maxv = fmaxf(maxv, xr[j]);
+        float sum = 0.0f;
+        for (int j = 0; j < cols; ++j) { float e = expf(xr[j] - maxv); yr[j] = e; sum += e; }
+        for (int j = 0; j < cols; ++j) yr[j] /= sum;
+    }
+}
+
+extern "C" __global__ void softmax_backward(const float* y, const float* dy, float* dx, int rows, int cols) {
+    int r = blockIdx.x * blockDim.x + threadIdx.x;
+    if (r < rows) {
+        const float* yr = y + r * cols;
+        const float* dyr = dy + r * cols;
+        float* dxr = dx + r * cols;
+        float dot = 0.0f;
+        for (int j = 0; j < cols; ++j) dot += yr[j] * dyr[j];
+        for (int j = 0; j < cols; ++j) dxr[j] = yr[j] * (dyr[j] - dot);
+    }
+}
+
+extern "C" __global__ void layernorm_forward(const float* x, const float* gamma, const float* beta,
+                                             float* y, float* mean_out, float* rstd_out,
+                                             int rows, int cols, float eps) {
+    int r = blockIdx.x * blockDim.x + threadIdx.x;
+    if (r < rows) {
+        const float* xr = x + r * cols;
+        float m = 0.0f;
+        for (int j = 0; j < cols; ++j) m += xr[j];
+        m /= (float)cols;
+        float var = 0.0f;
+        for (int j = 0; j < cols; ++j) { float d = xr[j] - m; var += d * d; }
+        var /= (float)cols;
+        float rs = rsqrtf(var + eps);
+        mean_out[r] = m; rstd_out[r] = rs;
+        float* yr = y + r * cols;
+        for (int j = 0; j < cols; ++j) { float xhat = (xr[j] - m) * rs; yr[j] = gamma[j] * xhat + beta[j]; }
+    }
+}
+
+// dgamma/dbeta accumulate across rows via atomicAdd; they must be zeroed first.
+extern "C" __global__ void layernorm_backward(const float* x, const float* gamma, const float* dy,
+                                              const float* mean, const float* rstd,
+                                              float* dx, float* dgamma, float* dbeta,
+                                              int rows, int cols) {
+    int r = blockIdx.x * blockDim.x + threadIdx.x;
+    if (r < rows) {
+        const float* xr = x + r * cols;
+        const float* dyr = dy + r * cols;
+        float* dxr = dx + r * cols;
+        float m = mean[r], rs = rstd[r];
+        float mean_dxhat = 0.0f, mean_dxhat_xhat = 0.0f;
+        for (int j = 0; j < cols; ++j) {
+            float xhat = (xr[j] - m) * rs;
+            float dxhat = dyr[j] * gamma[j];
+            mean_dxhat += dxhat; mean_dxhat_xhat += dxhat * xhat;
+        }
+        mean_dxhat /= (float)cols; mean_dxhat_xhat /= (float)cols;
+        for (int j = 0; j < cols; ++j) {
+            float xhat = (xr[j] - m) * rs;
+            float dxhat = dyr[j] * gamma[j];
+            dxr[j] = rs * (dxhat - mean_dxhat - xhat * mean_dxhat_xhat);
+            atomicAdd(&dgamma[j], dyr[j] * xhat);
+            atomicAdd(&dbeta[j], dyr[j]);
+        }
+    }
+}
+
+extern "C" __global__ void adamw_update(float* param, const float* grad, float* m, float* v,
+                                        float lr, float beta1, float beta2, float eps,
+                                        float weight_decay, float bc1, float bc2, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        float g = grad[i];
+        float mi = beta1 * m[i] + (1.0f - beta1) * g;
+        float vi = beta2 * v[i] + (1.0f - beta2) * g * g;
+        m[i] = mi; v[i] = vi;
+        float mhat = mi / bc1;
+        float vhat = vi / bc2;
+        float p = param[i];
+        if (weight_decay != 0.0f) p -= lr * weight_decay * p;
+        p -= lr * mhat / (sqrtf(vhat) + eps);
+        param[i] = p;
     }
 }
 "#;
@@ -304,6 +557,245 @@ pub mod gpu {
             }
             self.stream.clone_dtoh(&y_dev).context("dtoh y")
         }
+
+        /// Backward of [`GpuKernels::gelu`].
+        pub fn gelu_backward(&self, x: &[f32], dy: &[f32]) -> Result<Vec<f32>> {
+            anyhow::ensure!(x.len() == dy.len(), "gelu_backward length mismatch");
+            let n = x.len();
+            let x_dev = self.stream.clone_htod(x).context("htod x")?;
+            let dy_dev = self.stream.clone_htod(dy).context("htod dy")?;
+            let mut dx_dev = self.stream.alloc_zeros::<f32>(n).context("alloc dx")?;
+            let func = self.module.load_function("gelu_backward")?;
+            let n_arg = n as i32;
+            let mut builder = self.stream.launch_builder(&func);
+            builder.arg(&x_dev);
+            builder.arg(&dy_dev);
+            builder.arg(&mut dx_dev);
+            builder.arg(&n_arg);
+            // SAFETY: 4 args match (const float*, const float*, float*, int).
+            unsafe {
+                builder
+                    .launch(LaunchConfig::for_num_elems(n as u32))
+                    .context("launch gelu_backward")?;
+            }
+            self.stream.clone_dtoh(&dx_dev).context("dtoh dx")
+        }
+
+        /// Row-wise softmax over `x` (`rows×cols`).
+        pub fn softmax(&self, x: &[f32], rows: usize, cols: usize) -> Result<Vec<f32>> {
+            anyhow::ensure!(x.len() == rows * cols, "softmax dim mismatch");
+            let x_dev = self.stream.clone_htod(x).context("htod x")?;
+            let mut y_dev = self
+                .stream
+                .alloc_zeros::<f32>(rows * cols)
+                .context("alloc y")?;
+            let func = self.module.load_function("softmax_forward")?;
+            let (ri, ci) = (rows as i32, cols as i32);
+            let mut builder = self.stream.launch_builder(&func);
+            builder.arg(&x_dev);
+            builder.arg(&mut y_dev);
+            builder.arg(&ri);
+            builder.arg(&ci);
+            // SAFETY: 4 args match (const float*, float*, int, int); one thread per row.
+            unsafe {
+                builder
+                    .launch(LaunchConfig::for_num_elems(rows as u32))
+                    .context("launch softmax")?;
+            }
+            self.stream.clone_dtoh(&y_dev).context("dtoh y")
+        }
+
+        /// Backward of row-wise softmax given forward output `y` and `dy`.
+        pub fn softmax_backward(
+            &self,
+            y: &[f32],
+            dy: &[f32],
+            rows: usize,
+            cols: usize,
+        ) -> Result<Vec<f32>> {
+            anyhow::ensure!(
+                y.len() == rows * cols && dy.len() == rows * cols,
+                "softmax_backward dim mismatch"
+            );
+            let y_dev = self.stream.clone_htod(y).context("htod y")?;
+            let dy_dev = self.stream.clone_htod(dy).context("htod dy")?;
+            let mut dx_dev = self
+                .stream
+                .alloc_zeros::<f32>(rows * cols)
+                .context("alloc dx")?;
+            let func = self.module.load_function("softmax_backward")?;
+            let (ri, ci) = (rows as i32, cols as i32);
+            let mut builder = self.stream.launch_builder(&func);
+            builder.arg(&y_dev);
+            builder.arg(&dy_dev);
+            builder.arg(&mut dx_dev);
+            builder.arg(&ri);
+            builder.arg(&ci);
+            // SAFETY: 5 args match (const float*, const float*, float*, int, int).
+            unsafe {
+                builder
+                    .launch(LaunchConfig::for_num_elems(rows as u32))
+                    .context("launch softmax_backward")?;
+            }
+            self.stream.clone_dtoh(&dx_dev).context("dtoh dx")
+        }
+
+        /// LayerNorm forward; returns `(y, mean, rstd)` with per-row mean/rstd.
+        pub fn layernorm_forward(
+            &self,
+            x: &[f32],
+            gamma: &[f32],
+            beta: &[f32],
+            rows: usize,
+            cols: usize,
+            eps: f32,
+        ) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>)> {
+            anyhow::ensure!(
+                x.len() == rows * cols && gamma.len() == cols && beta.len() == cols,
+                "layernorm_forward dim mismatch"
+            );
+            let x_dev = self.stream.clone_htod(x).context("htod x")?;
+            let g_dev = self.stream.clone_htod(gamma).context("htod gamma")?;
+            let b_dev = self.stream.clone_htod(beta).context("htod beta")?;
+            let mut y_dev = self
+                .stream
+                .alloc_zeros::<f32>(rows * cols)
+                .context("alloc y")?;
+            let mut mean_dev = self.stream.alloc_zeros::<f32>(rows).context("alloc mean")?;
+            let mut rstd_dev = self.stream.alloc_zeros::<f32>(rows).context("alloc rstd")?;
+            let func = self.module.load_function("layernorm_forward")?;
+            let (ri, ci) = (rows as i32, cols as i32);
+            let mut builder = self.stream.launch_builder(&func);
+            builder.arg(&x_dev);
+            builder.arg(&g_dev);
+            builder.arg(&b_dev);
+            builder.arg(&mut y_dev);
+            builder.arg(&mut mean_dev);
+            builder.arg(&mut rstd_dev);
+            builder.arg(&ri);
+            builder.arg(&ci);
+            builder.arg(&eps);
+            // SAFETY: 9 args match the layernorm_forward signature; one thread per row.
+            unsafe {
+                builder
+                    .launch(LaunchConfig::for_num_elems(rows as u32))
+                    .context("launch layernorm_forward")?;
+            }
+            Ok((
+                self.stream.clone_dtoh(&y_dev).context("dtoh y")?,
+                self.stream.clone_dtoh(&mean_dev).context("dtoh mean")?,
+                self.stream.clone_dtoh(&rstd_dev).context("dtoh rstd")?,
+            ))
+        }
+
+        /// LayerNorm backward; returns `(dx, dgamma, dbeta)`.
+        #[allow(clippy::too_many_arguments)]
+        pub fn layernorm_backward(
+            &self,
+            x: &[f32],
+            gamma: &[f32],
+            dy: &[f32],
+            mean: &[f32],
+            rstd: &[f32],
+            rows: usize,
+            cols: usize,
+        ) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>)> {
+            let x_dev = self.stream.clone_htod(x).context("htod x")?;
+            let g_dev = self.stream.clone_htod(gamma).context("htod gamma")?;
+            let dy_dev = self.stream.clone_htod(dy).context("htod dy")?;
+            let mean_dev = self.stream.clone_htod(mean).context("htod mean")?;
+            let rstd_dev = self.stream.clone_htod(rstd).context("htod rstd")?;
+            let mut dx_dev = self
+                .stream
+                .alloc_zeros::<f32>(rows * cols)
+                .context("alloc dx")?;
+            // alloc_zeros is required: the kernel atomicAdd-accumulates into these.
+            let mut dgamma_dev = self
+                .stream
+                .alloc_zeros::<f32>(cols)
+                .context("alloc dgamma")?;
+            let mut dbeta_dev = self
+                .stream
+                .alloc_zeros::<f32>(cols)
+                .context("alloc dbeta")?;
+            let func = self.module.load_function("layernorm_backward")?;
+            let (ri, ci) = (rows as i32, cols as i32);
+            let mut builder = self.stream.launch_builder(&func);
+            builder.arg(&x_dev);
+            builder.arg(&g_dev);
+            builder.arg(&dy_dev);
+            builder.arg(&mean_dev);
+            builder.arg(&rstd_dev);
+            builder.arg(&mut dx_dev);
+            builder.arg(&mut dgamma_dev);
+            builder.arg(&mut dbeta_dev);
+            builder.arg(&ri);
+            builder.arg(&ci);
+            // SAFETY: 10 args match the layernorm_backward signature; one thread per row.
+            unsafe {
+                builder
+                    .launch(LaunchConfig::for_num_elems(rows as u32))
+                    .context("launch layernorm_backward")?;
+            }
+            Ok((
+                self.stream.clone_dtoh(&dx_dev).context("dtoh dx")?,
+                self.stream.clone_dtoh(&dgamma_dev).context("dtoh dgamma")?,
+                self.stream.clone_dtoh(&dbeta_dev).context("dtoh dbeta")?,
+            ))
+        }
+
+        /// Decoupled AdamW update over a flat parameter block, in place.
+        #[allow(clippy::too_many_arguments)]
+        pub fn adamw_update(
+            &self,
+            param: &mut [f32],
+            grad: &[f32],
+            m: &mut [f32],
+            v: &mut [f32],
+            t: u32,
+            lr: f32,
+            beta1: f32,
+            beta2: f32,
+            eps: f32,
+            weight_decay: f32,
+        ) -> Result<()> {
+            let n = param.len();
+            anyhow::ensure!(
+                grad.len() == n && m.len() == n && v.len() == n,
+                "adamw length mismatch"
+            );
+            let mut p_dev = self.stream.clone_htod(&*param).context("htod param")?;
+            let g_dev = self.stream.clone_htod(grad).context("htod grad")?;
+            let mut m_dev = self.stream.clone_htod(&*m).context("htod m")?;
+            let mut v_dev = self.stream.clone_htod(&*v).context("htod v")?;
+            let bc1 = 1.0f32 - beta1.powi(t as i32);
+            let bc2 = 1.0f32 - beta2.powi(t as i32);
+            let func = self.module.load_function("adamw_update")?;
+            let n_arg = n as i32;
+            let mut builder = self.stream.launch_builder(&func);
+            builder.arg(&mut p_dev);
+            builder.arg(&g_dev);
+            builder.arg(&mut m_dev);
+            builder.arg(&mut v_dev);
+            builder.arg(&lr);
+            builder.arg(&beta1);
+            builder.arg(&beta2);
+            builder.arg(&eps);
+            builder.arg(&weight_decay);
+            builder.arg(&bc1);
+            builder.arg(&bc2);
+            builder.arg(&n_arg);
+            // SAFETY: 12 args match the adamw_update signature; buffers hold n elements.
+            unsafe {
+                builder
+                    .launch(LaunchConfig::for_num_elems(n as u32))
+                    .context("launch adamw_update")?;
+            }
+            param.copy_from_slice(&self.stream.clone_dtoh(&p_dev).context("dtoh param")?);
+            m.copy_from_slice(&self.stream.clone_dtoh(&m_dev).context("dtoh m")?);
+            v.copy_from_slice(&self.stream.clone_dtoh(&v_dev).context("dtoh v")?);
+            Ok(())
+        }
     }
 }
 
@@ -329,6 +821,51 @@ mod tests {
         // Aᵀ·B with A stored 3x2 equals (2x3)·B with A transposed.
         let at = [1.0, 4.0, 2.0, 5.0, 3.0, 6.0]; // (2x3)^T = 3x2
         assert_eq!(matmul_tn_cpu(&at, 3, 2, &b, 2), nn);
+    }
+
+    #[test]
+    fn cpu_softmax_rows_sum_to_one() {
+        let y = softmax_cpu(&[1.0, 2.0, 3.0, 0.0, 5.0, 0.0], 2, 3);
+        assert!((y[0..3].iter().sum::<f32>() - 1.0).abs() < 1.0e-6);
+        assert!((y[3..6].iter().sum::<f32>() - 1.0).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn cpu_layernorm_zero_centers_rows() {
+        let (y, _m, _r) = layernorm_forward_cpu(
+            &[1.0, 2.0, 3.0, 4.0],
+            &[1.0, 1.0],
+            &[0.0, 0.0],
+            2,
+            2,
+            1.0e-5,
+        );
+        // gamma=1, beta=0 => each row is zero-mean.
+        assert!((y[0] + y[1]).abs() < 1.0e-4);
+        assert!((y[2] + y[3]).abs() < 1.0e-4);
+    }
+
+    #[test]
+    fn cpu_adamw_moves_params_toward_lower_grad() {
+        let mut p = [1.0f32, -2.0, 3.0];
+        let (mut m, mut v) = (vec![0.0f32; 3], vec![0.0f32; 3]);
+        let before = p;
+        adamw_update_cpu(
+            &mut p,
+            &[1.0, 1.0, 1.0],
+            &mut m,
+            &mut v,
+            1,
+            0.1,
+            0.9,
+            0.999,
+            1.0e-8,
+            0.0,
+        );
+        // positive gradient => parameters decrease.
+        for (a, b) in p.iter().zip(before.iter()) {
+            assert!(a < b);
+        }
     }
 
     // ─── GPU parity tests (hardware-gated behind --features cuda) ───
@@ -437,6 +974,100 @@ mod tests {
         fn gpu_device_name_is_reported() {
             let k = gpu::GpuKernels::new(0).expect("gpu init");
             assert!(!k.device_name().is_empty());
+        }
+
+        #[test]
+        fn gpu_softmax_matches_cpu() {
+            let k = gpu::GpuKernels::new(0).expect("gpu init");
+            let (rows, cols) = (40, 17);
+            let x = fill(rows * cols, 20);
+            assert_close(
+                &k.softmax(&x, rows, cols).unwrap(),
+                &softmax_cpu(&x, rows, cols),
+                1.0e-4,
+            );
+        }
+
+        #[test]
+        fn gpu_softmax_backward_matches_cpu() {
+            let k = gpu::GpuKernels::new(0).expect("gpu init");
+            let (rows, cols) = (33, 21);
+            let x = fill(rows * cols, 21);
+            let y = softmax_cpu(&x, rows, cols);
+            let dy = fill(rows * cols, 22);
+            assert_close(
+                &k.softmax_backward(&y, &dy, rows, cols).unwrap(),
+                &softmax_backward_cpu(&y, &dy, rows, cols),
+                1.0e-4,
+            );
+        }
+
+        #[test]
+        fn gpu_layernorm_forward_matches_cpu() {
+            let k = gpu::GpuKernels::new(0).expect("gpu init");
+            let (rows, cols) = (24, 32);
+            let x = fill(rows * cols, 23);
+            let gamma: Vec<f32> = fill(cols, 24).iter().map(|v| 1.0 + v * 0.1).collect();
+            let beta = fill(cols, 25);
+            let (gy, gm, gr) = k
+                .layernorm_forward(&x, &gamma, &beta, rows, cols, 1.0e-5)
+                .unwrap();
+            let (cy, cm, cr) = layernorm_forward_cpu(&x, &gamma, &beta, rows, cols, 1.0e-5);
+            assert_close(&gy, &cy, 1.0e-3);
+            assert_close(&gm, &cm, 1.0e-4);
+            assert_close(&gr, &cr, 1.0e-3);
+        }
+
+        #[test]
+        fn gpu_layernorm_backward_matches_cpu() {
+            let k = gpu::GpuKernels::new(0).expect("gpu init");
+            let (rows, cols) = (28, 30);
+            let x = fill(rows * cols, 26);
+            let gamma: Vec<f32> = fill(cols, 27).iter().map(|v| 1.0 + v * 0.1).collect();
+            let beta = vec![0.0f32; cols];
+            let (_y, mean, rstd) = layernorm_forward_cpu(&x, &gamma, &beta, rows, cols, 1.0e-5);
+            let dy = fill(rows * cols, 28);
+            let (gdx, gdg, gdb) = k
+                .layernorm_backward(&x, &gamma, &dy, &mean, &rstd, rows, cols)
+                .unwrap();
+            let (cdx, cdg, cdb) = layernorm_backward_cpu(&x, &gamma, &dy, &mean, &rstd, rows, cols);
+            assert_close(&gdx, &cdx, 1.0e-3);
+            assert_close(&gdg, &cdg, 2.0e-3); // dgamma/dbeta use atomicAdd (order-dependent f32)
+            assert_close(&gdb, &cdb, 2.0e-3);
+        }
+
+        #[test]
+        fn gpu_gelu_backward_matches_cpu() {
+            let k = gpu::GpuKernels::new(0).expect("gpu init");
+            let x = fill(2048, 29);
+            let dy = fill(2048, 30);
+            assert_close(
+                &k.gelu_backward(&x, &dy).unwrap(),
+                &gelu_backward_cpu(&x, &dy),
+                1.0e-3,
+            );
+        }
+
+        #[test]
+        fn gpu_adamw_matches_cpu_over_several_steps() {
+            let k = gpu::GpuKernels::new(0).expect("gpu init");
+            let n = 1024;
+            let grad = fill(n, 32);
+            let (mut gp, mut cp) = (fill(n, 31), fill(n, 31));
+            let (mut gm, mut gv) = (vec![0.0f32; n], vec![0.0f32; n]);
+            let (mut cm, mut cv) = (vec![0.0f32; n], vec![0.0f32; n]);
+            for t in 1..=3u32 {
+                k.adamw_update(
+                    &mut gp, &grad, &mut gm, &mut gv, t, 0.01, 0.9, 0.999, 1.0e-8, 0.01,
+                )
+                .unwrap();
+                adamw_update_cpu(
+                    &mut cp, &grad, &mut cm, &mut cv, t, 0.01, 0.9, 0.999, 1.0e-8, 0.01,
+                );
+            }
+            assert_close(&gp, &cp, 1.0e-4);
+            assert_close(&gm, &cm, 1.0e-4);
+            assert_close(&gv, &cv, 1.0e-4);
         }
     }
 }
