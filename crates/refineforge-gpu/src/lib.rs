@@ -386,6 +386,29 @@ extern "C" __global__ void adamw_update(float* param, const float* grad, float* 
         param[i] = p;
     }
 }
+
+// y[r,c] += b[c]  (broadcast a row-vector bias over every row)
+extern "C" __global__ void bias_add(float* y, const float* b, int rows, int cols) {
+    int c = blockIdx.x * blockDim.x + threadIdx.x;
+    int r = blockIdx.y * blockDim.y + threadIdx.y;
+    if (r < rows && c < cols) y[r * cols + c] += b[c];
+}
+
+// db[c] = sum_r dy[r,c]  (column reduction -> bias gradient)
+extern "C" __global__ void col_sum(const float* dy, float* db, int rows, int cols) {
+    int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (c < cols) {
+        float s = 0.0f;
+        for (int r = 0; r < rows; ++r) s += dy[r * cols + c];
+        db[c] = s;
+    }
+}
+
+// out[i] += a[i]  (in-place residual add)
+extern "C" __global__ void add_inplace(float* out, const float* a, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) out[i] += a[i];
+}
 "#;
 
 #[cfg(feature = "cuda")]
@@ -395,7 +418,9 @@ pub mod gpu {
     //! [`GpuKernels`] compiles the kernel module once (nvrtc) and reuses it for
     //! every launch, holding the context, default stream, and loaded module.
     use anyhow::{Context, Result};
-    use cudarc::driver::{CudaContext, CudaModule, CudaStream, LaunchConfig, PushKernelArg};
+    use cudarc::driver::{
+        CudaContext, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
+    };
     use cudarc::nvrtc::compile_ptx;
     use std::sync::Arc;
 
@@ -411,6 +436,23 @@ pub mod gpu {
             grid_dim: ((cols as u32).div_ceil(bx), (rows as u32).div_ceil(by), 1),
             block_dim: (bx, by, 1),
             shared_mem_bytes: 0,
+        }
+    }
+
+    /// A 2-D `f32` tensor that lives in GPU memory between ops (no host
+    /// round-trips) — the building block for device-resident layers.
+    pub struct DeviceTensor {
+        pub(crate) buf: cudarc::driver::CudaSlice<f32>,
+        pub rows: usize,
+        pub cols: usize,
+    }
+
+    impl DeviceTensor {
+        pub fn len(&self) -> usize {
+            self.rows * self.cols
+        }
+        pub fn is_empty(&self) -> bool {
+            self.len() == 0
         }
     }
 
@@ -796,8 +838,212 @@ pub mod gpu {
             v.copy_from_slice(&self.stream.clone_dtoh(&v_dev).context("dtoh v")?);
             Ok(())
         }
+
+        // ─── Device-resident ops (no host round-trips between calls) ───
+
+        /// Upload a host slice to a new device tensor.
+        pub fn to_device(&self, host: &[f32], rows: usize, cols: usize) -> Result<DeviceTensor> {
+            anyhow::ensure!(host.len() == rows * cols, "to_device dim mismatch");
+            Ok(DeviceTensor {
+                buf: self.stream.clone_htod(host).context("htod")?,
+                rows,
+                cols,
+            })
+        }
+
+        /// A zeroed device tensor.
+        pub fn zeros_device(&self, rows: usize, cols: usize) -> Result<DeviceTensor> {
+            Ok(DeviceTensor {
+                buf: self
+                    .stream
+                    .alloc_zeros::<f32>(rows * cols)
+                    .context("alloc")?,
+                rows,
+                cols,
+            })
+        }
+
+        /// Download a device tensor to host.
+        pub fn to_host(&self, t: &DeviceTensor) -> Result<Vec<f32>> {
+            self.stream.clone_dtoh(&t.buf).context("dtoh")
+        }
+
+        fn dev_mm(
+            &self,
+            func: &str,
+            a: &CudaSlice<f32>,
+            b: &CudaSlice<f32>,
+            m: usize,
+            n: usize,
+            k: usize,
+        ) -> Result<CudaSlice<f32>> {
+            let mut c = self.stream.alloc_zeros::<f32>(m * n).context("alloc c")?;
+            let function = self
+                .module
+                .load_function(func)
+                .with_context(|| format!("load {func}"))?;
+            let (mi, ni, ki) = (m as i32, n as i32, k as i32);
+            let mut builder = self.stream.launch_builder(&function);
+            builder.arg(a);
+            builder.arg(b);
+            builder.arg(&mut c);
+            builder.arg(&mi);
+            builder.arg(&ni);
+            builder.arg(&ki);
+            // SAFETY: 6 args match the matmul kernel signature.
+            unsafe {
+                builder
+                    .launch(cfg_2d(m, n))
+                    .with_context(|| format!("launch {func}"))?;
+            }
+            Ok(c)
+        }
+
+        /// `C = A · B` (A `m×k`, B `k×n`), device-resident.
+        pub fn dev_matmul_nn(&self, a: &DeviceTensor, b: &DeviceTensor) -> Result<DeviceTensor> {
+            anyhow::ensure!(a.cols == b.rows, "dev_matmul_nn inner dim mismatch");
+            Ok(DeviceTensor {
+                buf: self.dev_mm("matmul_nn", &a.buf, &b.buf, a.rows, b.cols, a.cols)?,
+                rows: a.rows,
+                cols: b.cols,
+            })
+        }
+
+        /// `C = A · Bᵀ` (A `m×k`, B `n×k`), device-resident.
+        pub fn dev_matmul_nt(&self, a: &DeviceTensor, b: &DeviceTensor) -> Result<DeviceTensor> {
+            anyhow::ensure!(a.cols == b.cols, "dev_matmul_nt inner dim mismatch");
+            Ok(DeviceTensor {
+                buf: self.dev_mm("matmul_nt", &a.buf, &b.buf, a.rows, b.rows, a.cols)?,
+                rows: a.rows,
+                cols: b.rows,
+            })
+        }
+
+        /// `C = Aᵀ · B` (A `k×m`, B `k×n`), device-resident.
+        pub fn dev_matmul_tn(&self, a: &DeviceTensor, b: &DeviceTensor) -> Result<DeviceTensor> {
+            anyhow::ensure!(a.rows == b.rows, "dev_matmul_tn inner dim mismatch");
+            Ok(DeviceTensor {
+                buf: self.dev_mm("matmul_tn", &a.buf, &b.buf, a.cols, b.cols, a.rows)?,
+                rows: a.cols,
+                cols: b.cols,
+            })
+        }
+
+        /// `y[r,c] += bias[c]` in place (bias is `1×cols`).
+        pub fn dev_bias_add(&self, y: &mut DeviceTensor, bias: &DeviceTensor) -> Result<()> {
+            anyhow::ensure!(bias.len() == y.cols, "dev_bias_add dim mismatch");
+            let function = self.module.load_function("bias_add")?;
+            let (ri, ci) = (y.rows as i32, y.cols as i32);
+            let mut builder = self.stream.launch_builder(&function);
+            builder.arg(&mut y.buf);
+            builder.arg(&bias.buf);
+            builder.arg(&ri);
+            builder.arg(&ci);
+            // SAFETY: 4 args match bias_add(float*, const float*, int, int).
+            unsafe {
+                builder
+                    .launch(cfg_2d(y.rows, y.cols))
+                    .context("launch bias_add")?;
+            }
+            Ok(())
+        }
+
+        /// Column sum `db[c] = Σ_r dy[r,c]` → a `1×cols` device tensor.
+        pub fn dev_col_sum(&self, dy: &DeviceTensor) -> Result<DeviceTensor> {
+            let mut db = self
+                .stream
+                .alloc_zeros::<f32>(dy.cols)
+                .context("alloc db")?;
+            let function = self.module.load_function("col_sum")?;
+            let (ri, ci) = (dy.rows as i32, dy.cols as i32);
+            let mut builder = self.stream.launch_builder(&function);
+            builder.arg(&dy.buf);
+            builder.arg(&mut db);
+            builder.arg(&ri);
+            builder.arg(&ci);
+            // SAFETY: 4 args match col_sum(const float*, float*, int, int).
+            unsafe {
+                builder
+                    .launch(LaunchConfig::for_num_elems(dy.cols as u32))
+                    .context("launch col_sum")?;
+            }
+            Ok(DeviceTensor {
+                buf: db,
+                rows: 1,
+                cols: dy.cols,
+            })
+        }
+
+        /// `out[i] += a[i]` in place (residual add).
+        pub fn dev_add_inplace(&self, out: &mut DeviceTensor, a: &DeviceTensor) -> Result<()> {
+            anyhow::ensure!(out.len() == a.len(), "dev_add_inplace length mismatch");
+            let n = out.len();
+            let function = self.module.load_function("add_inplace")?;
+            let n_arg = n as i32;
+            let mut builder = self.stream.launch_builder(&function);
+            builder.arg(&mut out.buf);
+            builder.arg(&a.buf);
+            builder.arg(&n_arg);
+            // SAFETY: 3 args match add_inplace(float*, const float*, int).
+            unsafe {
+                builder
+                    .launch(LaunchConfig::for_num_elems(n as u32))
+                    .context("launch add_inplace")?;
+            }
+            Ok(())
+        }
+
+        /// Device-resident AdamW update over a parameter tensor in place.
+        #[allow(clippy::too_many_arguments)]
+        pub fn dev_adamw(
+            &self,
+            param: &mut DeviceTensor,
+            grad: &DeviceTensor,
+            m: &mut DeviceTensor,
+            v: &mut DeviceTensor,
+            t: u32,
+            lr: f32,
+            beta1: f32,
+            beta2: f32,
+            eps: f32,
+            weight_decay: f32,
+        ) -> Result<()> {
+            let n = param.len();
+            anyhow::ensure!(
+                grad.len() == n && m.len() == n && v.len() == n,
+                "dev_adamw length mismatch"
+            );
+            let bc1 = 1.0f32 - beta1.powi(t as i32);
+            let bc2 = 1.0f32 - beta2.powi(t as i32);
+            let function = self.module.load_function("adamw_update")?;
+            let n_arg = n as i32;
+            let mut builder = self.stream.launch_builder(&function);
+            builder.arg(&mut param.buf);
+            builder.arg(&grad.buf);
+            builder.arg(&mut m.buf);
+            builder.arg(&mut v.buf);
+            builder.arg(&lr);
+            builder.arg(&beta1);
+            builder.arg(&beta2);
+            builder.arg(&eps);
+            builder.arg(&weight_decay);
+            builder.arg(&bc1);
+            builder.arg(&bc2);
+            builder.arg(&n_arg);
+            // SAFETY: 12 args match the adamw_update kernel signature.
+            unsafe {
+                builder
+                    .launch(LaunchConfig::for_num_elems(n as u32))
+                    .context("launch dev_adamw")?;
+            }
+            Ok(())
+        }
     }
 }
+
+/// Device-resident layers built on [`gpu::GpuKernels`] (only with `--features cuda`).
+#[cfg(feature = "cuda")]
+pub mod device;
 
 #[cfg(test)]
 mod tests {
