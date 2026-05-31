@@ -6,8 +6,8 @@
   "axiom_count": 0,
   "lean_toolchain": "leanprover/lean4:v4.29.1",
   "lean_module": "Refineforge.CapabilityRevocation",
-  "stdout": "Build completed successfully (9 jobs).\n",
+  "stdout": "Build completed successfully (16 jobs).\n",
   "stderr": "",
   "policy_notes": [],
-  "checked_at": "2026-05-29T13:05:45.235472400Z"
+  "checked_at": "2026-05-31T03:51:14.255067700Z"
 }
