@@ -1,0 +1,17 @@
+[package]
+name = "refineforge-gpu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "refineforge: hand-written CUDA compute for the native GPT GPU path. The GPU code is behind the optional `cuda` feature (cudarc + nvrtc); the default build is a CPU-only reference with no CUDA dependency, so CI builds it without a GPU or CUDA toolkit."
+
+[features]
+default = []
+# Enable the real CUDA path (cudarc + runtime nvrtc). Requires an NVIDIA GPU
+# and a CUDA driver at runtime; intentionally NOT in `default` so the workspace
+# builds in CI without CUDA.
+cuda = ["dep:cudarc"]
+
+[dependencies]
+anyhow = "1.0"
+cudarc = { version = "0.19", optional = true, default-features = false, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-version-from-build-system"] }
