@@ -783,7 +783,10 @@ fn validate_release_evidence(evidence_dir: &Path, request: Option<&Value>) -> Re
     let hosted_ci_path = safe_join(evidence_dir, "release/hosted-ci.json")?;
     let hosted_ci = load_json(&hosted_ci_path)?;
     require_json_status_in(&hosted_ci, &["passed"], &hosted_ci_path)?;
-    if !["workflow_url", "workflow_run_url", "url"]
+    // `hosted_ci_url` is the canonical key emitted by
+    // scripts/ci/write-release-production-evidence.sh and read by the
+    // production-proof validator; the remaining names are accepted aliases.
+    if !["hosted_ci_url", "workflow_url", "workflow_run_url", "url"]
         .iter()
         .any(|field| string_field_nonempty(&hosted_ci, field))
     {
@@ -796,7 +799,9 @@ fn validate_release_evidence(evidence_dir: &Path, request: Option<&Value>) -> Re
     let cosign_path = safe_join(evidence_dir, "release/cosign-verify.json")?;
     let cosign = load_json(&cosign_path)?;
     require_json_status_in(&cosign, &["passed", "verified"], &cosign_path)?;
-    if !["signer_identity", "identity", "certificate_identity"]
+    // `identity_regex` is the canonical key emitted by the CI cosign-verify
+    // evidence writer; the remaining names are accepted aliases.
+    if !["identity_regex", "signer_identity", "identity", "certificate_identity"]
         .iter()
         .any(|field| string_field_nonempty(&cosign, field))
     {

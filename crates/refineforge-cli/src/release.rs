@@ -991,6 +991,58 @@ fn push_tag_available_gate(
     Ok(())
 }
 
+/// Production-proof evidence-discovery environment variables read by the
+/// `refine agent {devops,lean,train,kernel}` validators to locate hosted CI,
+/// signing, SBOM/provenance, training, kernel, and human-approval evidence.
+///
+/// The release-ready gates verify the *workspace itself* and must run
+/// hermetically — they must not observe ambient production-proof evidence.
+/// Without scrubbing, `refine agent devops --mode check` (which exports
+/// `REFINEFORGE_RELEASE_EVIDENCE_DIR` and then runs `cargo test` as a gate)
+/// leaks that variable into the workspace's own anti-spoofing tests, which then
+/// discover the real evidence, report `passed` instead of the expected
+/// `blocked`, and fail the gate — making the agent check self-sabotage.
+///
+/// `*_BIN` helper-locator variables and signature config are intentionally NOT
+/// listed: those configure how a gate runs, not which evidence it discovers.
+const AGENT_EVIDENCE_ENV_VARS: &[&str] = &[
+    // devops
+    "REFINEFORGE_RELEASE_EVIDENCE_DIR",
+    "REFINEFORGE_OFFLINE_RELEASE_EVIDENCE_DIR",
+    "REFINEFORGE_HOSTED_CI_EVIDENCE",
+    "REFINEFORGE_SIGSTORE_EVIDENCE",
+    "REFINEFORGE_VERIFIER_CONTAINER_DIGEST",
+    "REFINEFORGE_HUMAN_RELEASE_APPROVAL",
+    "REFINEFORGE_HUMAN_OFFLINE_RELEASE_APPROVAL",
+    // lean
+    "REFINEFORGE_LEAN_EVIDENCE_DIR",
+    // train
+    "REFINEFORGE_TRAINING_EVIDENCE_DIR",
+    "REFINEFORGE_TRAINING_CHECKPOINT",
+    "REFINEFORGE_TRAINING_EVAL_REPORT",
+    "REFINEFORGE_TRAINING_REGRESSION_REPORT",
+    "REFINEFORGE_TRAINING_COMPUTE_LEDGER",
+    "REFINEFORGE_TRAINING_PROMOTION_MANIFEST",
+    "REFINEFORGE_TRAINING_CONVERSION_MANIFEST",
+    "REFINEFORGE_TRAINING_HUMAN_APPROVAL",
+    // kernel
+    "REFINEFORGE_KERNEL_EVIDENCE_DIR",
+    "REFINEFORGE_KERNEL_HARDWARE_MATRIX",
+    "REFINEFORGE_KERNEL_PERFORMANCE_BASELINE",
+    "REFINEFORGE_KERNEL_HELYX_HANDOFF",
+    "REFINEFORGE_KERNEL_COMPILER_METADATA",
+    "REFINEFORGE_KERNEL_CPU_REFERENCE",
+    "REFINEFORGE_KERNEL_HUMAN_APPROVAL",
+];
+
+/// Strip agent evidence-discovery variables from a gate subprocess so the
+/// release-ready gates run hermetically. See [`AGENT_EVIDENCE_ENV_VARS`].
+fn scrub_agent_evidence_env(command: &mut Command) {
+    for var in AGENT_EVIDENCE_ENV_VARS {
+        command.env_remove(var);
+    }
+}
+
 fn push_command_gate(
     root: &Path,
     report: &mut ReleaseReport,
@@ -1031,6 +1083,10 @@ fn push_command_gate(
     let start = Instant::now();
     let mut command = Command::new(program);
     command.current_dir(root).args(cmd_args);
+    // Gates verify the workspace itself; keep ambient production-proof evidence
+    // out of the subprocess so `refine agent ... --mode check` does not leak its
+    // evidence env vars into the workspace's own anti-spoofing test gate.
+    scrub_agent_evidence_env(&mut command);
     if let Some(target_dir) = &cargo_target_dir {
         command.env("CARGO_TARGET_DIR", target_dir);
     }
@@ -1665,5 +1721,30 @@ mod tests {
             release_cargo_target_dir(Path::new("repo")),
             PathBuf::from("repo").join("target").join("release-ready")
         );
+    }
+
+    #[test]
+    fn release_gates_scrub_agent_evidence_env_vars() {
+        // Regression: gate subprocesses must run hermetically. A gate must not
+        // inherit any agent evidence-discovery variable, otherwise
+        // `refine agent ... --mode check` leaks its evidence env into the
+        // workspace's own anti-spoofing test gate and the gate self-sabotages.
+        let mut command = Command::new("cargo");
+        scrub_agent_evidence_env(&mut command);
+        let removed: std::collections::BTreeSet<String> = command
+            .get_envs()
+            .filter(|(_, value)| value.is_none())
+            .map(|(key, _)| key.to_string_lossy().into_owned())
+            .collect();
+        for var in AGENT_EVIDENCE_ENV_VARS {
+            assert!(
+                removed.contains(*var),
+                "{var} must be scrubbed from release-ready gate subprocesses"
+            );
+        }
+        // The variable that caused the real contamination is covered, and no
+        // stray removals leak beyond the documented contract.
+        assert!(removed.contains("REFINEFORGE_RELEASE_EVIDENCE_DIR"));
+        assert_eq!(removed.len(), AGENT_EVIDENCE_ENV_VARS.len());
     }
 }
