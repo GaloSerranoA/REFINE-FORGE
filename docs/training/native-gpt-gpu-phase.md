@@ -257,18 +257,29 @@ remains the deterministic reference.
   original M12 candidate, was deprioritized: it optimizes the currently-unused
   packed path and, since accuracy is data-bound, would not improve eval.)*
 
-- **M13 — trainer trust-ladder integration (designed, not built).** The remaining
-  step to make the GPU-trained model *approvable* like the CPU backend: emit the
-  standard evidence contract (`progress.jsonl`; `checkpoints/step-N/
-  gpt-checkpoint.json` with `weights_sha256`; `train-metadata.json`;
-  `generation-smoke.json`) so `report.rs` / `evidence.rs` build valid eval /
-  regression / promotion manifests. Building blocks `generate` (done) and the eval
-  metrics exist; what remains is a deterministic `weights_sha256` walk over the GPU
-  weights plus the artifact emission. The one genuine **decision** is direction:
-  have `refineforge-trainer` depend on `refineforge-gpu` (cuda-gated) and dispatch a
-  `refineforge_native_gpt_cuda` backend, **or** have `refineforge-gpu` emit the
-  evidence directory directly (no dependency surgery). Surfaced for a steer rather
-  than guessed, since a subtly-wrong evidence contract would undermine the very
-  trust model it serves. Note the GPU path is `f32` / statistical-not-bit-exact, so
-  its `weights_sha256` is a per-run integrity hash, not a cross-run-reproducible one
-  (the CPU `f64` path remains the deterministic reference).
+- **M13 — GPU trust-ladder evidence (built, report-verified).** Makes the
+  GPU-trained model emit the standard trust-ladder evidence so the trainer's tooling
+  consumes it — via the chosen **GPU-emits-evidence** direction (no trainer-crate
+  surgery). New GPU model API: `parameter_count`, `weight_values` (a deterministic
+  `collect_weights` walk over every trainable tensor), and `generate` (M12), all
+  cuda-tested (36 cuda tests). The `gpu_evidence` example trains the GPU GPT on a
+  pack and writes a complete run directory — `config.yaml`, `progress.jsonl`
+  (`ProgressRecord` per epoch), `checkpoints/step-N/gpt-checkpoint.json` (with a
+  `weights_sha256` from `sha2(weight_values)`), `train-metadata.json`,
+  `generation-smoke.json` — matching the schemas the trainer reads.
+
+  **Verified end to end:** `refineforge-trainer report <gpu-run-dir>` consumes the
+  GPU evidence and builds a valid `report.json` (all 4 metrics summarized, the
+  checkpoint listed). The `backend.kind` stays the valid `refineforge_native_gpt`
+  (the architecture *is* the native GPT); the GPU `f32` compute is recorded honestly
+  in the `architecture` block (precision / device / compute) — `weights_sha256` is a
+  per-run **integrity** hash, not cross-run-reproducible (the CPU `f64` path remains
+  the deterministic reference), consistent with the f32 / non-bit-exact stance.
+
+  **Honest boundary:** the downstream `evidence` → eval-report / regression /
+  promotion manifests gate on `report.final_outcome == "success"`, which is set by
+  the **live training pipeline** (`refine agent train` via `runner.rs`), not by the
+  standalone report-rebuild CLI (which labels it `"rebuilt"`). Reaching that final
+  approval gate legitimately is the **trainer-dispatch** integration (the other M13
+  direction). The evidence *format* is verified-compatible; the run-*status* gate is
+  not bypassed (hand-editing the outcome to force it would be evidence tampering).

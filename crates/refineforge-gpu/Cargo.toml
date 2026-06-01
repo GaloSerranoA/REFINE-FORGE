@@ -17,7 +17,8 @@ anyhow = "1.0"
 cudarc = { version = "0.19", optional = true, default-features = false, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-version-from-build-system"] }
 
 [dev-dependencies]
-# Used by the `train_*` examples to parse the SFT pack's records.json, and by the
-# `gpu_ledger` example to hash the kernel source for the compute-ledger evidence.
+# Used by the `train_*` / `gpu_ledger` / `gpu_evidence` examples to parse the SFT
+# pack, hash kernel source + weights, and stamp trust-ladder evidence timestamps.
 serde_json = "1.0"
 sha2 = "0.10"
+chrono = "0.4"
