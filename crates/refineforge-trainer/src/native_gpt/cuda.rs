@@ -84,16 +84,59 @@ pub fn run(paths: &RunPaths, exp: &Experiment) -> Result<NativeGptOutcome> {
 
     let save_steps = exp.checkpoint.save_steps.unwrap_or(cfg.steps as u64).max(1) as usize;
     let lr = cfg.learning_rate as f32;
+    // Optional KL self-distillation (anti-forgetting, per "Why Fine-Tuning
+    // Encourages Hallucinations"): after a warm-up the student is snapshotted into a
+    // frozen teacher, and the remaining steps add λ·KL(teacher ‖ student) to the
+    // loss. Disabled when self_distill_lambda == 0 (the default).
+    let self_distill_lambda = super::hyper_f64(exp, "self_distill_lambda", 0.0)? as f32;
+    let distill_tau = super::hyper_f64(exp, "distill_temperature", 1.0)? as f32;
+    let warmup_steps =
+        super::hyper_usize(exp, "self_distill_warmup_steps", (cfg.steps / 3).max(1))?;
+    let mut teacher: Option<GptModel> = None;
     let mut global = 0u32;
     let mut records = 0usize;
     // One "step" is a pass over the training set (SGD, one sequence per train_step).
     for step in 1..=cfg.steps {
+        // snapshot the frozen teacher once, after warm-up, when distillation is on
+        if self_distill_lambda > 0.0 && teacher.is_none() && step > warmup_steps {
+            let mut t = GptModel::new(
+                &k,
+                vocab_size,
+                cfg.n_embed,
+                cfg.n_head,
+                cfg.n_layers,
+                cfg.hidden(),
+                cfg.context_length,
+                cfg.seed,
+            )?;
+            t.load_weights(&k, &model.weight_values(&k)?)?;
+            teacher = Some(t);
+            writeln!(
+                log_file,
+                "self-distillation: snapshotted frozen teacher at step {step} (lambda={self_distill_lambda}, tau={distill_tau})"
+            )?;
+        }
         let (mut train_loss, mut n) = (0.0f64, 0u32);
         for ex in &train {
             global += 1;
             let toks: Vec<i32> = ex.tokens.iter().map(|&t| t as i32).collect();
             let mask: Vec<i32> = ex.loss_mask.iter().map(|&m| i32::from(m)).collect();
-            let (loss, _acc) = model.train_step(&k, &toks, &mask, global, lr)?;
+            let loss = if let Some(teach) = &teacher {
+                let (teacher_logits, _c) = teach.forward(&k, &toks)?;
+                let (ce, _kl, _acc) = model.train_step_distill(
+                    &k,
+                    &toks,
+                    &mask,
+                    &teacher_logits,
+                    distill_tau,
+                    self_distill_lambda,
+                    global,
+                    lr,
+                )?;
+                ce
+            } else {
+                model.train_step(&k, &toks, &mask, global, lr)?.0
+            };
             train_loss += f64::from(loss);
             n += 1;
         }
