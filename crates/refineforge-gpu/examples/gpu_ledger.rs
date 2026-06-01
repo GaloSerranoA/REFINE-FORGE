@@ -23,7 +23,8 @@ fn main() -> anyhow::Result<()> {
     use sha2::{Digest, Sha256};
 
     let out = std::env::args().nth(1);
-    let k = GpuKernels::new(0)?;
+    let k = GpuKernels::new_auto()?;
+    eprintln!("GPU: {}", k.device_summary());
     let (cc_major, cc_minor) = k.compute_capability();
 
     let src = refineforge_gpu::KERNEL_SOURCE;
@@ -67,6 +68,9 @@ fn main() -> anyhow::Result<()> {
         "device": {
             "name": k.device_name(),
             "compute_capability": format!("{cc_major}.{cc_minor}"),
+            "total_memory_gib": (k.total_memory() as f64 / (1024.0 * 1024.0 * 1024.0) * 10.0).round() / 10.0,
+            "ordinal": k.ordinal(),
+            "visible_device_count": GpuKernels::device_count(),
         },
         "kernels": {
             "source_sha256": source_sha256,

@@ -107,7 +107,8 @@ fn main() -> anyhow::Result<()> {
         "model: embed={embed} heads={n_head} layers={n_layers} hidden={hidden} base_lr={base_lr} wd={weight_decay} ls={label_smoothing} do={dropout} · {epochs} epochs, batch=1"
     );
 
-    let k = GpuKernels::new(0)?;
+    let k = GpuKernels::new_auto()?;
+    eprintln!("GPU: {}", k.device_summary());
     let mut model = GptModel::new(&k, vocab, embed, n_head, n_layers, hidden, context, 7)?;
     model.set_weight_decay(weight_decay);
     model.set_label_smoothing(label_smoothing);

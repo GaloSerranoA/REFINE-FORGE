@@ -91,7 +91,8 @@ fn main() -> anyhow::Result<()> {
     // ─── small model for a quick evidence run ───
     let (embed, n_head, n_layers, hidden, seed, lr, wd) =
         (128usize, 4usize, 2usize, 512usize, 7u64, 6.0e-4f32, 0.1f32);
-    let k = GpuKernels::new(0)?;
+    let k = GpuKernels::new_auto()?;
+    eprintln!("GPU: {}", k.device_summary());
     let mut model = GptModel::new(&k, vocab, embed, n_head, n_layers, hidden, context, seed)?;
     model.set_weight_decay(wd);
     model.set_label_smoothing(0.1);
