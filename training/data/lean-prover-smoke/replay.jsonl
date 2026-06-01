@@ -1,0 +1,4 @@
+{"prompt":"theorem add_zero (n : Nat) : n + 0 = n := by","candidates":["by simp","by rfl"]}
+{"prompt":"theorem mul_one (n : Nat) : n * 1 = n := by","candidates":["by ring"]}
+{"prompt":"theorem id_eq (a : Nat) : a = a := by","candidates":["by rfl"]}
+{"prompt":"theorem le_refl (a : Nat) : a <= a := by","candidates":["by exact le_refl _","by rfl"]}

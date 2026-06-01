@@ -1045,6 +1045,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "refineforge-prover"
+version = "0.2.2"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "refineforge-repair-api"
 version = "0.2.2"
 dependencies = [
@@ -1074,6 +1086,7 @@ dependencies = [
  "chrono",
  "clap",
  "refineforge-gpu",
+ "refineforge-prover",
  "refineforge-repair-api",
  "regex",
  "serde",

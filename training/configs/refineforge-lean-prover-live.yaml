@@ -1,0 +1,46 @@
+# refineforge_lean_prover — LIVE run against a downloaded open prover.
+#
+# This is the real, trust-bearing path: a downloaded 7B prover generates best-of-k
+# candidates and the REAL Lean checker (`lake env lean`) gates every one. The
+# expensive prover training was already done by the model authors and released as
+# open weights, so this inherits a strong prover for ≈$0.
+#
+# 1) Serve the prover (the GPU is the server's concern — this backend is
+#    GPU-agnostic). On a dual-GPU box, pin it to the fast fp16 card:
+#      CUDA_VISIBLE_DEVICES=0 vllm serve deepseek-ai/DeepSeek-Prover-V2-7B --port 8000
+#    (RTX 5080 fp16 is the right home for a 7B; the Pascal P40 is better as a
+#     second worker or for an int8/4-bit larger model via llama.cpp.)
+# 2) Have a real lake/Mathlib project whose toolchain matches the prover's, at
+#    `lean_dir`. The checker runs `lake env lean <candidate>`; exit 0 ⇒ accepted.
+# 3) Run:
+#      cargo run -p refineforge-trainer -- run training/configs/refineforge-lean-prover-live.yaml
+#
+#    then take the evidence through the ladder:
+#      refine-train evidence runs/refineforge-lean-prover-live --out-dir <eval> ...
+id: refineforge-lean-prover-live
+base_model:
+  name: deepseek-ai/DeepSeek-Prover-V2-7B
+  source: native
+dataset:
+  # Your problem set: JSONL of {id, statement, split?, template?}. The statement
+  # is the prompt; an optional `template` with {{proof}} is filled before checking.
+  path: training/data/lean-prover-smoke/problems.jsonl
+  format: jsonl
+backend:
+  kind: refineforge_lean_prover
+hyperparameters:
+  prover_base_url: http://localhost:8000
+  prover_model: deepseek-ai/DeepSeek-Prover-V2-7B
+  prover_api: chat            # "chat" (/v1/chat/completions) or "completion"
+  max_tokens: 2048
+  samples: 8                  # best-of-k proof attempts per problem
+  verifier: lean              # the real trust gate (NOT dry_run)
+  lean_dir: lean              # a lake project root with Mathlib
+  lean_command: lake env lean
+monitoring:
+  metrics_to_track:
+    - proof_pass_rate
+    - solved
+retry:
+  max_attempts: 1
+  backoff_seconds: 0

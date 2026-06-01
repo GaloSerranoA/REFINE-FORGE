@@ -1,0 +1,19 @@
+[package]
+name = "refineforge-prover"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "refineforge: GPU-agnostic Lean proof-search orchestration — point at a locally-running open prover (DeepSeek-Prover / Goedel / Kimina via vLLM or llama.cpp), generate best-of-k proof candidates, gate each with the Lean checker, and emit trust-ladder evidence."
+
+[dependencies]
+anyhow                  = "1.0"
+serde                   = { version = "1.0", features = ["derive"] }
+serde_json              = "1.0"
+chrono                  = { version = "0.4", features = ["serde"] }
+# Blocking HTTP client to talk to an OpenAI-compatible prover server (vLLM /
+# llama.cpp). Same feature set the rest of the workspace already builds, so this
+# adds no new transitive cost to CI.
+reqwest                 = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+
+[dev-dependencies]
+tempfile    = "3"

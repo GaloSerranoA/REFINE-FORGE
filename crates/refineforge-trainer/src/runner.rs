@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use crate::checkpoint;
 use crate::experiment::{Backend, Experiment};
 use crate::progress::parser_for;
-use crate::{native, native_causal, native_gpt};
+use crate::{lean_prover, native, native_causal, native_gpt};
 
 #[derive(Debug, Clone)]
 pub struct RunPaths {
@@ -317,6 +317,17 @@ pub fn run_once(runs_root: &Path, exp: &Experiment) -> Result<RunOutcome> {
         anyhow::bail!(
             "backend.kind=refineforge_native_gpt_cuda requires building refineforge-trainer with --features cuda (and an NVIDIA GPU)"
         );
+    }
+    if exp.backend.kind == "refineforge_lean_prover" {
+        // GPU-agnostic proof-search orchestration: no CUDA, talks to a prover
+        // server over HTTP (or replays offline). The run "succeeds" when the
+        // search completes; the eval gates judge the resulting proof_pass_rate.
+        let outcome = lean_prover::run(&paths, exp)?;
+        return Ok(RunOutcome {
+            exit_status: successful_exit_status(),
+            progress_records: outcome.progress_records,
+            paths,
+        });
     }
 
     let argv = build_command(&exp.backend, &paths, exp)?;
