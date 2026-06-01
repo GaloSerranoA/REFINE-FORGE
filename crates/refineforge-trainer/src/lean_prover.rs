@@ -29,7 +29,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use refineforge_prover::{
     CommandVerifier, DryRunVerifier, OpenAiProver, Problem, ProofSearch, ProverApi, ProverClient,
-    ReplayProver, Verifier,
+    ReplayProver, SamplingMode, Verifier,
 };
 use std::collections::BTreeMap;
 use std::io::Write as _;
@@ -73,8 +73,17 @@ pub fn run(paths: &RunPaths, exp: &Experiment) -> Result<LeanProverOutcome> {
         let model = hyper_str(exp, "prover_model").context(
             "refineforge_lean_prover requires hyperparameters.prover_model (or prover_replay_file)",
         )?;
-        let mut p =
-            OpenAiProver::new(base, model)?.with_max_tokens(hyper_usize(exp, "max_tokens", 2048));
+        // Best-of-k sampling: Auto (default) sends n=k and tops up with
+        // single-sample requests if the server ignored n>1 (llama.cpp) — correct
+        // on both vLLM and llama.cpp. Override with prover_sampling: batched|per_request.
+        let sampling = match hyper_str(exp, "prover_sampling") {
+            Some("batched") => SamplingMode::Batched,
+            Some("per_request") => SamplingMode::PerRequest,
+            _ => SamplingMode::Auto,
+        };
+        let mut p = OpenAiProver::new(base, model)?
+            .with_max_tokens(hyper_usize(exp, "max_tokens", 2048))
+            .with_sampling(sampling);
         if hyper_str(exp, "prover_api") == Some("chat") {
             p = p.with_api(ProverApi::Chat);
         }

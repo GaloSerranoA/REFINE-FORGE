@@ -273,8 +273,32 @@ pub enum ProverApi {
     Chat,
 }
 
+/// How best-of-k candidates are drawn from the server — the fix for servers that
+/// silently ignore `n>1`.
+///
+/// vLLM / TGI honour `"n": k` and return k candidates in one request.
+/// **`llama.cpp`'s `llama-server` ignores `n` and returns a single choice**, so a
+/// naive `n=k` request collapses best-of-k to best-of-1 with no error. The default
+/// [`Auto`](SamplingMode::Auto) detects this and tops up with single-sample
+/// requests, so best-of-k is correct on *both* without configuration. (All modes
+/// need `temperature > 0` for candidate diversity — the default 0.8 is fine.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SamplingMode {
+    /// Send `n=k`; if the server returns fewer than k (it ignored `n`), top up
+    /// with single-sample requests until k are gathered. One request on vLLM, k on
+    /// llama.cpp — correct everywhere. The default.
+    Auto,
+    /// Always one request with `n=k`; trust the server to return k. Fastest, but
+    /// silently best-of-1 on servers that ignore `n` — use only with vLLM/TGI.
+    Batched,
+    /// Always k independent `n=1` requests. For servers that *reject* `n>1` rather
+    /// than ignore it (where `Auto`'s first probe would error).
+    PerRequest,
+}
+
 /// A prover served behind an OpenAI-compatible HTTP API (vLLM `--api`,
-/// `llama-server`, etc.). Blocking; one request yields up to `n` candidates.
+/// `llama-server`, etc.). Blocking. Best-of-k respects [`SamplingMode`], so it is
+/// correct even on servers that ignore `n>1`.
 pub struct OpenAiProver {
     base_url: String,
     model: String,
@@ -283,6 +307,7 @@ pub struct OpenAiProver {
     temperature: f64,
     stop: Vec<String>,
     api_key: Option<String>,
+    sampling: SamplingMode,
     client: reqwest::blocking::Client,
 }
 
@@ -300,6 +325,7 @@ impl OpenAiProver {
             temperature: 0.8,
             stop: Vec::new(),
             api_key: None,
+            sampling: SamplingMode::Auto,
             client: reqwest::blocking::Client::builder()
                 .timeout(Duration::from_secs(60))
                 .build()
@@ -309,6 +335,10 @@ impl OpenAiProver {
 
     pub fn with_api(mut self, api: ProverApi) -> Self {
         self.api = api;
+        self
+    }
+    pub fn with_sampling(mut self, sampling: SamplingMode) -> Self {
+        self.sampling = sampling;
         self
     }
     pub fn with_max_tokens(mut self, n: usize) -> Self {
@@ -355,10 +385,10 @@ impl OpenAiProver {
         }
         body
     }
-}
 
-impl ProverClient for OpenAiProver {
-    fn complete(&self, prompt: &str, n: usize) -> Result<Vec<String>> {
+    /// Issue ONE request asking for up to `n` candidates, and parse the choices. A
+    /// server that ignores `n>1` returns a single choice; [`gather`] tops it up.
+    fn send_once(&self, prompt: &str, n: usize) -> Result<Vec<String>> {
         let mut req = self
             .client
             .post(self.endpoint())
@@ -376,6 +406,55 @@ impl ProverClient for OpenAiProver {
             ProverApi::Completion => parse_completion_response(&value),
             ProverApi::Chat => parse_chat_response(&value),
         }
+    }
+}
+
+/// Draw up to `n` best-of-k candidates via `fetch` (one server request per call),
+/// honouring the [`SamplingMode`]. Pulled out as a free fn over a closure so the
+/// top-up logic is unit-tested without a live server. Truncated to `n`.
+fn gather<F>(n: usize, mode: SamplingMode, fetch: F) -> Result<Vec<String>>
+where
+    F: Fn(usize) -> Result<Vec<String>>,
+{
+    let n = n.max(1);
+    let mut out = match mode {
+        SamplingMode::Batched => fetch(n)?,
+        SamplingMode::Auto => {
+            // One n=k probe. vLLM returns k (done); llama.cpp returns ~1 → top up
+            // with single-sample requests. A failed probe surfaces (server down);
+            // a failed top-up just stops (we already have ≥1 candidate).
+            let mut acc = fetch(n)?;
+            while acc.len() < n {
+                match fetch(1) {
+                    Ok(c) if !c.is_empty() => acc.extend(c),
+                    _ => break,
+                }
+            }
+            acc
+        }
+        SamplingMode::PerRequest => {
+            let mut acc = Vec::with_capacity(n);
+            let mut last_err = None;
+            for _ in 0..n {
+                match fetch(1) {
+                    Ok(c) => acc.extend(c),
+                    Err(e) => last_err = Some(e),
+                }
+            }
+            // Surface a total failure (every request errored); else use what we got.
+            if let Some(e) = last_err.filter(|_| acc.is_empty()) {
+                return Err(e);
+            }
+            acc
+        }
+    };
+    out.truncate(n);
+    Ok(out)
+}
+
+impl ProverClient for OpenAiProver {
+    fn complete(&self, prompt: &str, n: usize) -> Result<Vec<String>> {
+        gather(n, self.sampling, |m| self.send_once(prompt, m))
     }
 }
 
@@ -780,6 +859,122 @@ mod tests {
     fn base_url_trailing_slash_is_normalized() {
         let p = OpenAiProver::new("http://localhost:8000/", "m").unwrap();
         assert_eq!(p.endpoint(), "http://localhost:8000/v1/completions");
+    }
+
+    // ── best-of-k sampling (the llama.cpp `n>1` fix), tested without a server by
+    //    simulating each backend's behaviour via the `gather` closure. ──
+
+    #[test]
+    fn gather_batched_is_one_request() {
+        let calls = std::cell::Cell::new(0);
+        let out = gather(4, SamplingMode::Batched, |m| {
+            calls.set(calls.get() + 1);
+            Ok((0..m).map(|i| format!("c{i}")).collect())
+        })
+        .unwrap();
+        assert_eq!(out.len(), 4);
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn gather_auto_one_request_when_server_honors_n() {
+        // vLLM-like: returns exactly the k requested in a single call.
+        let calls = std::cell::Cell::new(0);
+        let out = gather(8, SamplingMode::Auto, |m| {
+            calls.set(calls.get() + 1);
+            Ok((0..m).map(|i| format!("c{i}")).collect())
+        })
+        .unwrap();
+        assert_eq!(out.len(), 8);
+        assert_eq!(calls.get(), 1, "vLLM honours n=k in one request");
+    }
+
+    #[test]
+    fn gather_auto_tops_up_when_server_ignores_n() {
+        // llama.cpp-like: ignores n, always returns a single choice.
+        let calls = std::cell::Cell::new(0);
+        let out = gather(5, SamplingMode::Auto, |_m| {
+            calls.set(calls.get() + 1);
+            Ok(vec!["one".to_string()])
+        })
+        .unwrap();
+        assert_eq!(out.len(), 5, "topped up to k via single-sample requests");
+        assert_eq!(calls.get(), 5, "1 probe + 4 top-ups — genuine best-of-5");
+    }
+
+    #[test]
+    fn gather_per_request_loops_k_times() {
+        let calls = std::cell::Cell::new(0);
+        let out = gather(3, SamplingMode::PerRequest, |_m| {
+            calls.set(calls.get() + 1);
+            Ok(vec!["x".to_string()])
+        })
+        .unwrap();
+        assert_eq!(out.len(), 3);
+        assert_eq!(calls.get(), 3);
+    }
+
+    #[test]
+    fn gather_truncates_overshoot_to_n() {
+        let out = gather(2, SamplingMode::Batched, |_m| {
+            Ok(vec!["a".into(), "b".into(), "c".into(), "d".into()])
+        })
+        .unwrap();
+        assert_eq!(
+            out.len(),
+            2,
+            "best-of-k budget honoured even if the server over-returns"
+        );
+    }
+
+    #[test]
+    fn gather_auto_probe_error_propagates() {
+        let r = gather(4, SamplingMode::Auto, |_m| -> Result<Vec<String>> {
+            anyhow::bail!("server down")
+        });
+        assert!(r.is_err(), "a dead server surfaces, not silently best-of-0");
+    }
+
+    #[test]
+    fn gather_per_request_all_errors_propagate() {
+        let r = gather(4, SamplingMode::PerRequest, |_m| -> Result<Vec<String>> {
+            anyhow::bail!("server down")
+        });
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn gather_per_request_partial_failure_keeps_successes() {
+        // First request errors; the rest succeed → best-of-(k-1), no hard failure.
+        let calls = std::cell::Cell::new(0);
+        let out = gather(4, SamplingMode::PerRequest, |_m| {
+            let i = calls.get();
+            calls.set(i + 1);
+            if i == 0 {
+                anyhow::bail!("transient")
+            } else {
+                Ok(vec!["ok".to_string()])
+            }
+        })
+        .unwrap();
+        assert_eq!(out.len(), 3, "kept the successful candidates");
+    }
+
+    #[test]
+    fn gather_auto_topup_stops_when_dry() {
+        // Probe returns 1, then top-up dries up → stop (no infinite loop).
+        let calls = std::cell::Cell::new(0);
+        let out = gather(5, SamplingMode::Auto, |_m| {
+            let i = calls.get();
+            calls.set(i + 1);
+            if i == 0 {
+                Ok(vec!["one".to_string()])
+            } else {
+                Ok(vec![])
+            }
+        })
+        .unwrap();
+        assert_eq!(out.len(), 1);
     }
 
     #[test]

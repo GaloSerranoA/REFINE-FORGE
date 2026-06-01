@@ -6,10 +6,13 @@
 # open weights, so this inherits a strong prover for ≈$0.
 #
 # 1) Serve the prover (the GPU is the server's concern — this backend is
-#    GPU-agnostic). On a dual-GPU box, pin it to the fast fp16 card:
-#      CUDA_VISIBLE_DEVICES=0 vllm serve deepseek-ai/DeepSeek-Prover-V2-7B --port 8000
-#    (RTX 5080 fp16 is the right home for a 7B; the Pascal P40 is better as a
-#     second worker or for an int8/4-bit larger model via llama.cpp.)
+#    GPU-agnostic). Either backend works; best-of-k is correct on both (see
+#    prover_sampling below).
+#      vLLM (safetensors, fast fp8 on the 5080):
+#        CUDA_VISIBLE_DEVICES=0 vllm serve deepseek-ai/DeepSeek-Prover-V2-7B --port 8000
+#      llama.cpp (GGUF, great on the Pascal P40):
+#        CUDA_VISIBLE_DEVICES=0 llama-server -m models/Goedel-Prover-V2-8B.Q6_K.gguf \
+#          --port 8000 -ngl 99 -c 8192
 # 2) Have a real lake/Mathlib project whose toolchain matches the prover's, at
 #    `lean_dir`. The checker runs `lake env lean <candidate>`; exit 0 ⇒ accepted.
 # 3) Run:
@@ -32,6 +35,10 @@ hyperparameters:
   prover_base_url: http://localhost:8000
   prover_model: deepseek-ai/DeepSeek-Prover-V2-7B
   prover_api: chat            # "chat" (/v1/chat/completions) or "completion"
+  prover_sampling: auto       # auto (default): correct on BOTH vLLM and llama.cpp.
+                              # llama-server ignores n>1, so auto sends k single
+                              # requests there; vLLM gets k in one. "batched" forces
+                              # one n=k request (vLLM only); "per_request" forces k.
   max_tokens: 2048
   samples: 8                  # best-of-k proof attempts per problem
   verifier: lean              # the real trust gate (NOT dry_run)
