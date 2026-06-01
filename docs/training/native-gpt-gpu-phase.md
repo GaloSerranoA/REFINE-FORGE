@@ -246,3 +246,29 @@ remains the deterministic reference.
   `train_scale`. The remaining real accuracy lever is **more data**; the repo's
   Mathlib SFT set caps at ~1000 examples, so a genuine break past ~25 % needs more
   teacher-distilled data (out of scope here).
+
+- **M12 — greedy generation.** `GptModel::generate` (forward → argmax of the last
+  position → append, sliding a context window; deterministic, dropout-off). A cuda
+  test trains a model to memorize a period-5 sequence and asserts greedy generation
+  reproduces it (and is deterministic across calls); `train_scale` ends with a
+  held-out-prompt generation demo (35 cuda tests). This is the natural capstone — a
+  trained GPU GPT that actually *generates* — and the building block for the
+  `generation-smoke` trust-evidence artifact. *(Block-diagonal attention, the
+  original M12 candidate, was deprioritized: it optimizes the currently-unused
+  packed path and, since accuracy is data-bound, would not improve eval.)*
+
+- **M13 — trainer trust-ladder integration (designed, not built).** The remaining
+  step to make the GPU-trained model *approvable* like the CPU backend: emit the
+  standard evidence contract (`progress.jsonl`; `checkpoints/step-N/
+  gpt-checkpoint.json` with `weights_sha256`; `train-metadata.json`;
+  `generation-smoke.json`) so `report.rs` / `evidence.rs` build valid eval /
+  regression / promotion manifests. Building blocks `generate` (done) and the eval
+  metrics exist; what remains is a deterministic `weights_sha256` walk over the GPU
+  weights plus the artifact emission. The one genuine **decision** is direction:
+  have `refineforge-trainer` depend on `refineforge-gpu` (cuda-gated) and dispatch a
+  `refineforge_native_gpt_cuda` backend, **or** have `refineforge-gpu` emit the
+  evidence directory directly (no dependency surgery). Surfaced for a steer rather
+  than guessed, since a subtly-wrong evidence contract would undermine the very
+  trust model it serves. Note the GPU path is `f32` / statistical-not-bit-exact, so
+  its `weights_sha256` is a per-run integrity hash, not a cross-run-reproducible one
+  (the CPU `f64` path remains the deterministic reference).

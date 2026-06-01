@@ -1103,6 +1103,31 @@ impl GptModel {
         Ok(mean_loss_acc(&losses, &correct, count))
     }
 
+    /// Greedy autoregressive generation: forward, take the argmax of the last
+    /// position's logits, append, and slide a context-length window. Deterministic
+    /// (always greedy, dropout off). Returns the `seed` followed by `max_new`
+    /// generated tokens.
+    pub fn generate(&self, k: &GpuKernels, seed: &[i32], max_new: usize) -> Result<Vec<i32>> {
+        anyhow::ensure!(!seed.is_empty(), "generation needs a non-empty seed");
+        let mut tokens = seed.to_vec();
+        for _ in 0..max_new {
+            let start = tokens.len().saturating_sub(self.context);
+            let ctx = &tokens[start..];
+            let (logits, _cache) = self.forward(k, ctx)?;
+            let host = k.to_host(&logits)?;
+            let last = ctx.len() - 1;
+            let row = &host[last * self.vocab..(last + 1) * self.vocab];
+            let next = row
+                .iter()
+                .enumerate()
+                .max_by(|a, b| a.1.total_cmp(b.1))
+                .map(|(j, _)| j as i32)
+                .unwrap();
+            tokens.push(next);
+        }
+        Ok(tokens)
+    }
+
     /// One packed mini-batch training step → `(mean_loss, accuracy)` over all
     /// supervised targets in the batch. `seg_ids`/`pos_ids` come from
     /// [`packed_layout`]; `loss_mask` is the packed per-token supervision mask.
@@ -1794,6 +1819,39 @@ mod tests {
             eval_loss.is_finite() && eval_acc >= 0.0,
             "eval must run dropout-off"
         );
+    }
+
+    #[test]
+    fn gpu_model_generates_learned_pattern() {
+        // Train to memorize a period-5 sequence, then greedily generate from the
+        // pattern's start — it must continue the pattern, deterministically.
+        let k = GpuKernels::new(0).expect("gpu init");
+        let (vocab, embed, n_head, n_layers, hidden, context) = (24, 32, 4, 2, 64, 16);
+        let mut model =
+            GptModel::new(&k, vocab, embed, n_head, n_layers, hidden, context, 7).unwrap();
+        let tokens: Vec<i32> = (0..context).map(|i| ((i % 5) + 2) as i32).collect();
+        let loss_mask: Vec<i32> = vec![1; context];
+        for step in 1..=150u32 {
+            model
+                .train_step(&k, &tokens, &loss_mask, step, 0.01)
+                .unwrap();
+        }
+        let seed: Vec<i32> = (0..5).map(|i| (i % 5) + 2).collect(); // [2,3,4,5,6]
+        let out = model.generate(&k, &seed, 10).unwrap();
+        assert_eq!(out.len(), 15);
+        // every position should match the period-5 pattern token ((i % 5) + 2)
+        let correct = out
+            .iter()
+            .enumerate()
+            .filter(|&(i, &t)| t == ((i % 5) + 2) as i32)
+            .count();
+        assert!(
+            correct >= 13,
+            "generation should follow the learned period-5 pattern: {out:?} ({correct}/15)"
+        );
+        // greedy generation is deterministic
+        let out2 = model.generate(&k, &seed, 10).unwrap();
+        assert_eq!(out, out2, "greedy generation must be deterministic");
     }
 
     #[test]

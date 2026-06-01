@@ -201,5 +201,22 @@ fn main() -> anyhow::Result<()> {
         "BEST  held-out: dev_acc={best_acc:.4} (epoch {best_acc_epoch}), dev_loss={best_loss:.4} (epoch {best_loss_epoch}) — early-stopping checkpoint"
     );
     println!("(CPU native-gpt scale baseline: dev_loss≈6.40, target_acc≈0.056 after 40 steps)");
+
+    // ─── greedy generation from a held-out prompt (dropout-off) ───
+    if let Some((start, len, _)) = dev.first().map(|&i| seqs[i]) {
+        let prompt_len = loss_mask[start..start + len]
+            .iter()
+            .take_while(|&&m| m == 0)
+            .count()
+            .max(1);
+        let prompt: Vec<i32> = tokens[start..start + prompt_len].to_vec();
+        let gen = model.generate(&k, &prompt, 12)?;
+        println!(
+            "\ngeneration (held-out prompt, greedy): {} prompt → {} new tokens",
+            prompt.len(),
+            gen.len() - prompt.len()
+        );
+        println!("  generated token ids: {:?}", &gen[prompt.len()..]);
+    }
     Ok(())
 }
