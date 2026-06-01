@@ -1038,6 +1038,7 @@ name = "refineforge-gpu"
 version = "0.2.2"
 dependencies = [
  "anyhow",
+ "chrono",
  "cudarc",
  "serde_json",
  "sha2",

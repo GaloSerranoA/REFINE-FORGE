@@ -60,6 +60,12 @@ impl Linear {
         self.weight_decay = wd;
     }
 
+    /// Append this layer's trainable tensors (weight then bias) for hashing.
+    fn collect_weights<'a>(&'a self, out: &mut Vec<&'a DeviceTensor>) {
+        out.push(&self.w);
+        out.push(&self.bias);
+    }
+
     /// `y = x·Wᵀ + b`, where `x` is `T×in` and `y` is `T×out`.
     pub fn forward(&self, k: &GpuKernels, x: &DeviceTensor) -> Result<DeviceTensor> {
         anyhow::ensure!(x.cols == self.in_dim, "Linear forward input dim mismatch");
@@ -236,6 +242,12 @@ impl LayerNorm {
         )?;
         Ok(())
     }
+
+    /// Append this layer's trainable tensors (gamma then beta) for hashing.
+    fn collect_weights<'a>(&'a self, out: &mut Vec<&'a DeviceTensor>) {
+        out.push(&self.gamma);
+        out.push(&self.beta);
+    }
 }
 
 /// Position-wise MLP: `Linear(embed→hidden) → GELU → Linear(hidden→embed)`.
@@ -295,6 +307,11 @@ impl Mlp {
     pub fn set_weight_decay(&mut self, wd: f32) {
         self.fc1.set_weight_decay(wd);
         self.fc2.set_weight_decay(wd);
+    }
+
+    fn collect_weights<'a>(&'a self, out: &mut Vec<&'a DeviceTensor>) {
+        self.fc1.collect_weights(out);
+        self.fc2.collect_weights(out);
     }
 }
 
@@ -551,6 +568,13 @@ impl Attention {
         self.v.set_weight_decay(wd);
         self.o.set_weight_decay(wd);
     }
+
+    fn collect_weights<'a>(&'a self, out: &mut Vec<&'a DeviceTensor>) {
+        self.q.collect_weights(out);
+        self.k.collect_weights(out);
+        self.v.collect_weights(out);
+        self.o.collect_weights(out);
+    }
 }
 
 /// A full pre-norm transformer block:
@@ -735,6 +759,14 @@ impl Block {
     pub fn set_weight_decay(&mut self, wd: f32) {
         self.attn.set_weight_decay(wd);
         self.mlp.set_weight_decay(wd);
+    }
+
+    /// All trainable tensors in canonical order (ln1, attn, ln2, mlp) for hashing.
+    fn collect_weights<'a>(&'a self, out: &mut Vec<&'a DeviceTensor>) {
+        self.ln1.collect_weights(out);
+        self.attn.collect_weights(out);
+        self.ln2.collect_weights(out);
+        self.mlp.collect_weights(out);
     }
 }
 
@@ -1126,6 +1158,40 @@ impl GptModel {
             tokens.push(next);
         }
         Ok(tokens)
+    }
+
+    /// All trainable tensors in a fixed canonical order: token embedding,
+    /// position embedding, each block (ln1/attn/ln2/mlp), final LayerNorm, LM head.
+    fn collect_weights<'a>(&'a self, out: &mut Vec<&'a DeviceTensor>) {
+        out.push(&self.tok_emb);
+        out.push(&self.pos_emb);
+        for block in &self.blocks {
+            block.collect_weights(out);
+        }
+        self.ln_f.collect_weights(out);
+        self.lm_head.collect_weights(out);
+    }
+
+    /// Total number of trainable parameters.
+    pub fn parameter_count(&self) -> usize {
+        let mut w = Vec::new();
+        self.collect_weights(&mut w);
+        w.iter().map(|t| t.len()).sum()
+    }
+
+    /// All trainable weights read to host in the canonical [`collect_weights`]
+    /// order — the basis for a checkpoint hash. The GPU path is `f32` /
+    /// statistical-not-bit-exact, so a hash of these is a per-run integrity hash,
+    /// not a cross-run-reproducible one (the CPU `f64` path stays the deterministic
+    /// reference).
+    pub fn weight_values(&self, k: &GpuKernels) -> Result<Vec<f32>> {
+        let mut tensors = Vec::new();
+        self.collect_weights(&mut tensors);
+        let mut out = Vec::with_capacity(self.parameter_count());
+        for t in tensors {
+            out.extend(k.to_host(t)?);
+        }
+        Ok(out)
     }
 
     /// One packed mini-batch training step → `(mean_loss, accuracy)` over all
@@ -1852,6 +1918,36 @@ mod tests {
         // greedy generation is deterministic
         let out2 = model.generate(&k, &seed, 10).unwrap();
         assert_eq!(out, out2, "greedy generation must be deterministic");
+    }
+
+    #[test]
+    fn gpu_weight_values_fingerprint() {
+        // parameter_count + weight_values back the checkpoint hash: length matches,
+        // reading twice is identical, and a training step changes the weights.
+        let k = GpuKernels::new(0).expect("gpu init");
+        let (vocab, embed, n_head, n_layers, hidden, context) = (20, 16, 2, 2, 32, 8);
+        let mut model =
+            GptModel::new(&k, vocab, embed, n_head, n_layers, hidden, context, 3).unwrap();
+        let pc = model.parameter_count();
+        assert!(pc > 0);
+        let w0 = model.weight_values(&k).unwrap();
+        assert_eq!(
+            w0.len(),
+            pc,
+            "weight_values length must equal parameter_count"
+        );
+        assert_eq!(
+            w0,
+            model.weight_values(&k).unwrap(),
+            "reading twice must match"
+        );
+
+        let tokens: Vec<i32> = (0..context).map(|i| ((i % 3) + 1) as i32).collect();
+        let mask = vec![1; context];
+        model.train_step(&k, &tokens, &mask, 1, 0.05).unwrap();
+        let w1 = model.weight_values(&k).unwrap();
+        assert_eq!(w1.len(), pc, "param count stable after a step");
+        assert!(w0 != w1, "a training step must change the weights");
     }
 
     #[test]
