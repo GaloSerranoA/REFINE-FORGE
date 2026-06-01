@@ -218,3 +218,31 @@ remains the deterministic reference.
   Open follow-ups (beyond this phase): dropout, a block-diagonal / flash-attention
   kernel for real packed throughput, **more training data** (the accuracy lever),
   and wiring the GPU backend into the trainer's evidence / trust-ladder pipeline.
+
+### Phase 3 — follow-ups
+
+- **M11 — dropout (residual).** A deterministic counter-based dropout kernel
+  (forward → `y` + keep-mask, backward `dx = dy ⊙ mask`), parity-tested (drop rate
+  ≈ p, inverted-dropout mean ≈ 1, scale, determinism, backward). Residual dropout
+  is wired into every `Block` (attention + MLP outputs, masks cached for backward;
+  per-block + per-sublayer seeds) via `GptModel::set_dropout`. It is **off by
+  default and always off at eval** (zero seed), so the prior 33 cuda tests and the
+  packed-forward==sequential parity gate are unchanged; a new end-to-end test
+  confirms the model trains with dropout active (34 cuda tests).
+
+  **Honest measured verdict** (wd 0.1 + ls 0.1, ± dropout 0.1):
+
+  | config | best held-out acc | best held-out loss | train acc @20 | ms/step |
+  |---|---|---|---|---|
+  | no dropout | 25.3 % (e10) | **4.55** | 99.1 % | 37 |
+  | dropout 0.1 | 25.3 % (e9) | 4.58 | 96.6 % | 42.6 |
+
+  Dropout **does not help**: identical peak accuracy, slightly worse best loss,
+  +15 % compute. It *does* regularize (train memorization 99.1 % → 96.6 %), but
+  that does not reach held-out — so **three independent regularizers (weight decay,
+  label smoothing, dropout) now all confirm the ~25 % held-out ceiling is
+  data-bound, not regularization-bound.** The dropout feature is correct and
+  reusable (would help on larger/different data) but is defaulted off in
+  `train_scale`. The remaining real accuracy lever is **more data**; the repo's
+  Mathlib SFT set caps at ~1000 examples, so a genuine break past ~25 % needs more
+  teacher-distilled data (out of scope here).

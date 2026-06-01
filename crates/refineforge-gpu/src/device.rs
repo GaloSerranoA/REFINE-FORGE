@@ -560,6 +560,8 @@ pub struct Block {
     attn: Attention,
     ln2: LayerNorm,
     mlp: Mlp,
+    /// Residual dropout probability (0 = off). Set via [`Block::set_dropout`].
+    dropout_p: f32,
 }
 
 /// Forward activations the [`Block`] backward needs.
@@ -574,6 +576,9 @@ pub struct BlockCache {
     r2: DeviceTensor,
     h1: DeviceTensor,
     act: DeviceTensor,
+    /// Keep-masks for the attention / MLP residual dropout (None when off).
+    drop_a: Option<DeviceTensor>,
+    drop_m: Option<DeviceTensor>,
 }
 
 impl Block {
@@ -583,11 +588,33 @@ impl Block {
             attn,
             ln2,
             mlp,
+            dropout_p: 0.0,
+        }
+    }
+
+    /// Set residual dropout probability (applied to the attention + MLP outputs).
+    pub fn set_dropout(&mut self, p: f32) {
+        self.dropout_p = p;
+    }
+
+    /// Apply residual dropout to `t` when enabled and `seed != 0` (training);
+    /// returns the (possibly unchanged) tensor and the keep-mask for backward.
+    fn apply_dropout(
+        &self,
+        k: &GpuKernels,
+        t: DeviceTensor,
+        seed: u64,
+    ) -> Result<(DeviceTensor, Option<DeviceTensor>)> {
+        if self.dropout_p > 0.0 && seed != 0 {
+            let (y, mask) = k.dev_dropout(&t, self.dropout_p, seed)?;
+            Ok((y, Some(mask)))
+        } else {
+            Ok((t, None))
         }
     }
 
     pub fn forward(&self, k: &GpuKernels, x: &DeviceTensor) -> Result<(DeviceTensor, BlockCache)> {
-        self.forward_impl(k, x, None)
+        self.forward_impl(k, x, None, 0)
     }
 
     /// Packed-batch forward: attention masked per segment via `seg_ids[row]`.
@@ -597,23 +624,33 @@ impl Block {
         x: &DeviceTensor,
         seg_ids: &[i32],
     ) -> Result<(DeviceTensor, BlockCache)> {
-        self.forward_impl(k, x, Some(seg_ids))
+        self.forward_impl(k, x, Some(seg_ids), 0)
     }
 
+    /// `dropout_seed == 0` disables residual dropout (eval); a nonzero seed makes
+    /// the per-sublayer masks reproducible while differing across training steps.
     fn forward_impl(
         &self,
         k: &GpuKernels,
         x: &DeviceTensor,
         seg: Option<&[i32]>,
+        dropout_seed: u64,
     ) -> Result<(DeviceTensor, BlockCache)> {
         let (ln1_y, m1, r1) = self.ln1.forward(k, x)?;
         let (attn_out, attn_cache) = self.attn.forward_impl(k, &ln1_y, seg)?;
+        let (attn_out, drop_a) = self.apply_dropout(k, attn_out, dropout_seed)?;
         let mut x1 = attn_out;
-        k.dev_add_inplace(&mut x1, x)?; // x1 = x + Attn(LN1(x))
+        k.dev_add_inplace(&mut x1, x)?; // x1 = x + dropout(Attn(LN1(x)))
         let (ln2_y, m2, r2) = self.ln2.forward(k, &x1)?;
         let (mlp_out, h1, act) = self.mlp.forward(k, &ln2_y)?;
+        let mlp_seed = if dropout_seed == 0 {
+            0
+        } else {
+            dropout_seed.wrapping_add(0x9E37_79B9_7F4A_7C15)
+        };
+        let (mlp_out, drop_m) = self.apply_dropout(k, mlp_out, mlp_seed)?;
         let mut out = mlp_out;
-        k.dev_add_inplace(&mut out, &x1)?; // out = x1 + MLP(LN2(x1))
+        k.dev_add_inplace(&mut out, &x1)?; // out = x1 + dropout(MLP(LN2(x1)))
         Ok((
             out,
             BlockCache {
@@ -627,6 +664,8 @@ impl Block {
                 r2,
                 h1,
                 act,
+                drop_a,
+                drop_m,
             },
         ))
     }
@@ -661,14 +700,24 @@ impl Block {
         d_out: &DeviceTensor,
         seg: Option<&[i32]>,
     ) -> Result<DeviceTensor> {
-        // out = x1 + MLP(LN2(x1))
-        let d_ln2_y = self.mlp.backward(k, &c.ln2_y, &c.h1, &c.act, d_out)?;
+        // out = x1 + dropout(MLP(LN2(x1)))
+        let d_ln2_y = if let Some(mask) = &c.drop_m {
+            let d_mlp = k.dev_dropout_backward(d_out, mask)?;
+            self.mlp.backward(k, &c.ln2_y, &c.h1, &c.act, &d_mlp)?
+        } else {
+            self.mlp.backward(k, &c.ln2_y, &c.h1, &c.act, d_out)?
+        };
         let mut d_x1 = self.ln2.backward(k, &c.x1, &d_ln2_y, &c.m2, &c.r2)?;
         k.dev_add_inplace(&mut d_x1, d_out)?; // residual through x1
-                                              // x1 = x + Attn(LN1(x))
-        let d_ln1_y = self
-            .attn
-            .backward_impl(k, &c.ln1_y, &c.attn_cache, &d_x1, seg)?;
+                                              // x1 = x + dropout(Attn(LN1(x)))
+        let d_ln1_y = if let Some(mask) = &c.drop_a {
+            let d_attn = k.dev_dropout_backward(&d_x1, mask)?;
+            self.attn
+                .backward_impl(k, &c.ln1_y, &c.attn_cache, &d_attn, seg)?
+        } else {
+            self.attn
+                .backward_impl(k, &c.ln1_y, &c.attn_cache, &d_x1, seg)?
+        };
         let mut dx = self.ln1.backward(k, x, &d_ln1_y, &c.m1, &c.r1)?;
         k.dev_add_inplace(&mut dx, &d_x1)?; // residual through x
         Ok(dx)
@@ -727,6 +776,8 @@ pub struct GptModel {
     context: usize,
     /// Label-smoothing ε used by the training cross-entropy (0 = none).
     label_smoothing: f32,
+    /// Residual dropout probability used during training (0 = none).
+    dropout_p: f32,
 }
 
 /// Forward activations the [`GptModel`] backward needs.
@@ -809,16 +860,27 @@ impl GptModel {
             vocab,
             context,
             label_smoothing: 0.0,
+            dropout_p: 0.0,
         })
     }
 
     pub fn forward(&self, k: &GpuKernels, tokens: &[i32]) -> Result<(DeviceTensor, ModelCache)> {
+        self.forward_seeded(k, tokens, 0)
+    }
+
+    fn forward_seeded(
+        &self,
+        k: &GpuKernels,
+        tokens: &[i32],
+        dropout_seed: u64,
+    ) -> Result<(DeviceTensor, ModelCache)> {
         anyhow::ensure!(tokens.len() <= self.context, "sequence longer than context");
         let x0 = k.dev_embedding_forward(&self.tok_emb, &self.pos_emb, tokens)?;
         let mut xs = vec![x0];
         let mut caches = Vec::with_capacity(self.blocks.len());
-        for block in &self.blocks {
-            let (y, c) = block.forward(k, xs.last().unwrap())?;
+        for (i, block) in self.blocks.iter().enumerate() {
+            let (y, c) =
+                block.forward_impl(k, xs.last().unwrap(), None, block_seed(dropout_seed, i))?;
             caches.push(c);
             xs.push(y);
         }
@@ -846,6 +908,17 @@ impl GptModel {
         seg_ids: &[i32],
         pos_ids: &[i32],
     ) -> Result<(DeviceTensor, ModelCache)> {
+        self.forward_packed_seeded(k, tokens, seg_ids, pos_ids, 0)
+    }
+
+    fn forward_packed_seeded(
+        &self,
+        k: &GpuKernels,
+        tokens: &[i32],
+        seg_ids: &[i32],
+        pos_ids: &[i32],
+        dropout_seed: u64,
+    ) -> Result<(DeviceTensor, ModelCache)> {
         let t = tokens.len();
         anyhow::ensure!(
             seg_ids.len() == t && pos_ids.len() == t,
@@ -858,8 +931,13 @@ impl GptModel {
         let x0 = k.dev_embedding_forward_packed(&self.tok_emb, &self.pos_emb, tokens, pos_ids)?;
         let mut xs = vec![x0];
         let mut caches = Vec::with_capacity(self.blocks.len());
-        for block in &self.blocks {
-            let (y, c) = block.forward_seg(k, xs.last().unwrap(), seg_ids)?;
+        for (i, block) in self.blocks.iter().enumerate() {
+            let (y, c) = block.forward_impl(
+                k,
+                xs.last().unwrap(),
+                Some(seg_ids),
+                block_seed(dropout_seed, i),
+            )?;
             caches.push(c);
             xs.push(y);
         }
@@ -973,6 +1051,16 @@ impl GptModel {
         self.label_smoothing = eps;
     }
 
+    /// Set the residual dropout probability applied inside every block during
+    /// training. Held-out eval and the public `forward`/`forward_packed` never
+    /// apply dropout (they pass a zero seed).
+    pub fn set_dropout(&mut self, p: f32) {
+        self.dropout_p = p;
+        for block in &mut self.blocks {
+            block.set_dropout(p);
+        }
+    }
+
     /// Count active next-token targets (mask set, in-vocab) in a sequence.
     fn count_targets(&self, tokens: &[i32], loss_mask: &[i32]) -> usize {
         (0..tokens.len().saturating_sub(1))
@@ -991,7 +1079,7 @@ impl GptModel {
         t: u32,
         lr: f32,
     ) -> Result<(f32, f32)> {
-        let (logits, cache) = self.forward(k, tokens)?;
+        let (logits, cache) = self.forward_seeded(k, tokens, t as u64)?;
         let count = self.count_targets(tokens, loss_mask);
         let inv = if count > 0 { 1.0 / count as f32 } else { 0.0 };
         let (d_logits, losses, correct) =
@@ -1029,7 +1117,7 @@ impl GptModel {
         t: u32,
         lr: f32,
     ) -> Result<(f32, f32)> {
-        let (logits, cache) = self.forward_packed(k, tokens, seg_ids, pos_ids)?;
+        let (logits, cache) = self.forward_packed_seeded(k, tokens, seg_ids, pos_ids, t as u64)?;
         let count = self.count_targets(tokens, loss_mask);
         let inv = if count > 0 { 1.0 / count as f32 } else { 0.0 };
         let (d_logits, losses, correct) =
@@ -1053,6 +1141,16 @@ impl GptModel {
         let inv = if count > 0 { 1.0 / count as f32 } else { 0.0 };
         let (_d, losses, correct) = k.dev_cross_entropy(&logits, tokens, loss_mask, inv, 0.0)?;
         Ok(mean_loss_acc(&losses, &correct, count))
+    }
+}
+
+/// Per-block dropout seed derived from a base seed; `base == 0` (eval) keeps the
+/// result 0 so dropout stays disabled. Each block gets a distinct nonzero seed.
+fn block_seed(base: u64, block_index: usize) -> u64 {
+    if base == 0 {
+        0
+    } else {
+        base.wrapping_add((block_index as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15))
     }
 }
 
@@ -1660,6 +1758,41 @@ mod tests {
         assert!(
             last_acc > 0.7,
             "next-token accuracy should rise: {last_acc}"
+        );
+    }
+
+    #[test]
+    fn gpu_model_trains_with_dropout() {
+        // With residual dropout enabled, the masks must flow correctly through
+        // forward AND backward — the model still learns the pattern (looser bound
+        // since dropout injects noise), and held-out (dropout-off) eval works.
+        let k = GpuKernels::new(0).expect("gpu init");
+        let (vocab, embed, n_head, n_layers, hidden, context) = (24, 32, 4, 2, 64, 12);
+        let mut model =
+            GptModel::new(&k, vocab, embed, n_head, n_layers, hidden, context, 7).unwrap();
+        model.set_dropout(0.1);
+        let tokens: Vec<i32> = (0..context).map(|i| ((i % 5) + 2) as i32).collect();
+        let loss_mask: Vec<i32> = vec![1; context];
+        let mut first = 0.0f32;
+        let mut last = 0.0f32;
+        for step in 1..=120u32 {
+            let (loss, _acc) = model
+                .train_step(&k, &tokens, &loss_mask, step, 0.01)
+                .unwrap();
+            if step == 1 {
+                first = loss;
+            }
+            last = loss;
+        }
+        assert!(
+            last < first * 0.6,
+            "model should still learn with dropout: first={first} last={last}"
+        );
+        // eval runs with dropout off (zero seed) and produces a finite loss
+        let (eval_loss, eval_acc) = model.evaluate(&k, &tokens, &loss_mask).unwrap();
+        assert!(
+            eval_loss.is_finite() && eval_acc >= 0.0,
+            "eval must run dropout-off"
         );
     }
 

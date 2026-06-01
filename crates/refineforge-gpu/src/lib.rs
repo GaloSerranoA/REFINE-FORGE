@@ -552,6 +552,33 @@ extern "C" __global__ void scale_segmented_causal_mask_grad(float* s, const int*
         else s[i * tt + j] *= scale;
     }
 }
+
+// ─── Dropout (deterministic, counter-based) ───
+
+// Inverted dropout: keep each element with prob (1-p), scaled by 1/(1-p); else 0.
+// The per-element keep/scale value is written to `mask` for the backward pass.
+// Randomness is a stateless SplitMix64 hash of (seed, i), so a given (seed,i)
+// always yields the same mask — reproducible without storing RNG state.
+extern "C" __global__ void dropout_forward(const float* x, float* y, float* mask,
+                                           int n, float p, unsigned long long seed) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    unsigned long long z = seed + (unsigned long long)i * 0x9E3779B97F4A7C15ULL;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    z = z ^ (z >> 31);
+    float r = (float)(z >> 11) * (1.0f / 9007199254740992.0f); // [0,1)
+    float keep = (r >= p) ? (1.0f / (1.0f - p)) : 0.0f;
+    mask[i] = keep;
+    y[i] = x[i] * keep;
+}
+
+// Backward: dx = dy * mask (the same keep/scale recorded in the forward pass).
+extern "C" __global__ void dropout_backward(const float* dy, const float* mask,
+                                            float* dx, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) dx[i] = dy[i] * mask[i];
+}
 "#;
 
 #[cfg(feature = "cuda")]
@@ -1495,6 +1522,64 @@ pub mod gpu {
             Ok(())
         }
 
+        /// Inverted dropout with keep probability `1 - p`. Returns `(y, mask)`;
+        /// `mask` records the per-element keep/scale for the backward pass. `seed`
+        /// makes the mask reproducible and should vary across forward calls.
+        pub fn dev_dropout(
+            &self,
+            x: &DeviceTensor,
+            p: f32,
+            seed: u64,
+        ) -> Result<(DeviceTensor, DeviceTensor)> {
+            let (r, c) = (x.rows, x.cols);
+            let n = r * c;
+            let mut y = self.zeros_device(r, c)?;
+            let mut mask = self.zeros_device(r, c)?;
+            let func = self.module.load_function("dropout_forward")?;
+            let ni = n as i32;
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&x.buf);
+            b.arg(&mut y.buf);
+            b.arg(&mut mask.buf);
+            b.arg(&ni);
+            b.arg(&p);
+            b.arg(&seed);
+            // SAFETY: 6 args match dropout_forward(const float*, float*, float*, int, float, u64).
+            unsafe {
+                b.launch(LaunchConfig::for_num_elems(n as u32))
+                    .context("launch dropout_forward")?;
+            }
+            Ok((y, mask))
+        }
+
+        /// Backward of [`GpuKernels::dev_dropout`]: `dx = dy ⊙ mask`.
+        pub fn dev_dropout_backward(
+            &self,
+            dy: &DeviceTensor,
+            mask: &DeviceTensor,
+        ) -> Result<DeviceTensor> {
+            let (r, c) = (dy.rows, dy.cols);
+            let n = r * c;
+            anyhow::ensure!(
+                mask.rows == r && mask.cols == c,
+                "dropout mask shape mismatch"
+            );
+            let mut dx = self.zeros_device(r, c)?;
+            let func = self.module.load_function("dropout_backward")?;
+            let ni = n as i32;
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&dy.buf);
+            b.arg(&mask.buf);
+            b.arg(&mut dx.buf);
+            b.arg(&ni);
+            // SAFETY: 4 args match dropout_backward(const float*, const float*, float*, int).
+            unsafe {
+                b.launch(LaunchConfig::for_num_elems(n as u32))
+                    .context("launch dropout_backward")?;
+            }
+            Ok(dx)
+        }
+
         // ─── Embedding + cross-entropy (model endpoints) ───
 
         /// `x[i] = tok_emb[tokens[i]] + pos_emb[i]` for a length-`T` sequence.
@@ -1874,6 +1959,50 @@ mod tests {
                 major >= 1,
                 "compute capability major should be reported: {major}.{minor}"
             );
+        }
+
+        #[test]
+        fn gpu_dropout_is_correct() {
+            let k = gpu::GpuKernels::new(0).expect("gpu init");
+            let (p, seed, n) = (0.3f32, 42u64, 10_000usize);
+            let x = vec![1.0f32; n];
+            let xd = k.to_device(&x, 100, 100).unwrap();
+            let (y, mask) = k.dev_dropout(&xd, p, seed).unwrap();
+            let hy = k.to_host(&y).unwrap();
+            let hm = k.to_host(&mask).unwrap();
+
+            // dropout rate ≈ p, and inverted-dropout preserves expectation (mean ≈ 1)
+            let zeros = hm.iter().filter(|&&v| v == 0.0).count() as f32 / n as f32;
+            assert!(
+                (zeros - p).abs() < 0.03,
+                "drop rate {zeros} should be ≈ {p}"
+            );
+            let mean = hm.iter().sum::<f32>() / n as f32;
+            assert!(
+                (mean - 1.0).abs() < 0.03,
+                "inverted-dropout mean {mean} should be ≈ 1"
+            );
+            // kept elements are scaled by 1/(1-p); x = 1 so y == mask
+            let scale = 1.0 / (1.0 - p);
+            for (&m, &yi) in hm.iter().zip(&hy) {
+                assert!(m == 0.0 || (m - scale).abs() < 1e-5, "mask value {m}");
+                assert!((yi - m).abs() < 1e-6, "y should equal x*mask");
+            }
+            // deterministic: same seed → identical mask
+            let (_y2, mask2) = k.dev_dropout(&xd, p, seed).unwrap();
+            assert_eq!(
+                hm,
+                k.to_host(&mask2).unwrap(),
+                "same seed must reproduce the mask"
+            );
+            // backward: dx = dy ⊙ mask
+            let dy = k.to_device(&vec![2.0f32; n], 100, 100).unwrap();
+            let dx = k
+                .to_host(&k.dev_dropout_backward(&dy, &mask).unwrap())
+                .unwrap();
+            for (&m, &g) in hm.iter().zip(&dx) {
+                assert!((g - 2.0 * m).abs() < 1e-6, "dx should be dy*mask");
+            }
         }
 
         #[test]
