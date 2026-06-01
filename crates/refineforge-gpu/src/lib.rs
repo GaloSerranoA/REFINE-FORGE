@@ -243,25 +243,53 @@ extern "C" __global__ void vector_add(const float* a, const float* b, float* out
 }
 
 // C[m,n] = A[m,k] * B[k,n]
+// Tiled shared-memory matmul (16x16 tiles, matching cfg_2d's block dim): each
+// block cooperatively stages tiles of A and B into shared memory, so each global
+// element is read once per tile instead of once per output — ~16x fewer global
+// loads than the naive one-element-per-thread version. (AVO M16: parity-gated +
+// throughput-measured improvement over the naive kernel.)
 extern "C" __global__ void matmul_nn(const float* a, const float* b, float* c, int m, int n, int k) {
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    if (row < m && col < n) {
-        float acc = 0.0f;
-        for (int l = 0; l < k; ++l) acc += a[row * k + l] * b[l * n + col];
-        c[row * n + col] = acc;
+    const int TILE = 16;
+    __shared__ float As[TILE][TILE];
+    __shared__ float Bs[TILE][TILE];
+    int row = blockIdx.y * TILE + threadIdx.y; // C row in [0,m)
+    int col = blockIdx.x * TILE + threadIdx.x; // C col in [0,n)
+    float acc = 0.0f;
+    int ntiles = (k + TILE - 1) / TILE;
+    for (int t = 0; t < ntiles; ++t) {
+        int a_col = t * TILE + threadIdx.x;
+        int b_row = t * TILE + threadIdx.y;
+        As[threadIdx.y][threadIdx.x] = (row < m && a_col < k) ? a[row * k + a_col] : 0.0f;
+        Bs[threadIdx.y][threadIdx.x] = (b_row < k && col < n) ? b[b_row * n + col] : 0.0f;
+        __syncthreads();
+        for (int l = 0; l < TILE; ++l) acc += As[threadIdx.y][l] * Bs[l][threadIdx.x];
+        __syncthreads();
     }
+    if (row < m && col < n) c[row * n + col] = acc;
 }
 
-// C[m,n] = A[m,k] * B[n,k]^T
+// C[m,n] = A[m,k] * B[n,k]^T   (the Linear forward + attention scores Q·Kᵀ)
+// Tiled shared-memory variant (AVO M16, 2nd iteration): C[i,j] = Σ_l A[i,l]·B[j,l]
+// with B row-major [n,k]. Each block stages a 16×16 tile of A (rows×l) and of B
+// (cols×l) into shared memory; both loads are coalesced over the contiguous l axis.
 extern "C" __global__ void matmul_nt(const float* a, const float* b, float* c, int m, int n, int k) {
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    if (row < m && col < n) {
-        float acc = 0.0f;
-        for (int l = 0; l < k; ++l) acc += a[row * k + l] * b[col * k + l];
-        c[row * n + col] = acc;
+    const int TILE = 16;
+    __shared__ float As[TILE][TILE];
+    __shared__ float Bs[TILE][TILE];
+    int row = blockIdx.y * TILE + threadIdx.y; // C row in [0,m), indexes A
+    int col = blockIdx.x * TILE + threadIdx.x; // C col in [0,n), indexes B
+    int b_row = blockIdx.x * TILE + threadIdx.y; // a C column = a row of B
+    float acc = 0.0f;
+    int ntiles = (k + TILE - 1) / TILE;
+    for (int t = 0; t < ntiles; ++t) {
+        int l = t * TILE + threadIdx.x; // contiguous k index for both A and B loads
+        As[threadIdx.y][threadIdx.x] = (row < m && l < k) ? a[row * k + l] : 0.0f;
+        Bs[threadIdx.y][threadIdx.x] = (b_row < n && l < k) ? b[b_row * k + l] : 0.0f;
+        __syncthreads();
+        for (int e = 0; e < TILE; ++e) acc += As[threadIdx.y][e] * Bs[threadIdx.x][e];
+        __syncthreads();
     }
+    if (row < m && col < n) c[row * n + col] = acc;
 }
 
 // C[m,n] = A[k,m]^T * B[k,n]
