@@ -348,3 +348,15 @@ remains the deterministic reference.
   (naive variants + bench) was removed; the git history is the AVO lineage.
   Next iterations (not done): tile `matmul_tn`, register-block for higher
   arithmetic intensity.
+
+- **M17 — SGS self-play for the Lean agent (design only, not implemented).** The
+  best-matched paper for the Lean agent (*Scaling Self-Play with Self-Guidance* was
+  demonstrated on Lean 4, and our Lean checker + proof-repair seed data already
+  exist) — but the one we **cannot** build here: it is fundamentally an
+  RL-at-scale recipe needing a prover-grade model + RL training + cluster compute,
+  none of which this repo / a 6 GB 3060 has. Recorded honestly as a plan with the
+  exact what-exists-vs-missing mapping and a feasible inference-only first step in
+  `docs/training/sgs-lean-self-play-design.md`. No SGS code or results are claimed.
+
+  *(The DevOps agent is intentionally omitted: none of the five surveyed papers is
+  about release engineering / CI / bundle signing, so none was applied to it.)*
