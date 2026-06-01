@@ -20,16 +20,23 @@ use refineforge_prover::{Problem, SearchReport};
 use std::path::Path;
 
 fn arg(args: &[String], flag: &str) -> Option<String> {
-    args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
 }
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let problems_path = arg(&args, "--problems")
         .context("usage: --problems <jsonl> --search-report <json> --corpus <jsonl> --round N --out-sft <jsonl> [--out-chat <jsonl>] [--ledger <json>] [--system <msg>]")?;
-    let report_path = arg(&args, "--search-report").context("--search-report <proof-search-report.json> required")?;
-    let corpus_path = arg(&args, "--corpus").context("--corpus <corpus.jsonl> required (created if absent)")?;
-    let round: u32 = arg(&args, "--round").and_then(|s| s.parse().ok()).unwrap_or(1);
+    let report_path = arg(&args, "--search-report")
+        .context("--search-report <proof-search-report.json> required")?;
+    let corpus_path =
+        arg(&args, "--corpus").context("--corpus <corpus.jsonl> required (created if absent)")?;
+    let round: u32 = arg(&args, "--round")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
     let out_sft = arg(&args, "--out-sft").unwrap_or_else(|| corpus_path.clone());
 
     // Load this round's problems + search report.

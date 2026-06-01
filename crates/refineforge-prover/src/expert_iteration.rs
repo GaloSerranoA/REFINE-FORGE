@@ -42,7 +42,11 @@ pub struct SftExample {
 /// `solved` [`ProblemResult`] with its [`Problem`]'s statement by `id`; skips
 /// unsolved problems and any solved result missing a `verified_proof` (defensive —
 /// a solve always carries one). **Verified-only by construction.**
-pub fn mine_verified(problems: &[Problem], results: &[ProblemResult], round: u32) -> Vec<SftExample> {
+pub fn mine_verified(
+    problems: &[Problem],
+    results: &[ProblemResult],
+    round: u32,
+) -> Vec<SftExample> {
     let by_id: std::collections::HashMap<&str, &Problem> =
         problems.iter().map(|p| (p.id.as_str(), p)).collect();
     results
@@ -63,7 +67,11 @@ pub fn mine_verified(problems: &[Problem], results: &[ProblemResult], round: u32
 }
 
 /// Convenience: mine straight from a [`SearchReport`] (its `results`).
-pub fn mine_from_report(problems: &[Problem], report: &SearchReport, round: u32) -> Vec<SftExample> {
+pub fn mine_from_report(
+    problems: &[Problem],
+    report: &SearchReport,
+    round: u32,
+) -> Vec<SftExample> {
     mine_verified(problems, &report.results, round)
 }
 
@@ -90,8 +98,8 @@ impl Corpus {
         if !path.exists() {
             return Ok(corpus);
         }
-        let text =
-            std::fs::read_to_string(path).with_context(|| format!("reading corpus {}", path.display()))?;
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("reading corpus {}", path.display()))?;
         for line in text.lines().filter(|l| !l.trim().is_empty()) {
             let ex: SftExample = serde_json::from_str(line).context("parsing a corpus row")?;
             corpus.insert(ex);
@@ -112,7 +120,10 @@ impl Corpus {
     /// Add a round's mined examples; returns how many were *newly* added (after
     /// dedup against everything already in the corpus).
     pub fn add(&mut self, examples: impl IntoIterator<Item = SftExample>) -> usize {
-        examples.into_iter().filter(|ex| self.insert(ex.clone())).count()
+        examples
+            .into_iter()
+            .filter(|ex| self.insert(ex.clone()))
+            .count()
     }
 
     pub fn len(&self) -> usize {
@@ -137,8 +148,8 @@ impl Corpus {
     /// Persist the corpus as JSONL (one [`SftExample`] per line) — both the
     /// durable corpus and a directly-trainable `{id,prompt,completion,…}` dataset.
     pub fn write_jsonl(&self, path: &Path) -> Result<()> {
-        let mut f = std::fs::File::create(path)
-            .with_context(|| format!("creating {}", path.display()))?;
+        let mut f =
+            std::fs::File::create(path).with_context(|| format!("creating {}", path.display()))?;
         for ex in &self.examples {
             writeln!(f, "{}", serde_json::to_string(ex)?)?;
         }
@@ -148,8 +159,8 @@ impl Corpus {
     /// Persist as chat-format JSONL (`{"messages":[user, assistant]}`) for SFT with
     /// a chat template. `system` is an optional system message prepended to each row.
     pub fn write_chat_jsonl(&self, path: &Path, system: Option<&str>) -> Result<()> {
-        let mut f = std::fs::File::create(path)
-            .with_context(|| format!("creating {}", path.display()))?;
+        let mut f =
+            std::fs::File::create(path).with_context(|| format!("creating {}", path.display()))?;
         for ex in &self.examples {
             let mut messages = Vec::new();
             if let Some(sys) = system {
@@ -157,7 +168,11 @@ impl Corpus {
             }
             messages.push(serde_json::json!({"role": "user", "content": ex.prompt}));
             messages.push(serde_json::json!({"role": "assistant", "content": ex.completion}));
-            writeln!(f, "{}", serde_json::to_string(&serde_json::json!({"messages": messages}))?)?;
+            writeln!(
+                f,
+                "{}",
+                serde_json::to_string(&serde_json::json!({"messages": messages}))?
+            )?;
         }
         Ok(())
     }
@@ -253,7 +268,11 @@ mod tests {
             Problem::new("p2", "goal-2"),
             Problem::new("p3", "goal-3"),
         ];
-        let results = vec![solved("p1", "by rfl"), unsolved("p2"), solved("p3", "by simp")];
+        let results = vec![
+            solved("p1", "by rfl"),
+            unsolved("p2"),
+            solved("p3", "by simp"),
+        ];
         let mined = mine_verified(&problems, &results, 1);
         assert_eq!(mined.len(), 2, "only the two verified problems are mined");
         assert_eq!(mined[0].prompt, "goal-1");
@@ -294,7 +313,11 @@ mod tests {
         }];
         assert_eq!(corpus.add(alt), 1);
         assert_eq!(corpus.len(), 2);
-        assert_eq!(corpus.solved_problems(), 1, "still one distinct problem solved");
+        assert_eq!(
+            corpus.solved_problems(),
+            1,
+            "still one distinct problem solved"
+        );
     }
 
     #[test]
@@ -342,7 +365,9 @@ mod tests {
             split: None,
             round: 1,
         }]);
-        corpus.write_chat_jsonl(&path, Some("You are a Lean prover.")).unwrap();
+        corpus
+            .write_chat_jsonl(&path, Some("You are a Lean prover."))
+            .unwrap();
         let line = std::fs::read_to_string(&path).unwrap();
         let v: serde_json::Value = serde_json::from_str(line.lines().next().unwrap()).unwrap();
         let msgs = v["messages"].as_array().unwrap();

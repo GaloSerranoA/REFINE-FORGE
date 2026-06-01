@@ -97,10 +97,14 @@ retry:
     assert_eq!(progress.lines().count(), 3, "one record per problem");
 
     // The per-problem search report: 2/3 solved, with the verified proofs kept.
-    let search: Value =
-        serde_json::from_str(&fs::read_to_string(run_dir.join("proof-search-report.json")).unwrap())
-            .unwrap();
-    assert_eq!(search["schema_version"], "refineforge-lean-prover-search-v1");
+    let search: Value = serde_json::from_str(
+        &fs::read_to_string(run_dir.join("proof-search-report.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        search["schema_version"],
+        "refineforge-lean-prover-search-v1"
+    );
     assert_eq!(search["solved"], 2);
     assert_eq!(search["problems"], 3);
     assert_eq!(search["results"][0]["verified_proof"], "by rfl");
@@ -116,8 +120,14 @@ retry:
     // Cumulative pass rate: 1/1 → 1/2 → 2/3, so the *final* (last) value is 2/3
     // and the peak (max, after the first solved problem) is 1.0.
     let pass = &report.metric_summary["proof_pass_rate"];
-    assert!((pass.last - 2.0 / 3.0).abs() < 1e-9, "final proof_pass_rate should be 2/3");
-    assert!((pass.max - 1.0).abs() < 1e-9, "peak proof_pass_rate should be 1.0");
+    assert!(
+        (pass.last - 2.0 / 3.0).abs() < 1e-9,
+        "final proof_pass_rate should be 2/3"
+    );
+    assert!(
+        (pass.max - 1.0).abs() < 1e-9,
+        "peak proof_pass_rate should be 1.0"
+    );
 }
 
 #[test]
@@ -150,5 +160,7 @@ retry: {{ max_attempts: 1, backoff_seconds: 0 }}
     let experiment = Experiment::load(&config).unwrap();
     let runs_root = temp.path().join("runs");
     let err = runner::run_once(&runs_root, &experiment).unwrap_err();
-    assert!(err.to_string().contains("unknown verifier") || format!("{err:#}").contains("nonsense"));
+    assert!(
+        err.to_string().contains("unknown verifier") || format!("{err:#}").contains("nonsense")
+    );
 }

@@ -28,12 +28,13 @@
 //!    "template":"import Mathlib\ntheorem foo : 1 + 1 = 2 := by {{proof}}"}
 
 use anyhow::{Context, Result};
-use refineforge_prover::{
-    CommandVerifier, OpenAiProver, Problem, ProofSearch, ProverApi,
-};
+use refineforge_prover::{CommandVerifier, OpenAiProver, Problem, ProofSearch, ProverApi};
 
 fn arg(args: &[String], flag: &str) -> Option<String> {
-    args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
 }
 
 fn main() -> Result<()> {
@@ -42,8 +43,11 @@ fn main() -> Result<()> {
         .context("usage: --problems <jsonl> --base-url <url> --model <name> --lean-dir <dir> [--samples N] [--out DIR] [--chat]")?;
     let base_url = arg(&args, "--base-url").unwrap_or_else(|| "http://localhost:8000".to_string());
     let model = arg(&args, "--model").context("--model <served model name> is required")?;
-    let lean_dir = arg(&args, "--lean-dir").context("--lean-dir <lean project root> is required")?;
-    let samples: usize = arg(&args, "--samples").and_then(|s| s.parse().ok()).unwrap_or(8);
+    let lean_dir =
+        arg(&args, "--lean-dir").context("--lean-dir <lean project root> is required")?;
+    let samples: usize = arg(&args, "--samples")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(8);
     let out = arg(&args, "--out").unwrap_or_else(|| "runs/prover-search".to_string());
 
     // Load the problem set (one JSON Problem per line).
@@ -68,7 +72,8 @@ fn main() -> Result<()> {
     let verifier = CommandVerifier::new("lake", ["env", "lean"], &lean_dir, "ProverCandidate.lean");
 
     eprintln!("prover: {model} @ {base_url}  |  verifier: lake env lean (in {lean_dir})  |  best-of-{samples}");
-    let report = ProofSearch::new(&prover, &verifier, samples).run(&problems, std::path::Path::new(&out))?;
+    let report =
+        ProofSearch::new(&prover, &verifier, samples).run(&problems, std::path::Path::new(&out))?;
 
     println!(
         "\nsolved {}/{} ({:.1}% pass) — evidence in {out}/",

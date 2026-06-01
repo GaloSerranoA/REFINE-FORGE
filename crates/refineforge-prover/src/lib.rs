@@ -171,10 +171,9 @@ impl<'a> ProofSearch<'a> {
             .with_context(|| format!("prover generation failed for `{}`", problem.id))?;
         let mut last_detail = None;
         for (i, candidate) in candidates.iter().enumerate() {
-            let verdict = self
-                .verifier
-                .verify(problem, candidate)
-                .with_context(|| format!("verifier failed for `{}` (attempt {})", problem.id, i + 1))?;
+            let verdict = self.verifier.verify(problem, candidate).with_context(|| {
+                format!("verifier failed for `{}` (attempt {})", problem.id, i + 1)
+            })?;
             if verdict.verified {
                 return Ok(ProblemResult {
                     id: problem.id.clone(),
@@ -360,7 +359,10 @@ impl OpenAiProver {
 
 impl ProverClient for OpenAiProver {
     fn complete(&self, prompt: &str, n: usize) -> Result<Vec<String>> {
-        let mut req = self.client.post(self.endpoint()).json(&self.request_body(prompt, n));
+        let mut req = self
+            .client
+            .post(self.endpoint())
+            .json(&self.request_body(prompt, n));
         if let Some(key) = &self.api_key {
             req = req.bearer_auth(key);
         }
@@ -583,9 +585,15 @@ pub mod mock {
                 by_prompt: HashMap::new(),
             }
         }
-        pub fn on<S: Into<String>>(mut self, prompt: &str, candidates: impl IntoIterator<Item = S>) -> Self {
-            self.by_prompt
-                .insert(prompt.to_string(), candidates.into_iter().map(Into::into).collect());
+        pub fn on<S: Into<String>>(
+            mut self,
+            prompt: &str,
+            candidates: impl IntoIterator<Item = S>,
+        ) -> Self {
+            self.by_prompt.insert(
+                prompt.to_string(),
+                candidates.into_iter().map(Into::into).collect(),
+            );
             self
         }
     }
@@ -620,7 +628,10 @@ mod tests {
         let search = ProofSearch::new(&prover, &verifier, 8);
         let r = search.solve(&Problem::new("t1", "prove True")).unwrap();
         assert!(r.solved);
-        assert_eq!(r.attempts, 3, "best-of-k should stop at the first verified candidate");
+        assert_eq!(
+            r.attempts, 3,
+            "best-of-k should stop at the first verified candidate"
+        );
         assert!(r.verified_proof.unwrap().contains("trivial"));
         assert!(r.last_detail.is_none());
     }
@@ -728,11 +739,12 @@ mod tests {
 
     #[test]
     fn parse_completion_response_extracts_choices() {
-        let v: serde_json::Value = serde_json::from_str(
-            r#"{"choices":[{"text":"proof A"},{"text":"proof B"}]}"#,
-        )
-        .unwrap();
-        assert_eq!(parse_completion_response(&v).unwrap(), vec!["proof A", "proof B"]);
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"choices":[{"text":"proof A"},{"text":"proof B"}]}"#).unwrap();
+        assert_eq!(
+            parse_completion_response(&v).unwrap(),
+            vec!["proof A", "proof B"]
+        );
     }
 
     #[test]
@@ -777,7 +789,8 @@ mod tests {
         // first char picks the exit code, exercising the success + failure paths.
         let dir = tempfile::tempdir().unwrap();
         #[cfg(windows)]
-        let make = |code: &str| CommandVerifier::new("cmd", ["/c", "exit", code], dir.path(), "C.lean");
+        let make =
+            |code: &str| CommandVerifier::new("cmd", ["/c", "exit", code], dir.path(), "C.lean");
         #[cfg(not(windows))]
         let make = |code: &str| {
             CommandVerifier::new("sh", ["-c", &format!("exit {code}")], dir.path(), "C.lean")
@@ -807,7 +820,10 @@ mod tests {
         )
         .unwrap();
         let prover = ReplayProver::from_jsonl(&path).unwrap();
-        assert_eq!(prover.complete("goal-1", 8).unwrap(), vec!["by rfl", "by simp"]);
+        assert_eq!(
+            prover.complete("goal-1", 8).unwrap(),
+            vec!["by rfl", "by simp"]
+        );
         assert_eq!(prover.complete("goal-1", 1).unwrap(), vec!["by rfl"]);
         assert!(prover.complete("unknown-goal", 8).unwrap().is_empty());
     }
@@ -819,6 +835,9 @@ mod tests {
         assert!(v.verify(&p, "by rfl").unwrap().verified);
         let miss = v.verify(&p, "by simp").unwrap();
         assert!(!miss.verified);
-        assert!(miss.detail.contains("NOT a Lean check"), "must not be mistaken for real verification");
+        assert!(
+            miss.detail.contains("NOT a Lean check"),
+            "must not be mistaken for real verification"
+        );
     }
 }

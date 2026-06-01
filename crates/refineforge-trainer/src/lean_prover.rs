@@ -58,7 +58,11 @@ pub fn run(paths: &RunPaths, exp: &Experiment) -> Result<LeanProverOutcome> {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| exp.dataset.path.clone());
     let problems = load_problems(&problems_path)?;
-    anyhow::ensure!(!problems.is_empty(), "no problems in {}", problems_path.display());
+    anyhow::ensure!(
+        !problems.is_empty(),
+        "no problems in {}",
+        problems_path.display()
+    );
     let samples = hyper_usize(exp, "samples", 8);
 
     // ── prover (generation): replay (offline) XOR a live OpenAI-compatible server ──
@@ -82,9 +86,9 @@ pub fn run(paths: &RunPaths, exp: &Experiment) -> Result<LeanProverOutcome> {
 
     // ── verifier (trust gate): the real Lean checker XOR a labeled dry-run stand-in ──
     let verifier: Box<dyn Verifier> = match hyper_str(exp, "verifier").unwrap_or("lean") {
-        "dry_run" | "substring" => {
-            Box::new(DryRunVerifier::new(hyper_str(exp, "verifier_substring").unwrap_or("")))
-        }
+        "dry_run" | "substring" => Box::new(DryRunVerifier::new(
+            hyper_str(exp, "verifier_substring").unwrap_or(""),
+        )),
         "lean" => {
             let lean_dir = hyper_str(exp, "lean_dir")
                 .context("verifier=lean requires hyperparameters.lean_dir (a lake project root)")?;
@@ -92,7 +96,12 @@ pub fn run(paths: &RunPaths, exp: &Experiment) -> Result<LeanProverOutcome> {
             let mut parts = cmd.split_whitespace();
             let program = parts.next().unwrap_or("lake").to_string();
             let args: Vec<String> = parts.map(String::from).collect();
-            Box::new(CommandVerifier::new(program, args, lean_dir, "ProverCandidate.lean"))
+            Box::new(CommandVerifier::new(
+                program,
+                args,
+                lean_dir,
+                "ProverCandidate.lean",
+            ))
         }
         other => anyhow::bail!("unknown verifier {other:?} (use \"lean\" or \"dry_run\")"),
     };
