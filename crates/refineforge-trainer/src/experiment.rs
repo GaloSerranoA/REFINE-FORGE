@@ -211,6 +211,7 @@ impl Experiment {
             | "refineforge_native_causal_lm"
             | "refineforge_native_gpt"
             | "refineforge_native_gpt_cuda"
+            | "refineforge_lean_prover"
             | "axolotl"
             | "hf_trainer"
             | "helyx_train"
@@ -218,7 +219,7 @@ impl Experiment {
             | "pytorch_baseline"
             | "custom" => {}
             other => anyhow::bail!(
-                "unknown backend.kind {:?} — supported: refineforge_native, refineforge_native_causal_lm, refineforge_native_gpt, refineforge_native_gpt_cuda, axolotl, hf_trainer, helyx_train, hrm_text, pytorch_baseline, custom",
+                "unknown backend.kind {:?} — supported: refineforge_native, refineforge_native_causal_lm, refineforge_native_gpt, refineforge_native_gpt_cuda, refineforge_lean_prover, axolotl, hf_trainer, helyx_train, hrm_text, pytorch_baseline, custom",
                 other
             ),
         }
@@ -228,6 +229,7 @@ impl Experiment {
                 | "refineforge_native_causal_lm"
                 | "refineforge_native_gpt"
                 | "refineforge_native_gpt_cuda"
+                | "refineforge_lean_prover"
         ) && self.backend.command.is_some()
         {
             anyhow::bail!(

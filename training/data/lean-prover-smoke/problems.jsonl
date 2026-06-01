@@ -1,0 +1,4 @@
+{"id":"add_zero","statement":"theorem add_zero (n : Nat) : n + 0 = n := by","split":"heldout","template":"import Mathlib\ntheorem add_zero (n : Nat) : n + 0 = n := by {{proof}}"}
+{"id":"mul_one","statement":"theorem mul_one (n : Nat) : n * 1 = n := by","split":"heldout","template":"import Mathlib\ntheorem mul_one (n : Nat) : n * 1 = n := by {{proof}}"}
+{"id":"id_eq","statement":"theorem id_eq (a : Nat) : a = a := by","split":"heldout","template":"import Mathlib\ntheorem id_eq (a : Nat) : a = a := by {{proof}}"}
+{"id":"le_refl","statement":"theorem le_refl (a : Nat) : a <= a := by","split":"heldout","template":"import Mathlib\ntheorem le_refl (a : Nat) : a <= a := by {{proof}}"}

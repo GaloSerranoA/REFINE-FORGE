@@ -8,6 +8,7 @@ members = [
     "crates/refineforge-trainer",
     "crates/refineforge-bitexact",
     "crates/refineforge-gpu",
+    "crates/refineforge-prover",
     "crates/refineforge-escalation",
     "crates/example-counter",
     "crates/example-capability",

@@ -10,6 +10,7 @@ pub mod evidence;
 pub mod experiment;
 pub mod failure;
 pub mod hrm_text_runtime;
+pub mod lean_prover;
 pub mod mentor;
 pub mod native;
 pub mod native_causal;

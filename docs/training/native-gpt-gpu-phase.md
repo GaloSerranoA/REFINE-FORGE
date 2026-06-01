@@ -379,3 +379,18 @@ remains the deterministic reference.
   Memory-aware *auto*-scaling of the default model size is a follow-up; today the
   size is config-driven and the available VRAM is now visible.) 40 cuda tests
   (`gpu_device_info_is_reported`); default CPU-only build unchanged.
+
+- **M19 — Lean prover orchestration (`refineforge_lean_prover`), a complementary
+  *inference* path.** Rather than *train* a Lean prover from scratch (this whole
+  doc), *download* a strong open one (DeepSeek-Prover-V2-7B / Goedel / Kimina —
+  the cluster-scale training was already done and released as open weights) and
+  wrap it in our verifier + trust + orchestration. New CUDA-free crate
+  `refineforge-prover` (best-of-k `ProofSearch` over a `ProverClient` gated by a
+  Lean `Verifier`) + a trainer backend that emits the standard evidence
+  (`proof_pass_rate` → `report.json` → the eval/regression/approval ladder).
+  **GPU-agnostic by construction:** it talks to a prover server (vLLM/llama.cpp)
+  over HTTP, so the GPU — a P40, a 5080, both, or a future card — is the server's
+  concern. 15 engine tests + 2 trainer integration tests, validated end-to-end
+  offline (replay prover + dry-run verifier; committed smoke = 3/4 solved). A live
+  run needs the operator to download + serve a prover and provide a Lean project.
+  Full design + runbook: `docs/training/lean-prover-orchestration.md`.

@@ -22,6 +22,7 @@ mod evidence;
 mod experiment;
 mod failure;
 mod hrm_text_runtime;
+mod lean_prover;
 mod mentor;
 mod native;
 mod native_causal;

@@ -1,0 +1,32 @@
+# refineforge_lean_prover — OFFLINE smoke.
+#
+# Exercises the full proof-search trust pipeline with NO GPU, NO prover server,
+# and NO Lean toolchain: candidates are *replayed* from a committed file and the
+# verifier is a labeled *dry-run* stand-in (substring match, grants no trust).
+# This is the plumbing test — see refineforge-lean-prover-live.yaml for a real run.
+#
+#   cargo run -p refineforge-trainer -- run training/configs/refineforge-lean-prover-smoke.yaml
+#
+# Expect 3/4 "solved" (dry-run needle = "rfl"): add_zero, id_eq, le_refl carry a
+# "by rfl" candidate; mul_one ("by ring") does not.
+id: refineforge-lean-prover-smoke
+base_model:
+  name: deepseek-prover-v2-7b
+  source: native
+dataset:
+  path: training/data/lean-prover-smoke/problems.jsonl
+  format: jsonl
+backend:
+  kind: refineforge_lean_prover
+hyperparameters:
+  prover_replay_file: training/data/lean-prover-smoke/replay.jsonl
+  verifier: dry_run
+  verifier_substring: rfl
+  samples: 4
+monitoring:
+  metrics_to_track:
+    - proof_pass_rate
+    - solved
+retry:
+  max_attempts: 1
+  backoff_seconds: 0

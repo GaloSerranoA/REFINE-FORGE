@@ -23,6 +23,9 @@ zstd                    = "0.13"
 refineforge-repair-api  = { path = "../refineforge-repair-api" }
 # CPU-only by default (no cudarc); the `cuda` feature enables the GPU GPT backend.
 refineforge-gpu         = { path = "../refineforge-gpu" }
+# GPU-agnostic proof-search orchestration (the `refineforge_lean_prover` backend);
+# talks to a prover server over HTTP, no CUDA — builds on every platform.
+refineforge-prover      = { path = "../refineforge-prover" }
 
 [features]
 default = []
