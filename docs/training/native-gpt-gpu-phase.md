@@ -331,3 +331,20 @@ remains the deterministic reference.
   transfer to proof-repair is a well-motivated hypothesis, not an established
   result; the regularizer is correct and wired, its eval benefit on Mathlib data is
   untested (and likely modest while the data ceiling dominates).
+
+- **M16 — AVO verifier-gated kernel improvement (Kernel agent).** Applies *AVO:
+  Agentic Variation Operators*' edit→verify→measure→accept loop to a real kernel,
+  with the existing **CPU-parity test as the correctness gate** and measured
+  throughput as the fitness. Two accepted iterations replaced the naive
+  one-element-per-thread `matmul_nn` and `matmul_nt` with **tiled 16×16
+  shared-memory** kernels (matching `cfg_2d`'s block dim). Same-run A/B
+  (512×1024×1024, RTX 3060, warmed): **`matmul_nn` 2.40 → 1.76 ms = 1.36×**, and
+  **`matmul_nt` 6.67 → 2.19 ms = 3.05×** — the big `nt` win comes from fixing the
+  naive kernel's *uncoalesced* B reads (stride-k), and `nt` is the hottest training
+  kernel (Linear forward + attention Q·Kᵀ), so this speeds up the whole training
+  path. Every parity test (`gpu_matmul_{nn,nt}_matches_cpu`, the transposed-
+  equivalence check) and the full 39-test cuda suite pass on the tiled kernels —
+  the "accept only if correct AND faster" rule held. The throwaway A/B harness
+  (naive variants + bench) was removed; the git history is the AVO lineage.
+  Next iterations (not done): tile `matmul_tn`, register-block for higher
+  arithmetic intensity.
