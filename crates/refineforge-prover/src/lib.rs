@@ -35,6 +35,8 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
+pub mod expert_iteration;
+
 /// Schema tag stamped into [`SearchReport`] for downstream evidence consumers.
 pub const SEARCH_REPORT_SCHEMA: &str = "refineforge-lean-prover-search-v1";
 
@@ -85,7 +87,7 @@ pub fn assemble(problem: &Problem, candidate: &str) -> String {
 }
 
 /// Outcome of searching proofs for a single problem.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProblemResult {
     pub id: String,
     /// True iff at least one generated candidate passed the verifier.
@@ -100,7 +102,7 @@ pub struct ProblemResult {
 }
 
 /// Aggregate report over a problem set — the proof-search trust evidence.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchReport {
     pub schema_version: String,
     pub problems: usize,
