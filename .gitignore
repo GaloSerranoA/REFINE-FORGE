@@ -60,3 +60,11 @@ result-*
 /models/
 *.gguf
 *.safetensors
+
+# Lean verifier project (matched to Goedel-Prover-V2): the Mathlib clone + oleans
+# (multi-GB, fetched by `lake exe cache get`) and the per-verification candidate
+# file the prover backend overwrites. The scaffold (lakefile, toolchain, README,
+# Smoke.lean, ProverVerify.lean) IS committed.
+/lean-prover-verify/.lake/
+/lean-prover-verify/lake-packages/
+/lean-prover-verify/ProverCandidate.lean
