@@ -309,3 +309,25 @@ remains the deterministic reference.
   CPU-only (176/176 trainer tests unchanged); the GPU path is opt-in via
   `--features cuda`. Trust is still bounded by the same eval/regression gates and a
   human `refine approval` — this wires the *evidence*, it does not auto-approve.
+
+### Research applications (Train agent)
+
+- **M15 — KL self-distillation (anti-forgetting).** Applies the fix from *"Why
+  Fine-Tuning Encourages Hallucinations and How to Fix It"* (SFT on new content
+  causes factual forgetting via representational interference; a KL regularizer
+  toward a frozen self-snapshot largely prevents it) to the native-GPT SFT path.
+  New `kl_distill` kernel + `dev_kl_distill` (gradient `scale·τ·(p_s − p_t)`, loss
+  `τ²·KL(p_t ‖ p_s)`, parity-checked vs CPU); `GptModel::train_step_distill`
+  (`L = CE + λ·KL`); `load_weights`/`collect_weights_mut` for a frozen teacher
+  snapshot (round-trip tested). The cuda backend warms up, snapshots a frozen
+  teacher, then distills the remaining steps — opt-in via `self_distill_lambda`
+  (default 0 → off, so existing runs are unchanged), with `distill_temperature` and
+  `self_distill_warmup_steps`. Tests (39 cuda): `gpu_kl_distill_matches_cpu`,
+  `gpu_distill_pulls_student_toward_teacher` (distillation provably reduces the
+  student↔teacher KL), `gpu_load_weights_roundtrip`. **Verified end to end:**
+  `refine-train run …cuda-distill.yaml` → log records *"snapshotted frozen teacher
+  at step 3 (lambda=1, tau=2)"* → **`final: success`**. **Honest caveat:** the
+  paper's evidence is single-hop factual recall on ≤8B non-reasoning models —
+  transfer to proof-repair is a well-motivated hypothesis, not an established
+  result; the regularizer is correct and wired, its eval benefit on Mathlib data is
+  untested (and likely modest while the data ceiling dominates).

@@ -66,6 +66,11 @@ impl Linear {
         out.push(&self.bias);
     }
 
+    fn collect_weights_mut<'a>(&'a mut self, out: &mut Vec<&'a mut DeviceTensor>) {
+        out.push(&mut self.w);
+        out.push(&mut self.bias);
+    }
+
     /// `y = x·Wᵀ + b`, where `x` is `T×in` and `y` is `T×out`.
     pub fn forward(&self, k: &GpuKernels, x: &DeviceTensor) -> Result<DeviceTensor> {
         anyhow::ensure!(x.cols == self.in_dim, "Linear forward input dim mismatch");
@@ -248,6 +253,11 @@ impl LayerNorm {
         out.push(&self.gamma);
         out.push(&self.beta);
     }
+
+    fn collect_weights_mut<'a>(&'a mut self, out: &mut Vec<&'a mut DeviceTensor>) {
+        out.push(&mut self.gamma);
+        out.push(&mut self.beta);
+    }
 }
 
 /// Position-wise MLP: `Linear(embed→hidden) → GELU → Linear(hidden→embed)`.
@@ -312,6 +322,11 @@ impl Mlp {
     fn collect_weights<'a>(&'a self, out: &mut Vec<&'a DeviceTensor>) {
         self.fc1.collect_weights(out);
         self.fc2.collect_weights(out);
+    }
+
+    fn collect_weights_mut<'a>(&'a mut self, out: &mut Vec<&'a mut DeviceTensor>) {
+        self.fc1.collect_weights_mut(out);
+        self.fc2.collect_weights_mut(out);
     }
 }
 
@@ -575,6 +590,13 @@ impl Attention {
         self.v.collect_weights(out);
         self.o.collect_weights(out);
     }
+
+    fn collect_weights_mut<'a>(&'a mut self, out: &mut Vec<&'a mut DeviceTensor>) {
+        self.q.collect_weights_mut(out);
+        self.k.collect_weights_mut(out);
+        self.v.collect_weights_mut(out);
+        self.o.collect_weights_mut(out);
+    }
 }
 
 /// A full pre-norm transformer block:
@@ -767,6 +789,13 @@ impl Block {
         self.attn.collect_weights(out);
         self.ln2.collect_weights(out);
         self.mlp.collect_weights(out);
+    }
+
+    fn collect_weights_mut<'a>(&'a mut self, out: &mut Vec<&'a mut DeviceTensor>) {
+        self.ln1.collect_weights_mut(out);
+        self.attn.collect_weights_mut(out);
+        self.ln2.collect_weights_mut(out);
+        self.mlp.collect_weights_mut(out);
     }
 }
 
@@ -1121,6 +1150,42 @@ impl GptModel {
         Ok(mean_loss_acc(&losses, &correct, count))
     }
 
+    /// One training step with **KL self-distillation** toward a frozen reference
+    /// (`teacher_logits`, same `[T×V]` shape as this model's logits on `tokens` —
+    /// typically a frozen snapshot of this model's own logits, cached before
+    /// fine-tuning). Loss is `cross-entropy + λ·KL(softmax(teacher/τ) ‖
+    /// softmax(student/τ))`; returns `(ce_loss, kl_loss, accuracy)`. This is the
+    /// anti-forgetting regularizer from "Why Fine-Tuning Encourages Hallucinations".
+    #[allow(clippy::too_many_arguments)]
+    pub fn train_step_distill(
+        &mut self,
+        k: &GpuKernels,
+        tokens: &[i32],
+        loss_mask: &[i32],
+        teacher_logits: &DeviceTensor,
+        tau: f32,
+        lambda: f32,
+        t: u32,
+        lr: f32,
+    ) -> Result<(f32, f32, f32)> {
+        let (logits, cache) = self.forward_seeded(k, tokens, t as u64)?;
+        let count = self.count_targets(tokens, loss_mask);
+        let inv = if count > 0 { 1.0 / count as f32 } else { 0.0 };
+        let (mut d_logits, losses, correct) =
+            k.dev_cross_entropy(&logits, tokens, loss_mask, inv, self.label_smoothing)?;
+        let (d_kl, kl) = k.dev_kl_distill(&logits, teacher_logits, loss_mask, tau, lambda * inv)?;
+        k.dev_add_inplace(&mut d_logits, &d_kl)?; // d_total = d_CE + λ·d_KL
+        self.backward(k, tokens, &cache, &d_logits)?;
+        self.adamw_step(k, t, lr)?;
+        let (ce, acc) = mean_loss_acc(&losses, &correct, count);
+        let kl_loss = if count > 0 {
+            kl.iter().sum::<f32>() / count as f32
+        } else {
+            0.0
+        };
+        Ok((ce, kl_loss, acc))
+    }
+
     /// Forward-only loss/accuracy on one sequence (no weight update) — held-out eval.
     pub fn evaluate(
         &self,
@@ -1170,6 +1235,38 @@ impl GptModel {
         }
         self.ln_f.collect_weights(out);
         self.lm_head.collect_weights(out);
+    }
+
+    fn collect_weights_mut<'a>(&'a mut self, out: &mut Vec<&'a mut DeviceTensor>) {
+        out.push(&mut self.tok_emb);
+        out.push(&mut self.pos_emb);
+        for block in &mut self.blocks {
+            block.collect_weights_mut(out);
+        }
+        self.ln_f.collect_weights_mut(out);
+        self.lm_head.collect_weights_mut(out);
+    }
+
+    /// Overwrite all trainable weights from a flat slice in [`weight_values`]
+    /// order — the inverse of [`weight_values`](Self::weight_values). Used to build
+    /// a frozen teacher snapshot for self-distillation.
+    pub fn load_weights(&mut self, k: &GpuKernels, values: &[f32]) -> Result<()> {
+        let mut tensors: Vec<&mut DeviceTensor> = Vec::new();
+        self.collect_weights_mut(&mut tensors);
+        let total: usize = tensors.iter().map(|t| t.len()).sum();
+        anyhow::ensure!(
+            values.len() == total,
+            "load_weights length mismatch: got {}, expected {total}",
+            values.len()
+        );
+        let mut off = 0;
+        for t in tensors {
+            let (rows, cols) = (t.rows, t.cols);
+            let n = rows * cols;
+            *t = k.to_device(&values[off..off + n], rows, cols)?;
+            off += n;
+        }
+        Ok(())
     }
 
     /// Total number of trainable parameters.
@@ -1323,6 +1420,37 @@ fn cross_entropy_cpu(
         correct[i] = i32::from(am == target);
     }
     (d, loss, correct)
+}
+
+/// CPU KL self-distillation (mirrors the `kl_distill` kernel).
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+fn kl_distill_cpu(
+    s_logits: &[f32],
+    t_logits: &[f32],
+    loss_mask: &[i32],
+    tau: f32,
+    scale: f32,
+    t: usize,
+    v: usize,
+) -> (Vec<f32>, Vec<f32>) {
+    let mut d = vec![0.0f32; t * v];
+    let mut kl = vec![0.0f32; t];
+    let scaled = |row: &[f32]| -> Vec<f32> { row.iter().map(|x| x / tau).collect() };
+    for i in 0..t.saturating_sub(1) {
+        if loss_mask[i + 1] == 0 {
+            continue;
+        }
+        let ps = crate::softmax_cpu(&scaled(&s_logits[i * v..i * v + v]), 1, v);
+        let pt = crate::softmax_cpu(&scaled(&t_logits[i * v..i * v + v]), 1, v);
+        let mut acc = 0.0f32;
+        for j in 0..v {
+            d[i * v + j] = scale * tau * (ps[j] - pt[j]);
+            acc += pt[j] * (pt[j].max(1e-12).ln() - ps[j].max(1e-12).ln());
+        }
+        kl[i] = tau * tau * acc;
+    }
+    (d, kl)
 }
 
 /// CPU multi-head causal self-attention forward (mirrors the GPU composition).
@@ -1948,6 +2076,92 @@ mod tests {
         let w1 = model.weight_values(&k).unwrap();
         assert_eq!(w1.len(), pc, "param count stable after a step");
         assert!(w0 != w1, "a training step must change the weights");
+    }
+
+    #[test]
+    fn gpu_kl_distill_matches_cpu() {
+        let k = GpuKernels::new(0).expect("gpu init");
+        let (t, v) = (12usize, 30usize);
+        let s = fill(t * v, 1);
+        let teach = fill(t * v, 9);
+        let loss_mask: Vec<i32> = (0..t).map(|i| i32::from(i % 3 != 0)).collect();
+        let count = (1..t).filter(|&i| loss_mask[i] != 0).count();
+        let (tau, lambda) = (2.0f32, 0.5f32);
+        let scale = lambda / count as f32;
+        let sd = k.to_device(&s, t, v).unwrap();
+        let td = k.to_device(&teach, t, v).unwrap();
+        let (d_dev, kl) = k.dev_kl_distill(&sd, &td, &loss_mask, tau, scale).unwrap();
+        let (d_cpu, kl_cpu) = kl_distill_cpu(&s, &teach, &loss_mask, tau, scale, t, v);
+        assert_close(&k.to_host(&d_dev).unwrap(), &d_cpu, 1.0e-4);
+        assert_close(&kl, &kl_cpu, 1.0e-4);
+    }
+
+    #[test]
+    fn gpu_distill_pulls_student_toward_teacher() {
+        // KL self-distillation toward a frozen reference reduces the student↔teacher
+        // divergence — the mechanism behind the anti-forgetting regularizer.
+        let k = GpuKernels::new(0).expect("gpu init");
+        let (vocab, embed, n_head, n_layers, hidden, context) = (24, 32, 4, 2, 64, 12);
+        let tokens: Vec<i32> = (0..context).map(|i| ((i % 5) + 2) as i32).collect();
+        let loss_mask = vec![1; context];
+        // teacher: a trained reference model; cache its logits (the frozen target)
+        let mut teacher =
+            GptModel::new(&k, vocab, embed, n_head, n_layers, hidden, context, 1).unwrap();
+        for step in 1..=60u32 {
+            teacher
+                .train_step(&k, &tokens, &loss_mask, step, 0.01)
+                .unwrap();
+        }
+        let (teacher_logits, _c) = teacher.forward(&k, &tokens).unwrap();
+        // student: a differently-initialised model, distilled toward the teacher
+        let mut student =
+            GptModel::new(&k, vocab, embed, n_head, n_layers, hidden, context, 2).unwrap();
+        let mut first_kl = 0.0f32;
+        let mut last_kl = 0.0f32;
+        for step in 1..=80u32 {
+            let (_ce, kl, _acc) = student
+                .train_step_distill(
+                    &k,
+                    &tokens,
+                    &loss_mask,
+                    &teacher_logits,
+                    2.0,
+                    1.0,
+                    step,
+                    0.01,
+                )
+                .unwrap();
+            if step == 1 {
+                first_kl = kl;
+            }
+            last_kl = kl;
+        }
+        assert!(
+            last_kl < first_kl * 0.5,
+            "distillation should pull the student toward the teacher: first_kl={first_kl} last_kl={last_kl}"
+        );
+    }
+
+    #[test]
+    fn gpu_load_weights_roundtrip() {
+        // load_weights is the inverse of weight_values — the basis of the frozen
+        // teacher snapshot used by self-distillation.
+        let k = GpuKernels::new(0).expect("gpu init");
+        let (vocab, embed, n_head, n_layers, hidden, context) = (20, 16, 2, 2, 32, 8);
+        let a = GptModel::new(&k, vocab, embed, n_head, n_layers, hidden, context, 1).unwrap();
+        let mut b = GptModel::new(&k, vocab, embed, n_head, n_layers, hidden, context, 2).unwrap();
+        let wa = a.weight_values(&k).unwrap();
+        assert_ne!(
+            wa,
+            b.weight_values(&k).unwrap(),
+            "different seeds must differ"
+        );
+        b.load_weights(&k, &wa).unwrap();
+        assert_eq!(
+            b.weight_values(&k).unwrap(),
+            wa,
+            "load_weights must round-trip"
+        );
     }
 
     #[test]

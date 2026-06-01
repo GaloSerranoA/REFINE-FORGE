@@ -579,6 +579,46 @@ extern "C" __global__ void dropout_backward(const float* dy, const float* mask,
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) dx[i] = dy[i] * mask[i];
 }
+
+// ─── KL self-distillation (anti-forgetting regularizer) ───
+// Per supervised row, KL(softmax(teacher/T) || softmax(student/T)) at temperature
+// T, plus its gradient w.r.t. the student logits. One thread per row:
+//   d_logits[i,j] = scale * T * (p_s_j - p_t_j),  loss[i] = T^2 * KL(p_t || p_s)
+// with p_s = softmax(student[i]/T), p_t = softmax(teacher[i]/T). Active only where
+// the next token is supervised (loss_mask[i+1] != 0), matching the cross-entropy.
+extern "C" __global__ void kl_distill(const float* s_logits, const float* t_logits,
+                                      const int* loss_mask, float* d_logits,
+                                      float* kl_out, int t, int v, float tau, float scale) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= t) return;
+    const float* sr = s_logits + i * v;
+    const float* tr = t_logits + i * v;
+    float* dr = d_logits + i * v;
+    int active = (i + 1 < t) && (loss_mask[i + 1] != 0);
+    if (!active) {
+        for (int j = 0; j < v; ++j) dr[j] = 0.0f;
+        kl_out[i] = 0.0f;
+        return;
+    }
+    float smax = -1e30f, tmax = -1e30f;
+    for (int j = 0; j < v; ++j) {
+        smax = fmaxf(smax, sr[j] / tau);
+        tmax = fmaxf(tmax, tr[j] / tau);
+    }
+    float ssum = 0.0f, tsum = 0.0f;
+    for (int j = 0; j < v; ++j) {
+        ssum += expf(sr[j] / tau - smax);
+        tsum += expf(tr[j] / tau - tmax);
+    }
+    float kl = 0.0f;
+    for (int j = 0; j < v; ++j) {
+        float ps = expf(sr[j] / tau - smax) / ssum;
+        float pt = expf(tr[j] / tau - tmax) / tsum;
+        dr[j] = scale * tau * (ps - pt);
+        kl += pt * (logf(fmaxf(pt, 1e-12f)) - logf(fmaxf(ps, 1e-12f)));
+    }
+    kl_out[i] = tau * tau * kl;
+}
 "#;
 
 #[cfg(feature = "cuda")]
@@ -1765,6 +1805,48 @@ pub mod gpu {
                 .clone_dtoh(&correct_dev)
                 .context("dtoh correct")?;
             Ok((d_logits, loss, correct))
+        }
+
+        /// KL self-distillation: `KL(softmax(teacher/τ) ‖ softmax(student/τ))` per
+        /// supervised row, plus its gradient on the student logits (scaled by
+        /// `scale`, typically `λ / active_count`). Returns `(d_logits_kl, per-row
+        /// kl loss)`. The caller adds `d_logits_kl` to the cross-entropy gradient.
+        pub fn dev_kl_distill(
+            &self,
+            student_logits: &DeviceTensor,
+            teacher_logits: &DeviceTensor,
+            loss_mask: &[i32],
+            tau: f32,
+            scale: f32,
+        ) -> Result<(DeviceTensor, Vec<f32>)> {
+            let (t, v) = (student_logits.rows, student_logits.cols);
+            anyhow::ensure!(
+                teacher_logits.rows == t && teacher_logits.cols == v,
+                "kl_distill teacher/student shape mismatch"
+            );
+            anyhow::ensure!(loss_mask.len() == t, "kl_distill mask length mismatch");
+            let mask_dev = self.stream.clone_htod(loss_mask).context("htod mask")?;
+            let mut d_logits = self.zeros_device(t, v)?;
+            let mut kl_dev = self.stream.alloc_zeros::<f32>(t).context("alloc kl")?;
+            let func = self.module.load_function("kl_distill")?;
+            let (ti, vi) = (t as i32, v as i32);
+            let mut b = self.stream.launch_builder(&func);
+            b.arg(&student_logits.buf);
+            b.arg(&teacher_logits.buf);
+            b.arg(&mask_dev);
+            b.arg(&mut d_logits.buf);
+            b.arg(&mut kl_dev);
+            b.arg(&ti);
+            b.arg(&vi);
+            b.arg(&tau);
+            b.arg(&scale);
+            // SAFETY: 9 args match kl_distill; one thread per row.
+            unsafe {
+                b.launch(LaunchConfig::for_num_elems(t as u32))
+                    .context("launch kl_distill")?;
+            }
+            let kl = self.stream.clone_dtoh(&kl_dev).context("dtoh kl")?;
+            Ok((d_logits, kl))
         }
     }
 }
