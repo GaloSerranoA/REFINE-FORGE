@@ -28,7 +28,9 @@
 //!    "template":"import Mathlib\ntheorem foo : 1 + 1 = 2 := by {{proof}}"}
 
 use anyhow::{Context, Result};
-use refineforge_prover::{CommandVerifier, OpenAiProver, Problem, ProofSearch, ProverApi};
+use refineforge_prover::{
+    CommandVerifier, OpenAiProver, Problem, ProofSearch, ProverApi, SamplingMode,
+};
 
 fn arg(args: &[String], flag: &str) -> Option<String> {
     args.iter()
@@ -60,7 +62,13 @@ fn main() -> Result<()> {
     eprintln!("loaded {} problems from {problems_path}", problems.len());
 
     // The prover (generation) — the GPU is the server's concern, not ours.
+    // Default sampling is Auto: it sends n=k and, if the server returned fewer
+    // (llama.cpp ignores n), tops up with single-sample requests — so best-of-k is
+    // correct on llama-server too. Pass --batched to force one n=k request (vLLM).
     let mut prover = OpenAiProver::new(&base_url, &model)?.with_max_tokens(2048);
+    if args.iter().any(|a| a == "--batched") {
+        prover = prover.with_sampling(SamplingMode::Batched);
+    }
     if args.iter().any(|a| a == "--chat") {
         prover = prover.with_api(ProverApi::Chat);
     }

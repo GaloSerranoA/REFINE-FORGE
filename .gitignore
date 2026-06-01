@@ -54,3 +54,9 @@ result-*
 
 # throwaway CI poll helper (session tooling)
 /poll_ci.sh
+
+# Downloaded model weights — multi-GB, operator-provided (the prover backend
+# points at a locally-served model via config/CLI). Never committed to git.
+/models/
+*.gguf
+*.safetensors

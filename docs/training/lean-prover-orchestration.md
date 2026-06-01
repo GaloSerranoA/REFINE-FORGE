@@ -80,7 +80,11 @@ A standalone, CUDA-free crate:
 
 - `ProverClient` — generate up to *k* candidates. Impls: `OpenAiProver`
   (vLLM/llama.cpp, completion or chat API), `ReplayProver` (replay a JSONL of
-  pre-generated candidates — offline / dry-run / re-verification).
+  pre-generated candidates — offline / dry-run / re-verification). Best-of-k uses
+  `SamplingMode::Auto` by default: it sends `n=k` and, if the server returned
+  fewer (llama.cpp's `llama-server` silently ignores `n>1`), tops up with
+  single-sample requests — so best-of-k is genuine on **both** vLLM and llama.cpp,
+  with no config. (`Batched`/`PerRequest` override it.)
 - `Verifier` — the trust gate. Impls: `CommandVerifier` (`lake env lean
   <candidate>`, exit 0 ⇒ accepted — **the only trust-bearing verifier**) and
   `DryRunVerifier` (a *labeled* substring stand-in for plumbing tests; grants no
@@ -91,10 +95,11 @@ A standalone, CUDA-free crate:
   `Corpus` (cumulative cross-round dedup, plain + chat JSONL), `Ledger`
   (`RoundRecord` per round). See the Stage-1 runbook.
 
-22 unit tests cover best-of-k stopping, the sample cap, evidence emission,
-determinism, template assembly, the OpenAI request/response shapes, replay
-loading, a real subprocess verifier round-trip, verified-only mining, corpus
-dedup/persistence, and ledger accumulation.
+31 unit tests cover best-of-k stopping, the sample cap, the `Auto`/`Batched`/
+`PerRequest` sampling logic (vLLM one-shot vs llama.cpp top-up, error
+propagation), evidence emission, determinism, template assembly, the OpenAI
+request/response shapes, replay loading, a real subprocess verifier round-trip,
+verified-only mining, corpus dedup/persistence, and ledger accumulation.
 
 ### `refineforge_lean_prover` (the trainer backend)
 
@@ -133,7 +138,7 @@ unless `problems_file` overrides.
 
 | Verified here (offline) | Operator-provided (for a live run) |
 |---|---|
-| Orchestration engine (22 unit tests) | A downloaded prover (multi-GB; your bandwidth/disk/license) |
+| Orchestration engine (31 unit tests) | A downloaded prover (multi-GB; your bandwidth/disk/license) |
 | Trainer dispatch + evidence (`run → report.json`, 2 integration tests) | A served endpoint (vLLM/llama.cpp on your GPU) |
 | `proof_pass_rate` flows through the trust ladder honestly | A lake/Mathlib project matching the prover's toolchain |
 | Stage-1 verified-proof mining + deduped corpus + ledger (demoed on the smoke run) | The LoRA fine-tune itself (external Python on the P40) |
