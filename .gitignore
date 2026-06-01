@@ -51,3 +51,6 @@ result-*
 # Trainer run outputs
 /training/runs/*/
 /training/data/**/anthropic-sft.raw-*.jsonl
+
+# throwaway CI poll helper (session tooling)
+/poll_ci.sh
