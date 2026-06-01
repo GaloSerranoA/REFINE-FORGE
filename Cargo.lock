@@ -1073,6 +1073,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "refineforge-gpu",
  "refineforge-repair-api",
  "regex",
  "serde",

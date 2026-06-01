@@ -280,6 +280,32 @@ remains the deterministic reference.
   promotion manifests gate on `report.final_outcome == "success"`, which is set by
   the **live training pipeline** (`refine agent train` via `runner.rs`), not by the
   standalone report-rebuild CLI (which labels it `"rebuilt"`). Reaching that final
-  approval gate legitimately is the **trainer-dispatch** integration (the other M13
-  direction). The evidence *format* is verified-compatible; the run-*status* gate is
-  not bypassed (hand-editing the outcome to force it would be evidence tampering).
+  approval gate legitimately is the **trainer-dispatch** integration (M14, below).
+  The evidence *format* is verified-compatible; the run-*status* gate is not bypassed
+  (hand-editing the outcome to force it would be evidence tampering).
+
+- **M14 — trainer-dispatch integration (live pipeline; full approval chain).** Makes
+  `refineforge_native_gpt_cuda` a first-class backend: `refineforge-trainer` gains a
+  cuda-gated dependency on `refineforge-gpu` (a `cuda` feature → `refineforge-gpu/
+  cuda`; the **default build stays CPU-only**, so CI is unaffected), the valid-kind
+  list (`experiment.rs`) accepts it, `runner.rs` dispatches it (and errors helpfully
+  if built without `--features cuda`), and a cuda-gated submodule
+  `native_gpt::cuda` trains the device-resident GPU `GptModel` while **reusing the
+  parent module's pack loading / config / split** and emitting the identical evidence
+  contract. New config `training/configs/refineforge-native-gpt-cuda-smoke.yaml`.
+
+  **Verified end to end on the RTX 3060** — the full trust ladder now runs on the
+  GPU backend:
+  - `refine-train run …cuda-smoke.yaml` → **`final: success`** report with real GPU
+    metrics (dev target-token accuracy ≈ 22 % after 4 epochs), no failures.
+  - `refine-train evidence <run> …` → **`eval=passed regression=passed
+    promotion=…`**, emitting every production-proof manifest (`eval-report.json`,
+    `regression-report.json`, `promotion-manifest.json`, `compute-ledger.json`,
+    `conversion-manifest.json`, `checkpoint.safetensors`).
+
+  The GPU-trained native GPT is now a real **trust-bearing** backend: it produces a
+  `success` report and **approval-ready** evidence through the same pipeline as the
+  CPU backend — closing the gate M13 honestly stopped at. Default builds remain
+  CPU-only (176/176 trainer tests unchanged); the GPU path is opt-in via
+  `--features cuda`. Trust is still bounded by the same eval/regression gates and a
+  human `refine approval` — this wires the *evidence*, it does not auto-approve.

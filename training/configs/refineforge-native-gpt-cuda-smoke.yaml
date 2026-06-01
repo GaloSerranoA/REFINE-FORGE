@@ -1,0 +1,47 @@
+id: refineforge-native-gpt-cuda-smoke
+description: |
+  GPU (CUDA, f32) native GPT smoke run on the full Mathlib SFT pack, dispatched
+  through the live training pipeline (refineforge_native_gpt_cuda backend). Emits
+  the standard trust-ladder evidence so report.rs / evidence.rs consume it and a
+  successful run yields a final_outcome: "success" report. Requires building
+  refineforge-trainer with --features cuda and an NVIDIA GPU.
+base_model:
+  name: refineforge-native-gpt-cuda
+  source: native
+  revision: null
+dataset:
+  path: production-proof/native-gpt-scale/full-pack
+  format: sft_pack
+  fields: {}
+backend:
+  kind: refineforge_native_gpt_cuda
+  config_file: null
+  command: null
+  extra_args: []
+  runtime: {}
+hyperparameters:
+  context_length: 256
+  eval_split: heldout
+  learning_rate: 0.0006
+  n_embed: 128
+  n_head: 4
+  n_layers: 2
+  seed: 7
+  steps: 4
+  weight_decay: 0.1
+checkpoint:
+  dir: checkpoints
+  save_steps: 4
+  keep_last: 1
+monitoring:
+  log_file: train.log
+  progress_format: native
+  metrics_to_track:
+  - train_loss
+  - dev_loss
+  - target_token_accuracy
+  - learning_rate
+retry:
+  max_attempts: 1
+  backoff_seconds: 0
+  resume_from_checkpoint: false
