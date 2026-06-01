@@ -300,6 +300,24 @@ pub fn run_once(runs_root: &Path, exp: &Experiment) -> Result<RunOutcome> {
             paths,
         });
     }
+    if exp.backend.kind == "refineforge_native_gpt_cuda" {
+        #[cfg(feature = "cuda")]
+        {
+            let gpt_outcome = native_gpt::cuda::run(&paths, exp)?;
+            if let Some(keep_last) = exp.checkpoint.keep_last {
+                let _ = checkpoint::prune(&paths.checkpoint_dir, keep_last);
+            }
+            return Ok(RunOutcome {
+                exit_status: successful_exit_status(),
+                progress_records: gpt_outcome.progress_records,
+                paths,
+            });
+        }
+        #[cfg(not(feature = "cuda"))]
+        anyhow::bail!(
+            "backend.kind=refineforge_native_gpt_cuda requires building refineforge-trainer with --features cuda (and an NVIDIA GPU)"
+        );
+    }
 
     let argv = build_command(&exp.backend, &paths, exp)?;
     let (program, args) = argv.split_first().unwrap();

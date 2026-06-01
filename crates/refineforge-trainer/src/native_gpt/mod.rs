@@ -11,6 +11,12 @@
 
 pub mod nn;
 
+/// GPU-accelerated variant (`refineforge_native_gpt_cuda`), only with `--features
+/// cuda`. Reuses this module's pack loading / config / split + the evidence
+/// emission contract, computing on the device via `refineforge-gpu`.
+#[cfg(feature = "cuda")]
+pub mod cuda;
+
 use anyhow::{Context, Result};
 use chrono::Utc;
 use serde::Serialize;

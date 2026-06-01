@@ -21,6 +21,14 @@ walkdir                 = "2.5"
 sha2                    = "0.10"
 zstd                    = "0.13"
 refineforge-repair-api  = { path = "../refineforge-repair-api" }
+# CPU-only by default (no cudarc); the `cuda` feature enables the GPU GPT backend.
+refineforge-gpu         = { path = "../refineforge-gpu" }
+
+[features]
+default = []
+# Enable the device-resident GPU GPT backend (`refineforge_native_gpt_cuda`).
+# Pulls refineforge-gpu's CUDA path (cudarc + nvrtc); requires an NVIDIA GPU.
+cuda = ["refineforge-gpu/cuda"]
 
 [dev-dependencies]
 tempfile    = "3"
