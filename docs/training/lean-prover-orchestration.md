@@ -163,6 +163,10 @@ cargo run -p refineforge-trainer -- run training/configs/refineforge-lean-prover
 1. Download + serve a prover (pin to the fast card):
    `CUDA_VISIBLE_DEVICES=0 vllm serve deepseek-ai/DeepSeek-Prover-V2-7B --port 8000`
 2. Provide a lake/Mathlib project at `lean_dir` whose toolchain matches the prover.
+   For Goedel-Prover-V2 this is scaffolded at `lean-prover-verify/` (Lean
+   v4.9.0-rc1 + Mathlib `2f65ba7f`, 2024-08-07 — its pinned submodule commit);
+   toolchain validated, then `cd lean-prover-verify && lake exe cache get` for the
+   ~GB Mathlib oleans. See `lean-prover-verify/README.md`.
 3. `cargo run -p refineforge-trainer -- run training/configs/refineforge-lean-prover-live.yaml`
 4. Take the evidence through the ladder: `refine-train evidence runs/… --out-dir …`.
 

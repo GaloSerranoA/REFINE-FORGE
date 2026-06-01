@@ -42,7 +42,9 @@ hyperparameters:
   max_tokens: 2048
   samples: 8                  # best-of-k proof attempts per problem
   verifier: lean              # the real trust gate (NOT dry_run)
-  lean_dir: lean              # a lake project root with Mathlib
+  lean_dir: lean-prover-verify  # lake project matched to Goedel-Prover-V2
+                                # (Lean v4.9.0-rc1 + Mathlib 2f65ba7f). Build it
+                                # first: cd lean-prover-verify && lake exe cache get.
   lean_command: lake env lean
 monitoring:
   metrics_to_track:

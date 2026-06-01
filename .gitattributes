@@ -4,4 +4,7 @@
 claims/** text eol=lf
 docs/refinement/** text eol=lf
 lean/** text eol=lf
+# Lean prover-verifier project: lean-toolchain + *.lean must stay LF or elan/lean
+# can choke on a CRLF toolchain string on a fresh Windows checkout.
+lean-prover-verify/** text eol=lf
 artifacts/** text eol=lf
