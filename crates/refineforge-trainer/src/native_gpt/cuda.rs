@@ -45,7 +45,8 @@ pub fn run(paths: &RunPaths, exp: &Experiment) -> Result<NativeGptOutcome> {
     );
     let (train, dev) = split_examples(&examples, &cfg.eval_split);
 
-    let k = GpuKernels::new(0).context("opening CUDA device 0 for refineforge_native_gpt_cuda")?;
+    let k = GpuKernels::new_auto()
+        .context("opening a CUDA device for refineforge_native_gpt_cuda (set REFINEFORGE_CUDA_DEVICE to pick one)")?;
     let mut model = GptModel::new(
         &k,
         vocab_size,
@@ -66,8 +67,8 @@ pub fn run(paths: &RunPaths, exp: &Experiment) -> Result<NativeGptOutcome> {
         .with_context(|| format!("creating {}", paths.log_file.display()))?;
     writeln!(
         log_file,
-        "refineforge_native_gpt_cuda start device={} examples={} train={} dev={} steps={} n_embed={} n_head={} n_layers={} ctx={} vocab={} params={}",
-        k.device_name(), examples.len(), train.len(), dev.len(), cfg.steps,
+        "refineforge_native_gpt_cuda start device=[{}] examples={} train={} dev={} steps={} n_embed={} n_head={} n_layers={} ctx={} vocab={} params={}",
+        k.device_summary(), examples.len(), train.len(), dev.len(), cfg.steps,
         cfg.n_embed, cfg.n_head, cfg.n_layers, cfg.context_length, vocab_size, parameter_count
     )?;
     write_train_metadata(

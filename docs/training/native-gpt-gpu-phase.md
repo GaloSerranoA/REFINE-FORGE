@@ -360,3 +360,22 @@ remains the deterministic reference.
 
   *(The DevOps agent is intentionally omitted: none of the five surveyed papers is
   about release engineering / CI / bundle signing, so none was applied to it.)*
+
+### Infrastructure
+
+- **M18 — GPU auto-detection + portability (any NVIDIA GPU).** The CUDA path no
+  longer hard-codes device 0: `GpuKernels::new_auto()` selects the device from
+  `REFINEFORGE_CUDA_DEVICE` (else 0; the driver also honours `CUDA_VISIBLE_DEVICES`),
+  and `device_count` / `total_memory` / `ordinal` / `device_summary` report what is
+  running — e.g. `NVIDIA GeForce RTX 3060 Laptop GPU (sm 8.6, 6.0 GiB, device 0 of
+  1)`. The cuda trainer backend and all examples now use `new_auto()` and log the
+  device; the compute ledger records name / compute capability / **total memory** /
+  ordinal / visible-device count. **Portability:** kernels are compiled by NVRTC at
+  runtime to portable PTX, which the driver JITs to whatever architecture is present
+  (sm 7.x / 8.x / 9.x …), so swapping in a newer/larger NVIDIA GPU needs **no code
+  change** — it is picked up automatically (single-GPU swap → device 0) or via the
+  env var (multi-GPU), and its memory is reported so model/batch size can be scaled
+  to it. (CUDA = NVIDIA only; a non-NVIDIA GPU would need a separate backend.
+  Memory-aware *auto*-scaling of the default model size is a follow-up; today the
+  size is config-driven and the available VRAM is now visible.) 40 cuda tests
+  (`gpu_device_info_is_reported`); default CPU-only build unchanged.

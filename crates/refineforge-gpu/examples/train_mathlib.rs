@@ -87,7 +87,8 @@ fn main() -> anyhow::Result<()> {
         "model: embed={embed} heads={n_head} layers={n_layers} hidden={hidden} lr={lr}  · {epochs} epochs, batch=1"
     );
 
-    let k = GpuKernels::new(0)?;
+    let k = GpuKernels::new_auto()?;
+    eprintln!("GPU: {}", k.device_summary());
     let mut model = GptModel::new(&k, vocab, embed, n_head, n_layers, hidden, context, 7)?;
 
     // ─── device-resident training loop: one sequence per step ───

@@ -677,6 +677,22 @@ pub mod gpu {
         }
     }
 
+    /// Choose the CUDA device ordinal: `REFINEFORGE_CUDA_DEVICE` (if set + in
+    /// range), otherwise device 0. The driver additionally honours
+    /// `CUDA_VISIBLE_DEVICES`, so either knob lets the system follow a GPU swap.
+    pub fn select_cuda_device() -> usize {
+        let count = GpuKernels::device_count();
+        let want = std::env::var("REFINEFORGE_CUDA_DEVICE")
+            .ok()
+            .and_then(|s| s.trim().parse::<usize>().ok())
+            .unwrap_or(0);
+        if count == 0 || want < count {
+            want
+        } else {
+            0
+        }
+    }
+
     /// A 2-D `f32` tensor that lives in GPU memory between ops (no host
     /// round-trips) — the building block for device-resident layers.
     pub struct DeviceTensor {
@@ -722,6 +738,47 @@ pub mod gpu {
                 q(A::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR),
                 q(A::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR),
             )
+        }
+
+        /// Number of CUDA devices visible to the process (0 if none / query fails).
+        /// Also honours the driver's `CUDA_VISIBLE_DEVICES`.
+        pub fn device_count() -> usize {
+            CudaContext::device_count()
+                .map(|n| n.max(0) as usize)
+                .unwrap_or(0)
+        }
+
+        /// Ordinal of the device this `GpuKernels` is bound to.
+        pub fn ordinal(&self) -> usize {
+            self.ctx.ordinal()
+        }
+
+        /// Total memory of the bound device in bytes (0 if the query fails).
+        pub fn total_memory(&self) -> usize {
+            self.ctx.total_mem().unwrap_or(0)
+        }
+
+        /// One-line human summary of the bound device — logged so that running on
+        /// a different / newer GPU is visible at a glance.
+        pub fn device_summary(&self) -> String {
+            let (maj, min) = self.compute_capability();
+            let gib = self.total_memory() as f64 / (1024.0 * 1024.0 * 1024.0);
+            format!(
+                "{} (sm {maj}.{min}, {gib:.1} GiB, device {} of {})",
+                self.device_name(),
+                self.ordinal(),
+                Self::device_count(),
+            )
+        }
+
+        /// Open the device chosen by [`select_cuda_device`] (the
+        /// `REFINEFORGE_CUDA_DEVICE` env var, else device 0) and compile the kernel
+        /// module. Prefer this over [`new`](Self::new) so the system follows a GPU
+        /// swap with no code change: NVRTC compiles `KERNEL_SOURCE` at runtime to
+        /// portable PTX, which the driver JITs to whatever architecture is present
+        /// (sm 7.x/8.x/9.x …), so the kernels run unchanged on any NVIDIA GPU.
+        pub fn new_auto() -> Result<Self> {
+            Self::new(select_cuda_device())
         }
 
         /// Element-wise `a + b` on the GPU.
@@ -2069,6 +2126,26 @@ mod tests {
                 major >= 1,
                 "compute capability major should be reported: {major}.{minor}"
             );
+        }
+
+        #[test]
+        fn gpu_device_info_is_reported() {
+            // Auto-selection + device introspection work on whatever GPU is present.
+            assert!(
+                gpu::GpuKernels::device_count() >= 1,
+                "at least one CUDA device should be visible"
+            );
+            let k = gpu::GpuKernels::new_auto().expect("gpu init (auto)");
+            assert!(
+                k.total_memory() > 0,
+                "device total memory should be reported"
+            );
+            let summary = k.device_summary();
+            assert!(
+                !summary.is_empty() && summary.contains("device"),
+                "device summary: {summary}"
+            );
+            println!("auto-selected GPU: {summary}");
         }
 
         #[test]
