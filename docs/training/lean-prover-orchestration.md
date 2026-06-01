@@ -87,10 +87,14 @@ A standalone, CUDA-free crate:
   trust).
 - `ProofSearch` — best-of-k: generate, verify in order, keep the first accepted
   proof; emit `progress.jsonl` + `proof-search-report.json`.
+- `expert_iteration` — Stage-1 mining: `mine_verified` (verified proofs only),
+  `Corpus` (cumulative cross-round dedup, plain + chat JSONL), `Ledger`
+  (`RoundRecord` per round). See the Stage-1 runbook.
 
-15 unit tests cover best-of-k stopping, the sample cap, evidence emission,
+22 unit tests cover best-of-k stopping, the sample cap, evidence emission,
 determinism, template assembly, the OpenAI request/response shapes, replay
-loading, and a real subprocess verifier round-trip.
+loading, a real subprocess verifier round-trip, verified-only mining, corpus
+dedup/persistence, and ledger accumulation.
 
 ### `refineforge_lean_prover` (the trainer backend)
 
@@ -112,10 +116,16 @@ unless `problems_file` overrides.
 
 - **Stage 0 — inference proof search (this, done).** Download a 7B prover, search
   proofs gated by Lean, collect verified proofs + `proof_pass_rate`. No training.
-- **Stage 1 — cheap adaptation (optional, future).** Mine the verified proofs as
-  SFT data and LoRA/QLoRA-adapt the 7B to *our* exact task / Lean version on a
-  single 24 GB card (reusing Goedel's expert-iteration recipe or Kimina's open RL
-  pipeline). Still ≈ commodity compute.
+- **Stage 1 — expert iteration (as-built: mining + ledger; LoRA external).** Mine
+  the verified proofs into an SFT corpus and LoRA/QLoRA-adapt the 7B to *our* exact
+  task / Lean version on a single 24 GB card, then loop. The **trust-critical part
+  is Rust and tested**: `refineforge-prover::expert_iteration` mines **only
+  Lean-verified proofs** (`mine_verified`), accumulates them across rounds with
+  dedup (`Corpus`, key = `id` + completion, so alternate proofs count but
+  duplicates don't), and records per-round growth (`RoundRecord` → ledger). The
+  `mine_proofs` example turns a search round into a trainable dataset. The fine-tune
+  itself is **external** (Python on the operator's GPU) — reference script
+  `training/scripts/lora_finetune_prover.py`; see the loop runbook below.
 - **Not attempted — paper-scale RL from scratch** (the 671B/72B frontier). That is
   exactly what we *avoid* by downloading.
 
@@ -123,9 +133,10 @@ unless `problems_file` overrides.
 
 | Verified here (offline) | Operator-provided (for a live run) |
 |---|---|
-| Orchestration engine (15 unit tests) | A downloaded prover (multi-GB; your bandwidth/disk/license) |
+| Orchestration engine (22 unit tests) | A downloaded prover (multi-GB; your bandwidth/disk/license) |
 | Trainer dispatch + evidence (`run → report.json`, 2 integration tests) | A served endpoint (vLLM/llama.cpp on your GPU) |
 | `proof_pass_rate` flows through the trust ladder honestly | A lake/Mathlib project matching the prover's toolchain |
+| Stage-1 verified-proof mining + deduped corpus + ledger (demoed on the smoke run) | The LoRA fine-tune itself (external Python on the P40) |
 | Committed smoke (3/4 solved, dry-run) | The real Lean checker + a real problem set |
 
 A downloaded prover targets a *specific* Lean/Mathlib version and competition-style
@@ -152,3 +163,30 @@ cargo run -p refineforge-trainer -- run training/configs/refineforge-lean-prover
 
 Or drive the engine directly (no trainer):
 `cargo run -p refineforge-prover --example lean_proof_search -- --problems … --base-url … --model … --lean-dir … --samples 8`.
+
+**Stage-1 expert-iteration loop** (each round; the fine-tune is external Python on
+your GPU, so the loop is operator-checkpointed):
+
+1. **Search** (Stage 0): `refine-train run <prover-config>` → `proof-search-report.json`.
+2. **Mine** (Rust, trust-critical — verified proofs only):
+   ```
+   cargo run -p refineforge-prover --example mine_proofs -- \
+     --problems <problems.jsonl> \
+     --search-report runs/<run>/proof-search-report.json \
+     --corpus corpus.jsonl --round N \
+     --out-chat sft-chat.jsonl --ledger expert-iteration-ledger.json \
+     --system "You are a Lean 4 prover."
+   ```
+   Accumulates verified `(statement → proof)` pairs into `corpus.jsonl` (deduped),
+   emits the trainable `sft-chat.jsonl`, and appends round N to the ledger.
+3. **Fine-tune** (external, on the P40 — fp16 for Pascal): `python
+   training/scripts/lora_finetune_prover.py --base <prover> --data sft-chat.jsonl
+   --out adapters/round-N --dtype fp16`.
+4. **Re-serve** the adapted model (vLLM `--enable-lora --lora-modules
+   roundN=adapters/round-N`), point the next config at model `roundN`, bump
+   `--round`, and go to 1.
+
+The ledger's `newly_added` per round is the signal: when fresh verified proofs stop
+appearing, the loop has converged on this problem set (add harder problems or stop).
+Trust is preserved end-to-end — the model is only ever adapted on proofs `lake env
+lean` accepted.
