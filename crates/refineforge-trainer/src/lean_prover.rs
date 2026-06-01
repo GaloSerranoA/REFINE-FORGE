@@ -81,9 +81,17 @@ pub fn run(paths: &RunPaths, exp: &Experiment) -> Result<LeanProverOutcome> {
             Some("per_request") => SamplingMode::PerRequest,
             _ => SamplingMode::Auto,
         };
+        // Real provers wrap proofs in a markdown ```lean block with prose; extract
+        // the Lean so it type-checks. Default on; set extract_code: false to disable.
+        let extract = exp
+            .hyperparameters
+            .get("extract_code")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
         let mut p = OpenAiProver::new(base, model)?
             .with_max_tokens(hyper_usize(exp, "max_tokens", 2048))
-            .with_sampling(sampling);
+            .with_sampling(sampling)
+            .with_extract_code(extract);
         if hyper_str(exp, "prover_api") == Some("chat") {
             p = p.with_api(ProverApi::Chat);
         }
