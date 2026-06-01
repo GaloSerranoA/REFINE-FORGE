@@ -308,6 +308,7 @@ pub struct OpenAiProver {
     stop: Vec<String>,
     api_key: Option<String>,
     sampling: SamplingMode,
+    extract_code: bool,
     client: reqwest::blocking::Client,
 }
 
@@ -326,6 +327,7 @@ impl OpenAiProver {
             stop: Vec::new(),
             api_key: None,
             sampling: SamplingMode::Auto,
+            extract_code: false,
             client: reqwest::blocking::Client::builder()
                 .timeout(Duration::from_secs(60))
                 .build()
@@ -339,6 +341,13 @@ impl OpenAiProver {
     }
     pub fn with_sampling(mut self, sampling: SamplingMode) -> Self {
         self.sampling = sampling;
+        self
+    }
+    /// When true, each completion is passed through [`extract_lean_block`] — pull
+    /// the fenced Lean code out of the model's chatty/markdown reply so it
+    /// type-checks. Recommended for real provers (which wrap proofs in ```` ```lean ````).
+    pub fn with_extract_code(mut self, extract: bool) -> Self {
+        self.extract_code = extract;
         self
     }
     pub fn with_max_tokens(mut self, n: usize) -> Self {
@@ -402,10 +411,15 @@ impl OpenAiProver {
             .error_for_status()
             .context("prover server returned an error status")?;
         let value: serde_json::Value = resp.json().context("decoding prover response JSON")?;
-        match self.api {
-            ProverApi::Completion => parse_completion_response(&value),
-            ProverApi::Chat => parse_chat_response(&value),
-        }
+        let candidates = match self.api {
+            ProverApi::Completion => parse_completion_response(&value)?,
+            ProverApi::Chat => parse_chat_response(&value)?,
+        };
+        Ok(if self.extract_code {
+            candidates.iter().map(|c| extract_lean_block(c)).collect()
+        } else {
+            candidates
+        })
     }
 }
 
@@ -485,6 +499,37 @@ pub fn parse_chat_response(value: &serde_json::Value) -> Result<Vec<String>> {
                 .map(str::to_string)
         })
         .collect())
+}
+
+/// Turn a chatty prover completion into a checkable Lean candidate: take the first
+/// markdown code fence (```` ```lean ````, ```` ```lean4 ````, or bare ```` ``` ````
+/// — any language tag is dropped) and strip `import` lines (the verifier project /
+/// problem template supplies the imports, avoiding duplicates). If there is no
+/// fence, the trimmed text is used. Real provers (DeepSeek-Prover / Goedel /
+/// Kimina) wrap proofs in a fenced block with prose around it, so this is what
+/// makes their output type-check.
+pub fn extract_lean_block(text: &str) -> String {
+    let code = match text.find("```") {
+        Some(start) => {
+            let after = &text[start + 3..];
+            // drop the language tag up to the first newline
+            let after = match after.find('\n') {
+                Some(nl) => &after[nl + 1..],
+                None => after,
+            };
+            match after.find("```") {
+                Some(end) => &after[..end],
+                None => after,
+            }
+        }
+        None => text,
+    };
+    code.lines()
+        .filter(|l| !l.trim_start().starts_with("import "))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
 }
 
 /// Replays pre-generated candidates from a JSONL file instead of calling a live
@@ -571,7 +616,10 @@ impl Verifier for CommandVerifier {
             .with_context(|| format!("writing candidate to {}", path.display()))?;
         let output = Command::new(&self.program)
             .args(&self.args)
-            .arg(&path)
+            // Pass the candidate path RELATIVE to current_dir (the work dir): the
+            // checker runs with cwd = work_dir, so a full `work_dir/file` arg would
+            // double-prefix to `work_dir/work_dir/file` and "file not found".
+            .arg(&self.candidate_file)
             .current_dir(&self.work_dir)
             .output()
             .with_context(|| format!("running checker `{}`", self.program))?;
@@ -581,11 +629,11 @@ impl Verifier for CommandVerifier {
                 detail: String::new(),
             })
         } else {
-            // Cap the captured error so a noisy checker can't blow up evidence.
-            let detail: String = String::from_utf8_lossy(&output.stderr)
-                .chars()
-                .take(2000)
-                .collect();
+            // Lean reports errors on stdout AND stderr; capture both (capped so a
+            // noisy checker can't blow up the evidence).
+            let mut detail = String::from_utf8_lossy(&output.stdout).into_owned();
+            detail.push_str(&String::from_utf8_lossy(&output.stderr));
+            let detail: String = detail.chars().take(2000).collect();
             Ok(Verdict {
                 verified: false,
                 detail,
@@ -842,6 +890,24 @@ mod tests {
     }
 
     #[test]
+    fn extract_lean_block_pulls_fenced_code_and_drops_imports() {
+        // markdown reply with a ```lean4 fence + prose + an import line
+        let reply =
+            "Sure:\n\n```lean4\nimport Mathlib\ntheorem t : 1 = 1 := by rfl\n```\n\nThis works.";
+        assert_eq!(extract_lean_block(reply), "theorem t : 1 = 1 := by rfl");
+        // bare fence (no language tag)
+        assert_eq!(
+            extract_lean_block("```\ntheorem t : True := trivial\n```"),
+            "theorem t : True := trivial"
+        );
+        // no fence → trimmed text, imports still dropped
+        assert_eq!(
+            extract_lean_block("  theorem t := by simp  "),
+            "theorem t := by simp"
+        );
+    }
+
+    #[test]
     fn request_body_shapes_match_the_api() {
         let p = OpenAiProver::new("http://localhost:8000/", "deepseek-prover-v2-7b").unwrap();
         let comp = p.request_body("the goal", 4);
@@ -1002,6 +1068,26 @@ mod tests {
 
         let bad = make("1").verify(&problem, "bad proof").unwrap();
         assert!(!bad.verified);
+    }
+
+    #[test]
+    fn command_verifier_passes_a_cwd_relative_path_the_checker_can_read() {
+        // Regression for a bug a live run caught: the checker runs with cwd =
+        // work_dir, so the candidate must be passed as the bare filename. A full
+        // `work_dir/file` arg double-prefixes to `work_dir/work_dir/file` →
+        // "file not found". Use a checker that READS the arg file (rc 0 iff found).
+        let dir = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let reader = CommandVerifier::new("cmd", ["/c", "type"], dir.path(), "C.lean");
+        #[cfg(not(windows))]
+        let reader = CommandVerifier::new("cat", Vec::<&str>::new(), dir.path(), "C.lean");
+        let v = reader
+            .verify(&Problem::new("p", "g"), "theorem t : True := trivial")
+            .unwrap();
+        assert!(
+            v.verified,
+            "checker must find the candidate at the cwd-relative path"
+        );
     }
 
     #[test]
