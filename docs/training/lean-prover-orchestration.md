@@ -89,32 +89,45 @@ A standalone, CUDA-free crate:
   markdown ```` ```lean ```` fence (any language tag) and drops `import` lines — so
   a chatty prover reply type-checks. On by default in the trainer backend.
 - `Verifier` — the trust gate. Impls: `CommandVerifier` (`lake env lean
-  <candidate>`, exit 0 ⇒ accepted — **the only trust-bearing verifier**) and
-  `DryRunVerifier` (a *labeled* substring stand-in for plumbing tests; grants no
-  trust).
+  <candidate>`, **the only trust-bearing verifier**) and `DryRunVerifier` (a
+  *labeled* substring stand-in for plumbing tests; grants no trust). **Soundness:**
+  exit 0 alone is *not* enough — a `sorry`/`admit` proof type-checks (exit 0) but
+  proves nothing (Lean only warns "declaration uses 'sorry'"), so `CommandVerifier`
+  also rejects any `sorry`/`admit`/`sorryAx`. (Custom `axiom`s / `native_decide`
+  trust are a documented `#print axioms` follow-up.)
 - `ProofSearch` — best-of-k: generate, verify in order, keep the first accepted
   proof; emit `progress.jsonl` + `proof-search-report.json`.
 - `expert_iteration` — Stage-1 mining: `mine_verified` (verified proofs only),
   `Corpus` (cumulative cross-round dedup, plain + chat JSONL), `Ledger`
   (`RoundRecord` per round). See the Stage-1 runbook.
 
-33 unit tests cover best-of-k stopping, the sample cap, the `Auto`/`Batched`/
+35 unit tests cover best-of-k stopping, the sample cap, the `Auto`/`Batched`/
 `PerRequest` sampling logic (vLLM one-shot vs llama.cpp top-up, error
 propagation), Lean-block extraction, evidence emission, determinism, template
 assembly, the OpenAI request/response shapes, replay loading, a real subprocess
-verifier round-trip (incl. the cwd-relative path a live run caught), verified-only
-mining, corpus dedup/persistence, and ledger accumulation.
+verifier round-trip (incl. the cwd-relative path a live run caught), the
+`sorry`/`admit` soundness rejection, verified-only mining, corpus
+dedup/persistence, and ledger accumulation.
 
-### Validated live (first light)
+### Validated live (first light) — and four bugs it caught
 
-The whole loop has now run end-to-end on real hardware: **Goedel-Prover-V2-8B**
+The whole loop has run end-to-end on real hardware: **Goedel-Prover-V2-8B**
 (downloaded GGUF, served via `llama-cpp-python`) → `refine-train run` the
-`refineforge_lean_prover` backend → best-of-k generation → `extract_lean_block` →
-`CommandVerifier` (`lake env lean` against the compiled Mathlib) → **2/2 trivial
-theorems verified, `proof_pass_rate` 1.000**, `report.json` `final_outcome:
-success`. The live run also surfaced + fixed two real bugs (markdown fence
-extraction; a `CommandVerifier` path that double-prefixed the candidate) — exactly
-what a first real run is for.
+`refineforge_lean_prover` backend → best-of-k → `extract_lean_block` →
+`CommandVerifier` (`lake env lean` against the compiled Mathlib) → trust evidence.
+On 2 trivial theorems it produces **2/2 genuinely real proofs**
+(`simp [Nat.add_zero]; exact h₁`, `apply le_refl` — re-verified sorry-free).
+
+Driving real runs caught **four real bugs**, all fixed: (1) markdown fence
+extraction; (2) a `CommandVerifier` path that double-prefixed the candidate; (3) a
+60 s HTTP timeout too short for CPU inference; and — most important — (4) a
+**soundness hole**: a harder MiniF2F-style set exposed that Goedel's small Q3 quant
+(at a 512-token CPU budget) emitted `sorry`-skeletons, which the gate *accepted*
+(exit 0). The honest count there was **0/6 real**, not the 5/6 the unsound gate
+reported. Now the gate rejects `sorry`/`admit` (bug #4 fix), and that set is a
+floor, not Goedel's ceiling — the small quant + token cap + best-of-3 + CPU all
+suppress it; its real strength needs the bigger quant + GPU + long reasoning +
+high Pass@k.
 
 ### `refineforge_lean_prover` (the trainer backend)
 
@@ -153,7 +166,7 @@ unless `problems_file` overrides.
 
 | Verified here (offline) | Operator-provided (for a live run) |
 |---|---|
-| Orchestration engine (33 unit tests) + **live first light: 2/2 verified** | A downloaded prover (multi-GB; your bandwidth/disk/license) |
+| Orchestration engine (35 unit tests, incl. `sorry`/`admit` soundness) + **live: 2/2 real proofs** | A downloaded prover (multi-GB; your bandwidth/disk/license) |
 | Trainer dispatch + evidence (`run → report.json`, 2 integration tests) | A served endpoint (vLLM/llama.cpp on your GPU) |
 | `proof_pass_rate` flows through the trust ladder honestly | A lake/Mathlib project matching the prover's toolchain |
 | Stage-1 verified-proof mining + deduped corpus + ledger (demoed on the smoke run) | The LoRA fine-tune itself (external Python on the P40) |

@@ -350,6 +350,18 @@ impl OpenAiProver {
         self.extract_code = extract;
         self
     }
+    /// Override the per-request HTTP timeout (default 60s). Slow backends need
+    /// more: a long proof on CPU inference (e.g. 512 tokens at ~9 tok/s ≈ 57s,
+    /// before prompt eval) will otherwise time out. Raise this for CPU/llama.cpp.
+    pub fn with_timeout(mut self, secs: u64) -> Self {
+        if let Ok(client) = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(secs))
+            .build()
+        {
+            self.client = client;
+        }
+        self
+    }
     pub fn with_max_tokens(mut self, n: usize) -> Self {
         self.max_tokens = n;
         self
@@ -609,10 +621,18 @@ impl CommandVerifier {
     }
 }
 
+/// Token-level membership: true iff `word` appears as a whole identifier token in
+/// `text` (so `sorry` matches but `sorryish`/`unsorry` do not).
+fn mentions(text: &str, word: &str) -> bool {
+    text.split(|c: char| !c.is_alphanumeric() && c != '_')
+        .any(|tok| tok == word)
+}
+
 impl Verifier for CommandVerifier {
     fn verify(&self, problem: &Problem, candidate: &str) -> Result<Verdict> {
+        let assembled = assemble(problem, candidate);
         let path = self.work_dir.join(&self.candidate_file);
-        std::fs::write(&path, assemble(problem, candidate))
+        std::fs::write(&path, &assembled)
             .with_context(|| format!("writing candidate to {}", path.display()))?;
         let output = Command::new(&self.program)
             .args(&self.args)
@@ -623,16 +643,34 @@ impl Verifier for CommandVerifier {
             .current_dir(&self.work_dir)
             .output()
             .with_context(|| format!("running checker `{}`", self.program))?;
-        if output.status.success() {
+        // Lean reports errors on stdout AND stderr; capture both.
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        // SOUNDNESS: a proof using `sorry`/`admit` type-checks (exit 0) but proves
+        // NOTHING — Lean only emits the warning "declaration uses 'sorry'". A gate
+        // that trusts exit-0 alone accepts non-proofs. Reject any `sorry`/`admit`,
+        // checked in the candidate text (a real proof never contains those tokens)
+        // AND in Lean's output (catches axiom-level `sorryAx`). NOTE: this does not
+        // yet reject custom `axiom`s or `native_decide` trust — `#print axioms`
+        // hardening is a documented follow-up.
+        let unsound = mentions(&assembled, "sorry")
+            || mentions(&assembled, "admit")
+            || combined.contains("declaration uses 'sorry'")
+            || combined.contains("sorryAx");
+        if output.status.success() && !unsound {
             Ok(Verdict {
                 verified: true,
                 detail: String::new(),
             })
         } else {
-            // Lean reports errors on stdout AND stderr; capture both (capped so a
-            // noisy checker can't blow up the evidence).
-            let mut detail = String::from_utf8_lossy(&output.stdout).into_owned();
-            detail.push_str(&String::from_utf8_lossy(&output.stderr));
+            let mut detail = String::new();
+            if output.status.success() && unsound {
+                detail.push_str("rejected: proof depends on `sorry`/`admit` — not a real proof\n");
+            }
+            detail.push_str(&combined);
             let detail: String = detail.chars().take(2000).collect();
             Ok(Verdict {
                 verified: false,
@@ -1088,6 +1126,46 @@ mod tests {
             v.verified,
             "checker must find the candidate at the cwd-relative path"
         );
+    }
+
+    #[test]
+    fn command_verifier_rejects_sorry_and_admit_even_when_checker_exits_zero() {
+        // SOUNDNESS regression (a live run caught this): `sorry`/`admit` type-check
+        // (exit 0) but prove nothing. The gate MUST reject them regardless of exit.
+        let dir = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let pass = CommandVerifier::new("cmd", ["/c", "exit", "0"], dir.path(), "C.lean");
+        #[cfg(not(windows))]
+        let pass = CommandVerifier::new("sh", ["-c", "exit 0"], dir.path(), "C.lean");
+        let problem = Problem::new("p", "g");
+        assert!(
+            !pass
+                .verify(&problem, "theorem t : P := by sorry")
+                .unwrap()
+                .verified,
+            "must reject `sorry`"
+        );
+        assert!(
+            !pass
+                .verify(&problem, "theorem t : P := by\n  admit")
+                .unwrap()
+                .verified,
+            "must reject `admit`"
+        );
+        // a clean proof (exit 0, no holes) is still accepted
+        assert!(
+            pass.verify(&problem, "theorem t : True := by trivial")
+                .unwrap()
+                .verified
+        );
+    }
+
+    #[test]
+    fn mentions_is_token_level() {
+        assert!(mentions("by sorry", "sorry"));
+        assert!(mentions("exact sorry\n", "sorry"));
+        assert!(!mentions("unsorry_lemma", "sorry"));
+        assert!(!mentions("by simp", "sorry"));
     }
 
     #[test]

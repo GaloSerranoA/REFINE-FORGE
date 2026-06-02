@@ -91,7 +91,9 @@ pub fn run(paths: &RunPaths, exp: &Experiment) -> Result<LeanProverOutcome> {
         let mut p = OpenAiProver::new(base, model)?
             .with_max_tokens(hyper_usize(exp, "max_tokens", 2048))
             .with_sampling(sampling)
-            .with_extract_code(extract);
+            .with_extract_code(extract)
+            // Generous default for slow (CPU) backends; raise for long generations.
+            .with_timeout(hyper_usize(exp, "request_timeout_secs", 120) as u64);
         if hyper_str(exp, "prover_api") == Some("chat") {
             p = p.with_api(ProverApi::Chat);
         }
